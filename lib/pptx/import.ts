@@ -118,7 +118,21 @@ type LevelStyle = {
   size?: number;
   bullet?: "bullet" | "number" | "none";
   color?: string;
+  align?: Paragraph["align"];
 };
+
+/** A paragraph's alignment from its algn attribute. */
+function alignOf(algn: string | undefined): Paragraph["align"] | undefined {
+  return algn === "ctr"
+    ? "center"
+    : algn === "r"
+      ? "right"
+      : algn === "just" || algn === "dist"
+        ? "justify"
+        : algn === "l"
+          ? "left"
+          : undefined;
+}
 
 type Placeholder = {
   type: string;
@@ -176,6 +190,7 @@ function readLevels(
             ? "number"
             : undefined,
       color: readColor(child(rPr, "a:solidFill"), ctx.theme, ctx.colorMap),
+      align: alignOf(pPr?.attrs.algn),
     });
   }
   return levels;
@@ -189,6 +204,7 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
       if (level.size !== undefined) out[i].size = level.size;
       if (level.bullet !== undefined) out[i].bullet = level.bullet;
       if (level.color !== undefined) out[i].color = level.color;
+      if (level.align !== undefined) out[i].align = level.align;
     });
   }
   return out;
@@ -301,17 +317,9 @@ function readText(
       if (Object.keys(end).length > 0) runs.push({ ...end, text: "" });
     }
     const paragraph: Paragraph = { runs: runs.slice(0, 500) };
-    const algn = pPr?.attrs.algn;
-    const align =
-      algn === "ctr"
-        ? "center"
-        : algn === "r"
-          ? "right"
-          : algn === "just" || algn === "dist"
-            ? "justify"
-            : algn === "l"
-              ? "left"
-              : defaults.align;
+    // The paragraph's own, then its level's in the list styles, then the
+    // shape's default.
+    const align = alignOf(pPr?.attrs.algn) ?? style?.align ?? defaults.align;
     if (align) paragraph.align = align;
     const bullet = child(pPr, "a:buNone")
       ? "none"

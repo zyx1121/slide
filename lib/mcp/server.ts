@@ -7,13 +7,16 @@ import * as z from "zod";
 
 import { slideAssetUris } from "../assets/store";
 import { DeckError } from "../deck/errors";
+import { getSelection } from "../deck/selection";
 import { getDeck, listDecks, mutateDeck } from "../deck/store";
+import { shapeBounds, unionRects } from "../editor/geometry";
+import { plainText } from "../editor/text-edit";
 import {
   backgroundDataUri,
   RenderBusyError,
   renderPngAsync,
 } from "../render/png";
-import { renderSlideSvg } from "../render/svg";
+import { holdsText, renderSlideSvg } from "../render/svg";
 import { checkDeck } from "../rules/check";
 import {
   addShapes,
@@ -168,6 +171,96 @@ export function createServer(context: ToolContext): McpServer {
       if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
       const violations = checkDeck(deck.document);
       return text({ deck: deck.id, violations });
+    }
+  );
+
+  server.registerTool(
+    "get_selection",
+    {
+      title: "Get the member's selection",
+      description:
+        "What the member has selected in the editor right now: the deck, the slide, and the selected shapes as JSON (with the selected words when part of a text is selected), plus a PNG of that part of the slide. With nothing selected, the slide in view. Edit the shapes by their ids; the selection may change while you work.",
+      annotations: { readOnlyHint: true },
+    },
+    async () => {
+      const selected = await getSelection(db, sub);
+      if (!selected) {
+        return failure("The member has no deck open in the editor.");
+      }
+      const deck = await getDeck(db, sub, selected.deckId);
+      const index =
+        deck?.document.slides.findIndex((s) => s.id === selected.slideId) ?? -1;
+      const page = deck?.document.slides[index];
+      if (!deck || !page)
+        return failure("The selected slide is no longer there.");
+      const byId = new Map(page.shapes.map((shape) => [shape.id, shape]));
+      const targets = selected.targets
+        .map((target) => {
+          const shape = byId.get(target.shape);
+          if (!shape) return null;
+          const words =
+            target.text && holdsText(shape) && shape.text
+              ? plainText(shape.text, target.text.from, target.text.to)
+              : undefined;
+          return {
+            shape,
+            ...(target.text ? { text: target.text, words } : {}),
+          };
+        })
+        .filter((target) => target !== null);
+
+      // The picture: the selected shapes with some room around them, or the
+      // whole slide.
+      const bounds = unionRects(
+        targets.map(({ shape }) => shapeBounds(shape, byId))
+      );
+      const margin = 40;
+      const crop = bounds
+        ? {
+            x: Math.max(0, bounds.x - margin),
+            y: Math.max(0, bounds.y - margin),
+            w:
+              Math.min(1920, bounds.x + bounds.w + margin) -
+              Math.max(0, bounds.x - margin),
+            h:
+              Math.min(1080, bounds.y + bounds.h + margin) -
+              Math.max(0, bounds.y - margin),
+          }
+        : { x: 0, y: 0, w: 1920, h: 1080 };
+      const assets = await slideAssetUris(db, sub, page);
+      const svg = renderSlideSvg(page, {
+        slideNumber: index + 1,
+        background: backgroundDataUri(),
+        assetHref: (sha256) => assets.get(sha256) ?? null,
+      }).replace(
+        /^<svg ([^>]*?)viewBox="0 0 1920 1080" width="1920" height="1080"/,
+        `<svg $1viewBox="${crop.x} ${crop.y} ${Math.max(1, crop.w)} ${Math.max(1, crop.h)}" width="${Math.max(1, crop.w)}" height="${Math.max(1, crop.h)}"`
+      );
+      const summary = {
+        deck: { id: deck.id, title: deck.title, version: deck.version },
+        slide: { number: index + 1, id: page.id, title: page.title },
+        targets,
+        selectedAt: selected.updatedAt.toISOString(),
+      };
+      try {
+        const png = await renderPngAsync(
+          svg,
+          Math.round(Math.min(1280, Math.max(320, crop.w)))
+        );
+        return {
+          content: [
+            { type: "text" as const, text: JSON.stringify(summary, null, 2) },
+            {
+              type: "image" as const,
+              data: png.toString("base64"),
+              mimeType: "image/png",
+            },
+          ],
+        };
+      } catch (error) {
+        if (!(error instanceof RenderBusyError)) throw error;
+        return text(summary);
+      }
     }
   );
 

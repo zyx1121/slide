@@ -18,6 +18,7 @@ import {
   type Revision,
   type Suggestion,
 } from "@/lib/deck/revisions";
+import { saveSelection, SelectionInput } from "@/lib/deck/selection";
 import { getDeck, mutateDeck, setPublished } from "@/lib/deck/store";
 
 export type EditResult =
@@ -114,4 +115,15 @@ export async function reviseAction(
     return revertRevision(sql, user.sub, deckId, revisionId);
   }
   return { outcome: "gone" };
+}
+
+/** Stores what the member selected, for their agent (get_selection). */
+export async function selectAction(
+  deckId: unknown,
+  input: unknown
+): Promise<boolean> {
+  const user = await requireUser();
+  const parsed = SelectionInput.safeParse(input);
+  if (typeof deckId !== "string" || !parsed.success) return false;
+  return saveSelection(sql, user.sub, deckId, parsed.data);
 }

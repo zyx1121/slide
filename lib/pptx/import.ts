@@ -974,6 +974,17 @@ async function readSp(
     readLine(el, ctx, place, lines, "p:nvSpPr");
     return;
   }
+  // A rectangle filled with a picture and holding no words is a picture.
+  const pictureFill = child(spPr, "a:blipFill");
+  if (
+    pictureFill &&
+    (!prst || prst === "rect") &&
+    !child(spPr, "a:custGeom") &&
+    !hasText(readText(child(el, "p:txBody"), ctx, {}))
+  ) {
+    await readPic(el, ctx, place, out, ids, pictureFill, "p:nvSpPr");
+    return;
+  }
   // A freeform drawn as one straight segment is a line, often with an arrow.
   const segment = straightPath(spPr);
   if (segment && !hasText(readText(child(el, "p:txBody"), ctx, {}))) {
@@ -1082,21 +1093,36 @@ async function readSp(
 }
 
 /**
- * A picture's crop from its <a:srcRect>; negative sides pad the picture with
- * empty space. Padding past the picture's own size, and crops that keep
- * almost nothing, are left out.
+ * A picture's crop, from its <a:srcRect> (the part of the picture kept) and
+ * the <a:fillRect> it is stretched over (the part of the box it fills);
+ * negative sides pad the picture with empty space. Padding past the
+ * picture's own size, and crops that keep almost nothing, are left out.
  */
 function readCrop(
-  srcRect: El | undefined,
+  blipFill: El | undefined,
   ctx: Context
 ): Extract<Shape, { kind: "image" }>["crop"] {
-  const side = (name: string) => (num(srcRect, name) ?? 0) / 100000;
-  const [left, top, right, bottom] = ["l", "t", "r", "b"].map(side);
-  if ([left, top, right, bottom].every((s) => s === 0)) return undefined;
+  const sides = (el: El | undefined) =>
+    ["l", "t", "r", "b"].map((name) => (num(el, name) ?? 0) / 100000);
+  const [L, T, R, B] = sides(child(blipFill, "a:srcRect"));
+  const [l, t, r, b] = sides(path(blipFill, "a:stretch", "a:fillRect"));
+  // The whole picture's size in box widths and heights, then how much of it
+  // lies past each side of the box.
+  const w = (1 - l - r) / (1 - L - R);
+  const h = (1 - t - b) / (1 - T - B);
+  const [left, top, right, bottom] = [
+    L - l / w,
+    T - t / h,
+    R - r / w,
+    B - b / h,
+  ];
+  if ([left, top, right, bottom].every((s) => Math.abs(s) < 1e-6)) {
+    return undefined;
+  }
   if (
     [left, top, right, bottom].some((s) => !(s >= -1)) ||
-    left + right > 0.99 ||
-    top + bottom > 0.99
+    !(left + right <= 0.99) ||
+    !(top + bottom <= 0.99)
   ) {
     ctx.skip("picture crop");
     return undefined;
@@ -1110,16 +1136,22 @@ function readCrop(
   };
 }
 
+/**
+ * A picture, or a rectangle filled with one (the form PowerPoint leaves an
+ * equation in for older readers): `blipFill` holds the picture.
+ */
 async function readPic(
   el: El,
   ctx: Context,
   place: Place,
   out: Shape[],
-  ids: Map<string, Shape>
+  ids: Map<string, Shape>,
+  blipFill = child(el, "p:blipFill"),
+  nv = "p:nvPicPr"
 ): Promise<void> {
   const spPr = child(el, "p:spPr");
   const box = boxOf(child(spPr, "a:xfrm"), ctx, place);
-  const embed = path(el, "p:blipFill", "a:blip")?.attrs["r:embed"];
+  const embed = child(blipFill, "a:blip")?.attrs["r:embed"];
   const rel = embed ? ctx.rels.get(embed) : undefined;
   if (!box || !rel || rel.external) {
     ctx.skip("linked picture");
@@ -1135,7 +1167,7 @@ async function readPic(
     ctx.skip("picture format");
     return;
   }
-  const crop = readCrop(child(path(el, "p:blipFill"), "a:srcRect"), ctx);
+  const crop = readCrop(blipFill, ctx);
   const stroke = readStroke(spPr, child(el, "p:style"), ctx);
   const shape: Shape = {
     id: newId("im"),
@@ -1150,7 +1182,7 @@ async function readPic(
     ...(stroke ? { stroke } : {}),
   };
   out.push(shape);
-  const numericId = path(el, "p:nvPicPr", "p:cNvPr")?.attrs.id;
+  const numericId = path(el, nv, "p:cNvPr")?.attrs.id;
   if (numericId) ids.set(numericId, shape);
 }
 

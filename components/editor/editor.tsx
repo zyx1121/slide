@@ -313,7 +313,7 @@ export function Editor({
     const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     item.scrollIntoView({
       behavior: still ? "auto" : "smooth",
-      block: "center",
+      block: "start",
     });
     if (focus) {
       item.querySelector<HTMLElement>("[role=application]")?.focus({
@@ -477,14 +477,15 @@ export function Editor({
 
   return (
     <div className="relative size-full">
-      {/* The slides, one after another down a page that scrolls. Each is as
-          wide as the page and short enough to be seen whole, with 64 px kept
-          at the top for the corners and room at the bottom for the dock. */}
+      {/* The slides, one after another down a page that scrolls. Each spans
+          the viewport less 1 rem on either side, with the same 1 rem between
+          slides, 64 px kept at the top for the corners and room at the bottom
+          for the dock. A slide snaps to sit just below the corners. */}
       <div
         ref={scroller}
         className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
       >
-        <ol className="flex flex-col items-center gap-10 pt-16 pb-28">
+        <ol className="flex flex-col items-center gap-4 pt-16 pb-28">
           {doc.slides.map((item, i) => (
             <li
               key={item.id}
@@ -492,10 +493,10 @@ export function Editor({
                 slideItems.current[i] = element;
               }}
               data-index={i}
-              className="flex w-full snap-center justify-center"
+              className="flex w-full snap-start scroll-mt-16 justify-center"
             >
               <Canvas
-                className="w-[min(100%,calc((100dvh_-_8rem)*16/9))]"
+                className="w-[calc(100dvw-2rem)]"
                 slide={i === index ? shown : item}
                 number={i + 1}
                 selection={i === index ? selection : NONE}

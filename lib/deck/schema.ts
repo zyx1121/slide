@@ -107,12 +107,28 @@ export const TextBox = z.strictObject({
   text: TextBody,
 });
 
+/** How much of the picture each side cuts away, as a fraction of it. */
+const CropSide = z.number().min(0).max(0.99);
+export const Crop = z
+  .strictObject({
+    left: CropSide,
+    top: CropSide,
+    right: CropSide,
+    bottom: CropSide,
+  })
+  .refine(
+    (crop) => crop.left + crop.right < 1 && crop.top + crop.bottom < 1,
+    "a crop must leave some of the picture"
+  );
+
 export const Image = z.strictObject({
   id: Id,
   kind: z.literal("image"),
   ...box,
   /** sha256 of the bytes in the assets table. */
   asset: z.string().regex(/^[0-9a-f]{64}$/, "assets are sha256 hex digests"),
+  /** The part of the picture shown, stretched over the box (a:srcRect). */
+  crop: Crop.optional(),
   stroke: Stroke.nullable().optional(),
 });
 

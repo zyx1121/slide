@@ -332,9 +332,20 @@ function shapeSvg(
     }
     case "image": {
       const href = options.assetHref?.(shape.asset) ?? null;
-      body = href
-        ? `<image href="${esc(href)}" ${frame} preserveAspectRatio="none"/>`
-        : `<rect ${frame} fill="#e5e5e5" stroke="#a3a3a3" stroke-width="2"/>`;
+      const crop = shape.crop;
+      if (href && crop) {
+        // The whole picture, sized so its kept part fills the box, seen
+        // through a viewport the size of the box.
+        const w = box.w / (1 - crop.left - crop.right);
+        const h = box.h / (1 - crop.top - crop.bottom);
+        body =
+          `<svg ${frame} viewBox="0 0 ${num(box.w)} ${num(box.h)}" preserveAspectRatio="none">` +
+          `<image href="${esc(href)}" x="${num(-crop.left * w)}" y="${num(-crop.top * h)}" width="${num(w)}" height="${num(h)}" preserveAspectRatio="none"/></svg>`;
+      } else {
+        body = href
+          ? `<image href="${esc(href)}" ${frame} preserveAspectRatio="none"/>`
+          : `<rect ${frame} fill="#e5e5e5" stroke="#a3a3a3" stroke-width="2"/>`;
+      }
       if (shape.stroke) {
         body += `<rect ${frame} fill="none" ${strokeAttrs(shape.stroke)}/>`;
       }

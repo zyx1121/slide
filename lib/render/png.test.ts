@@ -74,6 +74,41 @@ describe("renderPng", () => {
     expect(ink).toBeGreaterThan(1500);
   });
 
+  it("shows only the cropped part of a picture, stretched over its box", () => {
+    // A picture red on its left half and blue on its right.
+    const picture = `data:image/svg+xml;base64,${Buffer.from(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="200" height="100"><rect width="100" height="100" fill="#ff0000"/><rect x="100" width="100" height="100" fill="#0000ff"/></svg>'
+    ).toString("base64")}`;
+    const slide = {
+      id: "sl_crop",
+      title: "",
+      shapes: [
+        {
+          id: "im_crop",
+          kind: "image" as const,
+          x: 400,
+          y: 400,
+          w: 400,
+          h: 200,
+          asset: "a".repeat(64),
+          crop: { left: 0, top: 0, right: 0.5, bottom: 0 },
+        },
+      ],
+    };
+    const image = render(
+      renderSlideSvg(slide, {
+        slideNumber: 1,
+        background: null,
+        assetHref: () => picture,
+      })
+    );
+    const box = { x: 405, y: 405, w: 390, h: 190 };
+    const red = count(image, box, (r, g, b) => r > 200 && g < 50 && b < 50);
+    expect(red).toBe(box.w * box.h);
+    // Nothing spills past the box.
+    expect(pixel(image, 820, 500)).not.toBe("#0000ff");
+  });
+
   it("draws bold CJK with Noto Sans TC Bold, heavier than regular", () => {
     const ink = (bold: boolean) => {
       const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120"><text x="10" y="90" font-size="80" font-family="Noto Sans TC"${bold ? ' font-weight="700"' : ""}>第二點</text></svg>`;

@@ -441,6 +441,34 @@ function readText(
     paragraphs.push(paragraph);
   }
   if (paragraphs.length === 0) return undefined;
+  // Text PowerPoint shrank to fit (normAutofit): its sizes and line spacing
+  // as drawn, so the text fits here too and stays editable.
+  const autofit = child(bodyPr, "a:normAutofit");
+  const fontScale = (num(autofit, "fontScale") ?? 100000) / 100000;
+  const lineCut = (num(autofit, "lnSpcReduction") ?? 0) / 100000;
+  if (fontScale > 0 && fontScale < 1) {
+    paragraphs.forEach((paragraph, i) => {
+      const level = clamp(
+        num(child(children(txBody, "a:p")[i], "a:pPr"), "lvl") ?? 0,
+        0,
+        8
+      );
+      const fallback = defaults.levels?.[level]?.size ?? DEFAULT_TEXT.size;
+      for (const run of paragraph.runs) {
+        run.size =
+          Math.round(clamp((run.size ?? fallback) * fontScale, 1, 800) * 100) /
+          100;
+      }
+    });
+  }
+  if (lineCut > 0 && lineCut < 1) {
+    for (const paragraph of paragraphs) {
+      paragraph.lineSpacing =
+        Math.round(
+          Math.max(0.1, (paragraph.lineSpacing ?? 1) - lineCut) * 1000
+        ) / 1000;
+    }
+  }
   const body: TextBody = { paragraphs };
   const resolved =
     anchor === "ctr"

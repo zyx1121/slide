@@ -72,6 +72,17 @@ function richDeck(): DeckDocument {
             },
           },
           {
+            id: "sh_blob",
+            kind: "freeform",
+            x: 900,
+            y: 700,
+            w: 200,
+            h: 150,
+            fill: "#e8f1fe",
+            stroke: { color: "#3297fc", width: 3 },
+            path: "M 0 500 C 0 0 1000 0 1000 500 L 500 1000 Z",
+          },
+          {
             id: "sh_arrow",
             kind: "preset",
             geometry: "rightArrow",
@@ -374,6 +385,36 @@ describe("importPptx", () => {
       },
       { start: { x: 500, y: 200 }, end: { x: 100, y: 300 } },
     ]);
+  });
+
+  it("reads a freeform's outline across its box, arcs as curves, flips applied", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_curve", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const px = (n: number) => n * 6350;
+    // A half disc: across the top, then a 180 degree arc back underneath.
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="30" name="Freeform"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm flipV="1"><a:off x="${px(100)}" y="${px(100)}"/><a:ext cx="${px(200)}" cy="${px(100)}"/></a:xfrm><a:custGeom><a:pathLst><a:path w="200" h="100"><a:moveTo><a:pt x="0" y="0"/></a:moveTo><a:lnTo><a:pt x="200" y="0"/></a:lnTo><a:arcTo wR="100" hR="100" stAng="0" swAng="10800000"/><a:close/></a:path></a:pathLst></a:custGeom><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></p:spPr></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${shape}</p:spTree>`)
+    );
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(report.skipped).toEqual({});
+    const got = document.slides[0].shapes[0];
+    expect(got).toMatchObject({
+      kind: "freeform",
+      x: 100,
+      y: 100,
+      w: 200,
+      h: 100,
+      fill: "#ff0000",
+    });
+    const d = got.kind === "freeform" ? got.path : "";
+    // Flipped upside down: the top edge is at the bottom, the arc's lowest
+    // point (the middle of the box) at the top.
+    expect(d.startsWith("M 0 1000 L 1000 1000 C")).toBe(true);
+    expect(d).toContain(" 500 0 C");
+    expect(d.endsWith("0 1000 Z")).toBe(true);
   });
 
   it("reads a slide listed twice once, and holds text to the limits", async () => {

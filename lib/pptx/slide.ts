@@ -6,6 +6,7 @@ import type { Shape, Slide, TextBody } from "../deck/schema";
 import { type Point, routeConnector } from "../render/connector";
 import { shapeTextDefaults, type TextShape, titleScale } from "../render/svg";
 import { DEFAULT_TEXT } from "../render/template";
+import { parsePath, PATH_UNITS } from "../deck/path";
 import { connectorGeometry } from "./connector";
 
 /** EMU per canvas px. */
@@ -149,6 +150,27 @@ export function textBodyXml(
   return `<p:txBody>${bodyPr}<a:lstStyle/>${paragraphs.join("")}</p:txBody>`;
 }
 
+/** A freeform's outline as DrawingML custom geometry over its box. */
+function custGeom(d: string): string {
+  const pt = ([x, y]: [number, number]) =>
+    `<a:pt x="${Math.round(x * 100)}" y="${Math.round(y * 100)}"/>`;
+  const TAGS = {
+    M: "a:moveTo",
+    L: "a:lnTo",
+    C: "a:cubicBezTo",
+    Q: "a:quadBezTo",
+  };
+  const commands = (parsePath(d) ?? [])
+    .map((c) =>
+      c.op === "Z"
+        ? "<a:close/>"
+        : `<${TAGS[c.op]}>${c.points.map(pt).join("")}</${TAGS[c.op]}>`
+    )
+    .join("");
+  const size = PATH_UNITS * 100;
+  return `<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/><a:rect l="l" t="t" r="r" b="b"/><a:pathLst><a:path w="${size}" h="${size}">${commands}</a:path></a:pathLst></a:custGeom>`;
+}
+
 /** The DrawingML preset a shape is drawn as. */
 const presetOf = (shape: TextShape): string =>
   shape.kind === "preset"
@@ -182,7 +204,9 @@ function boxXml(shape: TextShape, id: number): string {
   const geom =
     shape.kind === "roundRect"
       ? `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${Math.round((shape.corner ?? 1 / 6) * 100000)}"/></a:avLst></a:prstGeom>`
-      : `<a:prstGeom prst="${presetOf(shape)}"><a:avLst/></a:prstGeom>`;
+      : shape.kind === "freeform"
+        ? custGeom(shape.path)
+        : `<a:prstGeom prst="${presetOf(shape)}"><a:avLst/></a:prstGeom>`;
   const fill = shape.fill ? solid(shape.fill) : "<a:noFill/>";
   const textBox = shape.kind === "text" ? ' txBox="1"' : "";
   // Text boxes without fill or outline grow with their text, as the editor's do.

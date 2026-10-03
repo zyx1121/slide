@@ -1119,7 +1119,13 @@ async function readSp(
         corner: Number.isFinite(adj) ? clamp(adj / 100000, 0, 0.5) : 1 / 6,
       };
     } else if (kind === "preset") {
-      shape = { ...common, kind, geometry: geometry! };
+      shape = {
+        ...common,
+        kind,
+        geometry: geometry!,
+        ...(xfrm?.attrs.flipH === "1" ? { flipH: true } : {}),
+        ...(xfrm?.attrs.flipV === "1" ? { flipV: true } : {}),
+      };
     } else if (kind === "freeform") {
       shape = {
         ...common,

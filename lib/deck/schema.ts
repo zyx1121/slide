@@ -132,6 +132,8 @@ export const PresetGeometry = z.enum([
   "upDownArrow",
   "leftBracket",
   "rightBracket",
+  "bentArrow",
+  "flowChartSummingJunction",
 ]);
 export type PresetGeometry = z.infer<typeof PresetGeometry>;
 
@@ -140,6 +142,9 @@ export const Preset = z.strictObject({
   id: Id,
   kind: z.literal("preset"),
   geometry: PresetGeometry,
+  /** The outline mirrored across the box, before it turns (text is not). */
+  flipH: z.boolean().optional(),
+  flipV: z.boolean().optional(),
   ...box,
   ...paint,
   text: TextBody.optional(),

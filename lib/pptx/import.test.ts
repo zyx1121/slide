@@ -86,6 +86,7 @@ function richDeck(): DeckDocument {
             id: "sh_arrow",
             kind: "preset",
             geometry: "rightArrow",
+            flipH: true,
             x: 500,
             y: 700,
             w: 300,

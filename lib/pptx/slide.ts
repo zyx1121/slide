@@ -229,7 +229,9 @@ function boxXml(shape: TextShape, id: number): string {
   const textBox = shape.kind === "text" ? ' txBox="1"' : "";
   // Text boxes without fill or outline grow with their text, as the editor's do.
   const autofit = shape.kind === "text" && !shape.fill && !shape.stroke;
-  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr${textBox}/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation)}${geom}${fill}${line(shape.stroke)}</p:spPr>${textBodyXml(shape.text, defaults, { autofit })}</p:sp>`;
+  const flips =
+    shape.kind === "preset" ? [shape.flipH, shape.flipV] : [false, false];
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr${textBox}/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation, flips[0], flips[1])}${geom}${fill}${line(shape.stroke)}</p:spPr>${textBodyXml(shape.text, defaults, { autofit })}</p:sp>`;
 }
 
 /** A crop in DrawingML's thousandths of a percent. */

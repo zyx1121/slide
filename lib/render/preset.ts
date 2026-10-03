@@ -178,6 +178,42 @@ export function presetPath(geometry: PresetGeometry, box: Box): PresetPath {
         ]),
       };
     }
+    case "bentArrow": {
+      // A shaft up from the bottom left, bent right into a head, with the
+      // guides of presetShapeDefinitions.xml at their defaults.
+      const th = ss * 0.25;
+      const aw2 = ss * 0.25;
+      const dh2 = aw2 - th / 2;
+      const ah = ss * 0.25;
+      const bs = Math.min(w - ah, h - dh2);
+      const bd = Math.min(ss * 0.4375, bs);
+      const bd2 = Math.max(bd - th, 0);
+      const x3 = l + th + bd2;
+      const x4 = r - ah;
+      const y3 = t + dh2 + th;
+      const y4 = y3 + dh2;
+      const y5 = t + dh2 + bd;
+      const fill =
+        `M${n(l)} ${n(b)}L${n(l)} ${n(y5)}` +
+        `A${n(bd)} ${n(bd)} 0 0 1 ${n(l + bd)} ${n(t + dh2)}` +
+        `L${n(x4)} ${n(t + dh2)}L${n(x4)} ${n(t)}L${n(r)} ${n(t + aw2)}` +
+        `L${n(x4)} ${n(y4)}L${n(x4)} ${n(y3)}L${n(x3)} ${n(y3)}` +
+        (bd2 > 0
+          ? `A${n(bd2)} ${n(bd2)} 0 0 0 ${n(l + th)} ${n(y3 + bd2)}`
+          : "") +
+        `L${n(l + th)} ${n(b)}Z`;
+      return { fill };
+    }
+    case "flowChartSummingJunction": {
+      // A circle crossed by an X from corner to corner of its square.
+      const rx = w / 2;
+      const ry = h / 2;
+      const ix = rx * Math.SQRT1_2;
+      const iy = ry * Math.SQRT1_2;
+      const circle = `M${n(l)} ${n(vc)}A${n(rx)} ${n(ry)} 0 1 1 ${n(r)} ${n(vc)}A${n(rx)} ${n(ry)} 0 1 1 ${n(l)} ${n(vc)}Z`;
+      const cross = `M${n(hc - ix)} ${n(vc - iy)}L${n(hc + ix)} ${n(vc + iy)}M${n(hc + ix)} ${n(vc - iy)}L${n(hc - ix)} ${n(vc + iy)}`;
+      return { fill: circle, stroke: circle + cross };
+    }
     case "leftBracket":
     case "rightBracket": {
       // Corners round over 8.333% of the shorter side, as PowerPoint draws them.

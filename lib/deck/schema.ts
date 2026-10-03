@@ -47,6 +47,11 @@ export const Paragraph = z.strictObject({
   align: z.enum(["left", "center", "right", "justify"]).optional(),
   bullet: z.enum(["none", "bullet", "number"]).optional(),
   level: z.number().int().min(0).max(8).optional(),
+  /** Line pitch as a multiple of single spacing (lnSpc in percent). */
+  lineSpacing: z.number().min(0.1).max(10).optional(),
+  /** Space above and below the paragraph, in px (spcBef, spcAft). */
+  spaceBefore: z.number().min(0).max(2000).optional(),
+  spaceAfter: z.number().min(0).max(2000).optional(),
 });
 
 export const TextBody = z.strictObject({

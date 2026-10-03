@@ -93,7 +93,14 @@ function richDeck(): DeckDocument {
             fill: "#3297fc",
             stroke: null,
             text: {
-              paragraphs: [{ runs: [{ text: "next", size: 36 }] }],
+              paragraphs: [
+                {
+                  runs: [{ text: "next", size: 36 }],
+                  lineSpacing: 1.5,
+                  spaceBefore: 12,
+                  spaceAfter: 6,
+                },
+              ],
               wrap: false,
             },
           },
@@ -442,6 +449,31 @@ describe("importPptx", () => {
     expect(
       got.kind === "rect" && got.text?.paragraphs.map((q) => q.align)
     ).toEqual(["center", "right", "left"]);
+  });
+
+  it("reads line spacing and space around paragraphs, from levels too", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_space", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const p = (text: string, pPr = "") =>
+      `<a:p>${pPr}<a:r><a:rPr lang="en-US" sz="2400"/><a:t>${text}</a:t></a:r></a:p>`;
+    // The list style sets 150% lines and 12 pt before; the second paragraph
+    // sets its own 6 pt after and 20% of a line before.
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="50" name="Box"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:lnSpc><a:spcPct val="150000"/></a:lnSpc><a:spcBef><a:spcPts val="1200"/></a:spcBef></a:lvl1pPr></a:lstStyle>${p("first")}${p("second", '<a:pPr><a:spcBef><a:spcPct val="20000"/></a:spcBef><a:spcAft><a:spcPts val="600"/></a:spcAft></a:pPr>')}</p:txBody></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${shape}</p:spTree>`)
+    );
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const got = document.slides[0].shapes[0];
+    const [first, second] = got.kind === "text" ? got.text.paragraphs : [];
+    expect(first).toMatchObject({ lineSpacing: 1.5, spaceBefore: 24 });
+    // 20% of a 48 px line at 1.2: 11.52 px; 6 pt is 12 px.
+    expect(second).toMatchObject({
+      lineSpacing: 1.5,
+      spaceBefore: 11.52,
+      spaceAfter: 12,
+    });
   });
 
   it("reads a slide listed twice once, and holds text to the limits", async () => {

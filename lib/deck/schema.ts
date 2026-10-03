@@ -3,6 +3,8 @@
 // .pptx export and import map one to one. Every write is validated here.
 import * as z from "zod";
 
+import { DECK_TITLE_MAX } from "./limits";
+
 export const SCHEMA_VERSION = 1;
 
 /**
@@ -166,7 +168,7 @@ export const Slide = z.strictObject({
 export const DeckDocument = z
   .strictObject({
     schema: z.literal(SCHEMA_VERSION),
-    title: z.string().trim().min(1).max(200),
+    title: z.string().trim().min(1).max(DECK_TITLE_MAX),
     slides: z.array(Slide).min(1).max(500),
   })
   .superRefine((document, ctx) => {

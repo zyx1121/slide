@@ -10,10 +10,13 @@ import { cn } from "@/lib/utils";
 export function SlideView({
   slide,
   number,
+  decorative = false,
   className,
 }: {
   slide: Slide;
   number: number;
+  /** Hidden from screen readers, as a thumbnail inside a labelled link. */
+  decorative?: boolean;
   className?: string;
 }) {
   const svg = renderSlideSvg(slide, {
@@ -24,8 +27,9 @@ export function SlideView({
   return (
     <div
       data-slot="slide-view"
-      role="img"
-      aria-label={slide.title || `第 ${number} 頁`}
+      {...(decorative
+        ? { "aria-hidden": true }
+        : { role: "img", "aria-label": slide.title || `第 ${number} 頁` })}
       className={cn(
         "aspect-video w-full overflow-hidden rounded-lg border border-border bg-white",
         className

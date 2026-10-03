@@ -32,6 +32,7 @@ import {
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
+import { ReviewTool } from "@/components/editor/review-tool";
 import {
   FillTool,
   LineTools,
@@ -60,6 +61,7 @@ import { compare } from "fast-json-patch";
 import Link from "next/link";
 
 import { DeckError } from "@/lib/deck/errors";
+import type { Suggestion } from "@/lib/deck/revisions";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
@@ -243,6 +245,14 @@ export function Editor({
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [notice, setNotice] = useState(initialNotice);
+  // A suggestion shown applied, read only, until the preview ends.
+  const [previewDoc, setPreviewState] = useState<DeckDocument | null>(null);
+  const previewing = previewDoc !== null;
+  const previewRef = useRef(false);
+  const setPreviewDoc = (next: DeckDocument | null) => {
+    previewRef.current = next !== null;
+    setPreviewState(next);
+  };
 
   /** An edit that could not be applied here; it never reached the server. */
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -316,7 +326,7 @@ export function Editor({
   const commit = useCallback(
     (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
-      if (invalid !== null) return "paused";
+      if (invalid !== null || previewRef.current) return "paused";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -956,7 +966,7 @@ export function Editor({
   };
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
-  const paused = !saving.accepting || invalid !== null;
+  const paused = !saving.accepting || invalid !== null || previewing;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   const problem = invalid ?? refusal ?? saving.message;
@@ -981,7 +991,7 @@ export function Editor({
           className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
         >
           <ol className="flex flex-col items-center gap-4 pt-16 pb-28">
-            {doc.slides.map((item, i) => (
+            {(previewDoc ?? doc).slides.map((item, i) => (
               <li
                 key={item.id}
                 ref={(element) => {
@@ -992,9 +1002,9 @@ export function Editor({
               >
                 <Canvas
                   className="w-[calc(100dvw-2rem)]"
-                  slide={i === index ? shown : item}
+                  slide={!previewing && i === index ? shown : item}
                   number={i + 1}
-                  selection={i === index ? selection : NONE}
+                  selection={!previewing && i === index ? selection : NONE}
                   onSelect={(ids) => select(i, ids)}
                   onMove={(ids, dx, dy) =>
                     commit(moveOps(docRef.current.slides[i], i, ids, dx, dy), i)
@@ -1007,7 +1017,7 @@ export function Editor({
                   onCopy={(event) => copy(event, i)}
                   onCut={(event) => cut(event, i)}
                   onPaste={(event) => paste(event, i)}
-                  text={canvasText(i)}
+                  text={previewing ? null : canvasText(i)}
                   onEditText={(target, point) => startEdit(i, target, point)}
                   tool={tool}
                   onDrawLine={(start, end) => drawLine(i, start, end)}
@@ -1039,6 +1049,21 @@ export function Editor({
         {/* The dock floats at the bottom center, as Plump's does; only the bar
           and the notice take pointer events, the rest stays the canvas's. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-2">
+          {previewing && (
+            <div
+              role="status"
+              data-slot="floating-notice"
+              data-surface="tinted"
+              className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
+            >
+              <p className="text-xs">
+                正在預覽建議套用後的樣子，這時不能編輯。
+              </p>
+              <Button variant="ghost" onClick={() => setPreviewDoc(null)}>
+                結束預覽
+              </Button>
+            </div>
+          )}
           {notice && !problem && (
             <div
               role="status"
@@ -1194,6 +1219,29 @@ export function Editor({
               onClick={() => goTo(visible + 1)}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
+            <ReviewTool
+              deckId={deckId}
+              busy={saving.pending > 0 || draft?.dirty === true || nudging}
+              onChanged={async () => {
+                await saver.refresh();
+              }}
+              onPreview={(suggestion: Suggestion | null) => {
+                if (!suggestion) {
+                  setPreviewDoc(null);
+                  return;
+                }
+                endEdit();
+                try {
+                  setPreviewDoc(
+                    applyOperations(docRef.current, suggestion.patch).document
+                  );
+                  setRefusal(null);
+                } catch {
+                  setPreviewDoc(null);
+                  setRefusal("這個建議套不上目前的簡報。");
+                }
+              }}
+            />
             <CheckTool
               document={doc}
               onShow={(violation) => {

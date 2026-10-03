@@ -149,12 +149,13 @@ export function textBodyXml(
   return `<p:txBody>${bodyPr}<a:lstStyle/>${paragraphs.join("")}</p:txBody>`;
 }
 
-const PRESET: Record<TextShape["kind"], string> = {
-  rect: "rect",
-  roundRect: "roundRect",
-  ellipse: "ellipse",
-  text: "rect",
-};
+/** The DrawingML preset a shape is drawn as. */
+const presetOf = (shape: TextShape): string =>
+  shape.kind === "preset"
+    ? shape.geometry
+    : shape.kind === "text"
+      ? "rect"
+      : shape.kind;
 
 /**
  * Connection site indices in PowerPoint's presets. Rectangles list top,
@@ -181,7 +182,7 @@ function boxXml(shape: TextShape, id: number): string {
   const geom =
     shape.kind === "roundRect"
       ? `<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val ${Math.round((shape.corner ?? 1 / 6) * 100000)}"/></a:avLst></a:prstGeom>`
-      : `<a:prstGeom prst="${PRESET[shape.kind]}"><a:avLst/></a:prstGeom>`;
+      : `<a:prstGeom prst="${presetOf(shape)}"><a:avLst/></a:prstGeom>`;
   const fill = shape.fill ? solid(shape.fill) : "<a:noFill/>";
   const textBox = shape.kind === "text" ? ' txBox="1"' : "";
   // Text boxes without fill or outline grow with their text, as the editor's do.

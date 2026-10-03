@@ -44,7 +44,7 @@ export const MAX_SIZE = 120;
 type Rect = { x: number; y: number; w: number; h: number };
 type TextShape = Extract<
   Shape,
-  { kind: "rect" | "roundRect" | "ellipse" | "text" }
+  { kind: "rect" | "roundRect" | "ellipse" | "preset" | "text" }
 >;
 
 const pt = (px: number) => Math.round((px / 2) * 10) / 10;
@@ -128,6 +128,7 @@ const KIND_NAMES: Record<Shape["kind"], string> = {
   rect: "矩形",
   roundRect: "圓角矩形",
   ellipse: "橢圓",
+  preset: "圖案",
   text: "文字方塊",
   image: "圖片",
   line: "連接線",

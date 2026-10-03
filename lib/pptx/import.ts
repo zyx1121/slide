@@ -7,6 +7,7 @@
 import { newId } from "../ids";
 import {
   DeckDocument,
+  PresetGeometry,
   SCHEMA_VERSION,
   type Shape,
   type Slide,
@@ -616,12 +617,15 @@ async function readSp(
   const box = boxOf(child(spPr, "a:xfrm"), ctx, place);
   if (!box) return;
   const textBox = path(nv, "p:cNvSpPr")?.attrs.txBox === "1";
+  const geometry = PresetGeometry.safeParse(prst).data;
   const kind =
     textBox && (!prst || prst === "rect")
       ? "text"
       : prst === "rect" || prst === "roundRect" || prst === "ellipse"
         ? prst
-        : null;
+        : geometry
+          ? "preset"
+          : null;
   const fontRef = child(style, "a:fontRef");
   const textColor =
     readColor(fontRef, ctx.theme, ctx.colorMap) ??
@@ -682,6 +686,8 @@ async function readSp(
         kind,
         corner: Number.isFinite(adj) ? clamp(adj / 100000, 0, 0.5) : 1 / 6,
       };
+    } else if (kind === "preset") {
+      shape = { ...common, kind, geometry: geometry! };
     } else {
       shape = { ...common, kind };
     }

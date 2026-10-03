@@ -7,6 +7,7 @@ import { renderAsync, Resvg, type ResvgRenderOptions } from "@resvg/resvg-js";
 
 import { SLIDE_WIDTH } from "../deck/schema";
 import { BACKGROUND_PATH } from "./template";
+import { inSpan } from "../otel/span";
 
 const FONT_FILES = [
   "Carlito-Regular.ttf",
@@ -94,13 +95,29 @@ export async function renderPngAsync(
   width = SLIDE_WIDTH,
   limits = RENDER_LIMITS
 ): Promise<Buffer> {
+  return inSpan("render slide", { "render.width": width }, (set) =>
+    renderQueued(svg, width, limits, set)
+  );
+}
+
+async function renderQueued(
+  svg: string,
+  width: number,
+  limits: typeof RENDER_LIMITS,
+  set: (more: Record<string, number | string>) => void
+): Promise<Buffer> {
+  const queued = Date.now();
   if (running >= limits.running) {
-    if (queue.length >= limits.waiting) throw new RenderBusyError("busy");
+    if (queue.length >= limits.waiting) {
+      set({ "render.outcome": "busy" });
+      throw new RenderBusyError("busy");
+    }
     // A finishing render hands its slot over, so the count stays exact.
     await new Promise<void>((resolve) => queue.push(resolve));
   } else {
     running++;
   }
+  set({ "render.waited_ms": Date.now() - queued });
   const abort = new AbortController();
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
@@ -108,11 +125,14 @@ export async function renderPngAsync(
     const timeout = new Promise<never>((_, reject) => {
       timer = setTimeout(() => {
         // Settle first: aborting rejects the render at once.
+        set({ "render.outcome": "timeout" });
         reject(new RenderBusyError("timeout"));
         abort.abort();
       }, limits.timeoutMs);
     });
-    return (await Promise.race([rendered, timeout])).asPng();
+    const png = (await Promise.race([rendered, timeout])).asPng();
+    set({ "render.outcome": "ok", "render.png_bytes": png.length });
+    return png;
   } finally {
     clearTimeout(timer);
     const next = queue.shift();

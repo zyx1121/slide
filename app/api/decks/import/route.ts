@@ -4,6 +4,8 @@ import { sql } from "@/lib/db";
 import { IMPORT_MAX_BYTES } from "@/lib/deck/limits";
 import { createDeck } from "@/lib/deck/store";
 import { readCapped, sameSite } from "@/lib/http/request";
+import { emitErrorLog } from "@/lib/otel/log";
+import { inSpan } from "@/lib/otel/span";
 import { ImportBusyError, importInWorker } from "@/lib/pptx/pool";
 
 export const dynamic = "force-dynamic";
@@ -38,34 +40,52 @@ export async function POST(request: Request) {
   // The file is read in a worker of its own. Pictures are checked there but
   // stored only once all of it has been, so a file that fails part way
   // leaves none behind.
-  let outcome: Awaited<ReturnType<typeof importInWorker>>;
-  try {
-    outcome = await importInWorker({ bytes, fallbackTitle: fallback });
-  } catch (error) {
-    if (!(error instanceof ImportBusyError)) throw error;
-    // An import that runs out of time is too much file; a full queue is not.
-    return error.reason === "busy"
-      ? Response.json({ error: "busy" }, { status: 503 })
-      : Response.json({ error: "too-large" }, { status: 413 });
-  }
-  if (!outcome.ok) {
-    // Anything the importer trips over is the file's fault, not the server's.
-    if (outcome.bug) {
-      // Logged as an error: it may be a bug in the importer, not the file.
-      console.error("import: the importer failed on a file", outcome.bug);
+  return inSpan("import pptx", { "pptx.bytes": bytes.length }, async (set) => {
+    let outcome: Awaited<ReturnType<typeof importInWorker>>;
+    try {
+      outcome = await importInWorker({ bytes, fallbackTitle: fallback });
+    } catch (error) {
+      if (!(error instanceof ImportBusyError)) throw error;
+      set({ "import.outcome": error.reason });
+      // An import that runs out of time is too much file; a full queue is not.
+      return error.reason === "busy"
+        ? Response.json({ error: "busy" }, { status: 503 })
+        : Response.json({ error: "too-large" }, { status: 413 });
     }
+    if (!outcome.ok) {
+      set({ "import.outcome": outcome.code });
+      // Anything the importer trips over is the file's fault, not the server's.
+      if (outcome.bug) {
+        // Logged as an error: it may be a bug in the importer, not the file.
+        console.error("import: the importer failed on a file", outcome.bug);
+        emitErrorLog(new Error(outcome.bug.split("\n")[0]), {
+          "exception.stacktrace": outcome.bug,
+          "http.route": "/api/decks/import",
+        });
+      }
+      return Response.json(
+        { error: outcome.code },
+        { status: outcome.code === "too-large" ? 413 : 422 }
+      );
+    }
+    for (const [, image] of outcome.pictures) {
+      await saveAsset(sql, user.sub, image);
+    }
+    const imported = outcome.result;
+    const deck = await createDeck(sql, user.sub, imported.document);
+    // Counts only: what the file held and what was left out, by kind.
+    const skipped = imported.report.skipped;
+    set({
+      "import.outcome": "ok",
+      "import.slides": imported.document.slides.length,
+      "import.shapes": imported.report.shapes,
+      "import.pictures": outcome.pictures.length,
+      "import.skipped": Object.values(skipped).reduce((a, b) => a + b, 0),
+      "import.skipped_kinds": Object.keys(skipped).sort().join(","),
+    });
     return Response.json(
-      { error: outcome.code },
-      { status: outcome.code === "too-large" ? 413 : 422 }
+      { id: deck.id, report: imported.report },
+      { status: 201 }
     );
-  }
-  for (const [, image] of outcome.pictures) {
-    await saveAsset(sql, user.sub, image);
-  }
-  const imported = outcome.result;
-  const deck = await createDeck(sql, user.sub, imported.document);
-  return Response.json(
-    { id: deck.id, report: imported.report },
-    { status: 201 }
-  );
+  });
 }

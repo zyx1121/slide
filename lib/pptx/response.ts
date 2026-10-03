@@ -4,6 +4,7 @@ import type postgres from "postgres";
 
 import { readAsset } from "../assets/store";
 import type { Deck } from "../deck/store";
+import { inSpan } from "../otel/span";
 import { exportPptx, type Media } from "./export";
 
 /** A file name for the deck's title: no path separators or control characters. */
@@ -31,7 +32,18 @@ export async function pptxResponse(
     const asset = await readAsset(db, deck.ownerSub, sha256);
     if (asset) media.set(sha256, { mime: asset.mime, data: asset.data });
   }
-  const bytes = exportPptx(deck.document, media);
+  const bytes = await inSpan(
+    "export pptx",
+    {
+      "export.slides": deck.document.slides.length,
+      "export.pictures": media.size,
+    },
+    (set) => {
+      const out = exportPptx(deck.document, media);
+      set({ "export.bytes": out.length });
+      return out;
+    }
+  );
   return new Response(new Uint8Array(bytes), {
     headers: {
       "content-type":

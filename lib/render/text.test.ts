@@ -264,6 +264,17 @@ describe("layoutText", () => {
       undefined,
       "•",
     ]);
+    // A bullet may be another character.
+    const dashed = layoutText(
+      {
+        paragraphs: [
+          { bullet: "bullet", bulletChar: "–", runs: [{ text: "a" }] },
+        ],
+      },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(dashed.lines[0].bullet?.text).toBe("–");
   });
 
   it("spaces lines and paragraphs as PowerPoint does", () => {

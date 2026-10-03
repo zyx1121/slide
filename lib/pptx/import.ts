@@ -118,6 +118,7 @@ const MAX_SHAPES = 1000;
 type LevelStyle = {
   size?: number;
   bullet?: "bullet" | "number" | "none";
+  bulletChar?: string;
   color?: string;
   align?: Paragraph["align"];
   spacing?: Spacing;
@@ -222,6 +223,7 @@ function readLevels(
     const sz = num(rPr, "sz");
     levels.push({
       size: sz !== undefined ? (sz / 50) * ctx.k : undefined,
+      bulletChar: bulletCharOf(pPr),
       bullet: child(pPr, "a:buNone")
         ? "none"
         : child(pPr, "a:buChar")
@@ -237,6 +239,38 @@ function readLevels(
   return levels;
 }
 
+/**
+ * Symbol fonts' bullets as the Unicode characters they draw: Wingdings and
+ * Symbol map letters to shapes. Others in those fonts are drawn as "•".
+ */
+const SYMBOL_BULLETS: Record<string, Record<string, string>> = {
+  Wingdings: {
+    n: "■",
+    l: "●",
+    "§": "■",
+    Ø: "➢",
+    ü: "✓",
+    q: "❑",
+    v: "❖",
+    "®": "◆",
+    o: "□",
+  },
+  Symbol: { "·": "•", Ø: "¬" },
+};
+
+/** A paragraph's bullet character from its a:buChar, in Unicode. */
+function bulletCharOf(pPr: El | undefined): string | undefined {
+  const char = child(pPr, "a:buChar")?.attrs.char;
+  if (!char) return undefined;
+  const font = child(pPr, "a:buFont")?.attrs.typeface ?? "";
+  const symbols = SYMBOL_BULLETS[font];
+  const mapped = symbols ? (symbols[char] ?? "•") : char;
+  const first = [...mapped][0];
+  return first && !/[\u0000-\u001f\u007f-\u009f\s]/.test(first)
+    ? first
+    : undefined;
+}
+
 /** Level styles laid over each other: later ones win where they say something. */
 function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
   const out: LevelStyle[] = Array.from({ length: 9 }, () => ({}));
@@ -244,6 +278,7 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
     layer?.forEach((level, i) => {
       if (level.size !== undefined) out[i].size = level.size;
       if (level.bullet !== undefined) out[i].bullet = level.bullet;
+      if (level.bulletChar !== undefined) out[i].bulletChar = level.bulletChar;
       if (level.color !== undefined) out[i].color = level.color;
       if (level.align !== undefined) out[i].align = level.align;
       out[i].spacing = overSpacing(out[i].spacing, level.spacing);
@@ -254,7 +289,12 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
 
 /** Sizes and bullets only: a shape's own style gives its text color. */
 const withoutColor = (levels: LevelStyle[]): LevelStyle[] =>
-  levels.map(({ size, bullet, spacing }) => ({ size, bullet, spacing }));
+  levels.map(({ size, bullet, bulletChar, spacing }) => ({
+    size,
+    bullet,
+    bulletChar,
+    spacing,
+  }));
 
 /** A shape's box from its <a:xfrm>, on the canvas. */
 function boxOf(xfrm: El | undefined, ctx: Context, place: Place): Box | null {
@@ -393,6 +433,10 @@ function readText(
           ? "number"
           : style?.bullet;
     if (bullet && bullet !== "none") paragraph.bullet = bullet;
+    const bulletChar = bulletCharOf(pPr) ?? style?.bulletChar;
+    if (bullet === "bullet" && bulletChar && bulletChar !== "•") {
+      paragraph.bulletChar = bulletChar;
+    }
     if (level) paragraph.level = level;
     paragraphs.push(paragraph);
   }

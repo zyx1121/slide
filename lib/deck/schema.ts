@@ -46,6 +46,14 @@ export const Paragraph = z.strictObject({
   runs: z.array(Run).max(500),
   align: z.enum(["left", "center", "right", "justify"]).optional(),
   bullet: z.enum(["none", "bullet", "number"]).optional(),
+  /** The bullet's character, when it is not "•" (as "–" or "»"). */
+  bulletChar: z
+    .string()
+    .refine(
+      (c) => [...c].length === 1 && !/[\u0000-\u001f\u007f-\u009f\s]/.test(c),
+      "a bullet is one visible character"
+    )
+    .optional(),
   level: z.number().int().min(0).max(8).optional(),
   /** Line pitch as a multiple of single spacing (lnSpc in percent). */
   lineSpacing: z.number().min(0.1).max(10).optional(),

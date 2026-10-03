@@ -40,6 +40,17 @@ flowchart LR
 
 One Next.js app and one Postgres database, run with Docker Compose. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision. Members sign in with Keycloak, and each member sees only their own decks.
 
+## Develop
+
+```sh
+bun install
+cp .env.example .env   # set DATABASE_URL to a Postgres you can reach
+bun run migrate
+bun dev
+```
+
+CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun run test`, then builds the image and smoke-tests the compose stack with [scripts/smoke.sh](scripts/smoke.sh).
+
 ## Contributing
 
 Issues and PRs welcome: start with [CONTRIBUTING.md](https://github.com/zyx1121/.github/blob/main/CONTRIBUTING.md).

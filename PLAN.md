@@ -10,14 +10,14 @@ WinLab members build and tweak lab decks in the browser instead of opening Power
 
 Made on 2026-10-03.
 
-| Topic | Decision |
-|---|---|
-| Repo | `zyx1121/slide.winlab.tw`, public, MIT |
-| Sign-in | Keycloak for both the web app and MCP. WinLab's instance uses `auth.winlab.tw`, realm `winlab` |
-| Access | A member reads and edits only their own decks. Sharing comes later |
-| Home page | Create a deck from the WinLab template, or upload a `.pptx` |
-| Runtime | Two services in Docker Compose: the Next.js app and Postgres |
-| Editing model | Free placement. Only the title and the page number come from the template; everything else is shapes the member places |
+| Topic           | Decision                                                                                                                                               |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Repo            | `zyx1121/slide.winlab.tw`, public, MIT                                                                                                                 |
+| Sign-in         | Keycloak for both the web app and MCP. WinLab's instance uses `auth.winlab.tw`, realm `winlab`                                                         |
+| Access          | A member reads and edits only their own decks. Sharing comes later                                                                                     |
+| Home page       | Create a deck from the WinLab template, or upload a `.pptx`                                                                                            |
+| Runtime         | Two services in Docker Compose: the Next.js app and Postgres                                                                                           |
+| Editing model   | Free placement. Only the title and the page number come from the template; everything else is shapes the member places                                 |
 | Source of truth | A JSON shape model in Postgres. Its fields follow DrawingML (preset geometry, transform, connector sites), so `.pptx` export and import map one to one |
 
 ## Architecture
@@ -37,13 +37,13 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 
 ### Data
 
-| Record | Fields |
-|---|---|
-| deck | owner, title, published flag, random public id, version, document |
-| document | slides, each with shapes. A shape has a stable id, a kind (`rect`, `roundRect`, `ellipse`, `text`, `line`, `image`), a transform, a style, text runs, and for connectors the shape and site each end attaches to |
-| revision | deck, base version, author (member or agent), status (`applied`, `suggested`, `rejected`), a JSON Patch |
-| selection | one per member: deck, slide, targets (shape id, optional text range) |
-| asset | image bytes, stored once by sha256 on a volume |
+| Record    | Fields                                                                                                                                                                                                           |
+| --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| deck      | owner, title, published flag, random public id, version, document                                                                                                                                                |
+| document  | slides, each with shapes. A shape has a stable id, a kind (`rect`, `roundRect`, `ellipse`, `text`, `line`, `image`), a transform, a style, text runs, and for connectors the shape and site each end attaches to |
+| revision  | deck, base version, author (member or agent), status (`applied`, `suggested`, `rejected`), a JSON Patch                                                                                                          |
+| selection | one per member: deck, slide, targets (shape id, optional text range)                                                                                                                                             |
+| asset     | image bytes, stored once by sha256 on a volume                                                                                                                                                                   |
 
 ### Rules
 
@@ -55,14 +55,14 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 
 ### MCP tools
 
-| Tool | Does |
-|---|---|
-| `list_decks`, `get_deck` | read the member's decks |
-| `render_slide` | return a slide as PNG so the agent can check its own work |
-| `get_selection` | return what the member selected: targets, their JSON, and a PNG crop |
-| `add_shapes`, `update_shapes`, `delete_shapes` | edit shapes, as suggestions |
-| `add_slide`, `delete_slide`, `move_slide` | edit slides, as suggestions |
-| `check_deck` | return rule violations with slide and shape ids |
+| Tool                                           | Does                                                                 |
+| ---------------------------------------------- | -------------------------------------------------------------------- |
+| `list_decks`, `get_deck`                       | read the member's decks                                              |
+| `render_slide`                                 | return a slide as PNG so the agent can check its own work            |
+| `get_selection`                                | return what the member selected: targets, their JSON, and a PNG crop |
+| `add_shapes`, `update_shapes`, `delete_shapes` | edit shapes, as suggestions                                          |
+| `add_slide`, `delete_slide`, `move_slide`      | edit slides, as suggestions                                          |
+| `check_deck`                                   | return rule violations with slide and shape ids                      |
 
 ### Rule check
 

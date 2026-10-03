@@ -1,0 +1,86 @@
+name: ci
+
+on:
+  # `edited` matters: a retitle changes the commit message a squash merge will
+  # write, so the title gate has to run again.
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+  push:
+    branches: [main]
+  # release-please.yml dispatches this workflow on the release branch, so the
+  # release pull request carries checks without a PAT.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  # A retitle reruns only the title check, in its own group, so it never
+  # cancels a running build.
+  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'edited' && 'title' || 'build' }}
+  cancel-in-progress: true
+
+jobs:
+  pr-title:
+    name: PR title
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          # The same set release-please-config.json gives a changelog section.
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            docs
+            ci
+            chore
+            test
+            build
+            revert
+          requireScope: false
+          # A changelog line reads as prose, so the subject starts lowercase.
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: >-
+            The subject "{subject}" of pull request "{title}" starts with an
+            uppercase letter. Conventional Commit subjects are lowercase.
+
+  check:
+    name: Typecheck, lint, format, test
+    if: github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - run: bun install --frozen-lockfile
+      - run: bun run typecheck
+      - run: bun run lint
+      - run: bun run format:check
+      - run: bun run test
+
+  compose:
+    name: Image and compose smoke test
+    if: github.event.action != 'edited'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the image
+        run: docker build -t ghcr.io/zyx1121/slide.winlab.tw:ci .
+      - name: Start the stack from .env.example
+        run: |
+          sed -e 's/^SLIDE_VERSION=.*/SLIDE_VERSION=ci/' \
+              -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-postgres/' \
+              .env.example > .env
+          docker compose up -d
+      - name: Smoke test
+        run: sh scripts/smoke.sh
+      - name: Logs
+        if: failure()
+        run: docker compose logs

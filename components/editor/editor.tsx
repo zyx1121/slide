@@ -62,6 +62,7 @@ import {
   pasteOffset,
   pasteShapes,
 } from "@/lib/editor/clipboard";
+import { type End, lineEndOps, newLine, type Side } from "@/lib/editor/connect";
 import type { Box, Point } from "@/lib/editor/geometry";
 import { guard } from "@/lib/editor/guard";
 import {
@@ -127,6 +128,7 @@ const NONE: string[] = [];
 const HELP = [
   "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個。",
   "按兩下形狀或標題來打字，選取形狀後按 Enter 也可以；Esc 結束。",
+  "連接線：從形狀拖到另一個形狀，兩端會黏在最近的連接點；拖選取線條的端點可以改接。",
   "方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift 鎖定方向，按 Alt 不對齊。",
   "⌘Z 復原，⌘⇧Z 重做，⌘D 再製，⌘C、⌘X、⌘V 複製、剪下、貼上（Windows 用 Ctrl）。",
   "Page Up、Page Down 換頁。",
@@ -207,6 +209,8 @@ export function Editor({
   const [slideIndex, setSlideIndex] = useState(0);
   const [visibleIndex, setVisibleIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
+  /** A tool that draws on the next drag instead of selecting. */
+  const [tool, setTool] = useState<"connector" | null>(null);
   const scroller = useRef<HTMLDivElement>(null);
   const slideItems = useRef<(HTMLLIElement | null)[]>([]);
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
@@ -450,6 +454,18 @@ export function Editor({
       // A new text box is typed into right away.
       if (kind === "text") startEdit(visible, shape.id, null);
     }
+  };
+
+  /** Adds a connector drawn on a slide and selects it. */
+  const drawLine = (at: number, start: End, end: End) => {
+    setTool(null);
+    const line = newLine(start, end);
+    if (commit(insertOps(at, line), at) === "applied") select(at, [line.id]);
+  };
+
+  /** Moves one end of a connector, gluing it to a site or freeing it. */
+  const moveLineEnd = (at: number, id: string, side: Side, end: End) => {
+    commit(lineEndOps(docRef.current.slides[at], at, id, side, end), at);
   };
 
   /**
@@ -775,7 +791,8 @@ export function Editor({
         startEdit(at, shape.id, null);
       }
     } else if (event.key === "Escape") {
-      select(at, []);
+      if (tool) setTool(null);
+      else select(at, []);
     } else if (event.metaKey || event.ctrlKey) {
       const key = event.key.toLowerCase();
       if (key === "a") {
@@ -893,6 +910,9 @@ export function Editor({
                   onPaste={(event) => paste(event, i)}
                   text={canvasText(i)}
                   onEditText={(target, point) => startEdit(i, target, point)}
+                  tool={tool}
+                  onDrawLine={(start, end) => drawLine(i, start, end)}
+                  onLineEnd={(id, side, end) => moveLineEnd(i, id, side, end)}
                 />
               </li>
             ))}
@@ -970,6 +990,15 @@ export function Editor({
                     tip="插入文字方塊"
                     icon={TypeIcon}
                     onClick={() => insert("text")}
+                  />
+                  <Tool
+                    tip="畫連接線"
+                    icon={ConnectorGlyph}
+                    pressed={tool === "connector"}
+                    onClick={() => {
+                      endEdit();
+                      setTool((current) => (current ? null : "connector"));
+                    }}
                   />
                 </>
               ) : (
@@ -1176,11 +1205,14 @@ function Tool({
   tip,
   icon: Icon,
   disabled,
+  pressed,
   onClick,
 }: {
   tip: string;
   icon: ComponentType;
   disabled?: boolean;
+  /** For a tool that stays on until used: whether it is on. */
+  pressed?: boolean;
   onClick: () => void;
 }) {
   return (
@@ -1188,9 +1220,10 @@ function Tool({
       <TooltipTrigger
         render={
           <Button
-            variant="ghost"
+            variant={pressed ? "secondary" : "ghost"}
             size="icon"
             aria-label={tip}
+            aria-pressed={pressed}
             disabled={disabled}
             onClick={onClick}
           />
@@ -1236,6 +1269,16 @@ function EllipseGlyph() {
   return (
     <svg {...glyph}>
       <ellipse cx="12" cy="12" rx="10" ry="7" />
+    </svg>
+  );
+}
+
+function ConnectorGlyph() {
+  return (
+    <svg {...glyph}>
+      <rect x="2" y="3" width="7" height="6" />
+      <rect x="15" y="15" width="7" height="6" />
+      <path d="M9 6h4v12h2" />
     </svg>
   );
 }

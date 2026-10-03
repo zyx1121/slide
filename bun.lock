@@ -6,6 +6,7 @@
       "name": "slide",
       "dependencies": {
         "@base-ui/react": "^1.8.0",
+        "@modelcontextprotocol/sdk": "1.32.0",
         "@resvg/resvg-js": "^2.6.2",
         "class-variance-authority": "^0.7.1",
         "cn": "^0.4.0",

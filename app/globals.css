@@ -291,6 +291,23 @@
 }
 
 /*
+ * A page whose surface fills the viewport (components/stage-shell.tsx) has
+ * nothing to scroll, so it keeps no scrollbar gutter.
+ */
+html:has([data-stage]) {
+  scrollbar-gutter: auto;
+}
+
+/*
+ * Floating surfaces that open over a slide. The theme's are transparent with
+ * a blur, which over a white slide leaves white text on white; these keep
+ * the popover color under the blur.
+ */
+[data-surface="solid"] {
+  background-color: var(--popover);
+}
+
+/*
  * The editor draws selection, handles and guides over a slide, which is white
  * in both themes, so these grays stay the same in light and dark.
  */

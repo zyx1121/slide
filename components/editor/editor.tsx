@@ -2,6 +2,9 @@
 
 import {
   BringToFrontIcon,
+  ChevronLeftIcon,
+  ChevronRightIcon,
+  CircleHelpIcon,
   CopyPlusIcon,
   Redo2Icon,
   SendToBackIcon,
@@ -21,6 +24,12 @@ import { editDeckAction, loadDeckAction } from "@/app/decks/[id]/actions";
 import { Canvas } from "@/components/editor/canvas";
 import { SlideView } from "@/components/slide-view";
 import { Button } from "@/components/ui/button";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
   TooltipContent,
@@ -61,6 +70,14 @@ import { cn } from "@/lib/utils";
 
 /** What became of an edit: applied, a no-op, paused while saving is, or refused. */
 type Commit = "applied" | "unchanged" | "paused" | "refused";
+
+/** The keyboard and mouse help, shown from the dock and read with the canvas. */
+const HELP = [
+  "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個。",
+  "方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift 鎖定方向，按 Alt 不對齊。",
+  "⌘Z 復原，⌘⇧Z 重做，⌘D 再製，⌘C、⌘X、⌘V 複製、剪下、貼上（Windows 用 Ctrl）。",
+  "Page Up、Page Down 換頁。",
+];
 
 /** Canvas px an arrow key moves the selection; Shift moves ten times as far. */
 const NUDGE = 2;
@@ -247,6 +264,13 @@ export function Editor({
     }
   };
 
+  const goTo = (target: number) => {
+    if (target < 0 || target >= doc.slides.length || target === index) return;
+    flushNudge();
+    setSlideIndex(target);
+    setSelection([]);
+  };
+
   /** Undoes or redoes one edit, on the slide it was made on. */
   const travel = (direction: "undo" | "redo") => {
     flushNudge();
@@ -349,6 +373,9 @@ export function Editor({
       const last = order.indexOf(selection[selection.length - 1]);
       const step = event.shiftKey ? -1 : 1;
       select([order[(last + step + order.length) % order.length]]);
+    } else if (event.key === "PageUp" || event.key === "PageDown") {
+      event.preventDefault();
+      goTo(index + (event.key === "PageUp" ? -1 : 1));
     } else if (event.key === "Escape") {
       select([]);
     } else if (event.metaKey || event.ctrlKey) {
@@ -377,10 +404,67 @@ export function Editor({
   const paused = !saving.accepting;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
+  const problem = refusal ?? saving.message;
+  const status =
+    saving.phase === "reloading"
+      ? "載入最新版本…"
+      : saving.pending > 0
+        ? "儲存中…"
+        : "已儲存";
+
   return (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
-        <div className="flex">
+    <div className="relative size-full">
+      {/* The slide, as wide as the page, keeping 64 px above and below for
+          the corners and the dock. */}
+      <div className="absolute inset-x-0 inset-y-16 flex items-center justify-center">
+        <Canvas
+          className="w-[min(100%,calc((100dvh_-_8rem)*16/9))]"
+          slide={shown}
+          number={index + 1}
+          selection={selection}
+          onSelect={select}
+          onMove={(ids, dx, dy) =>
+            commit(moveOps(docRef.current.slides[index], index, ids, dx, dy))
+          }
+          onResize={(id: string, box: Box) =>
+            commit(boxOps(docRef.current.slides[index], index, id, box))
+          }
+          onGestureStart={flushNudge}
+          onKeyDown={onKeyDown}
+          onCopy={copy}
+          onCut={cut}
+          onPaste={paste}
+        />
+      </div>
+      <p id="canvas-help" className="sr-only">
+        {HELP.join(" ")}
+      </p>
+
+      {/* The dock floats at the bottom center, as Plump's does; only the bar
+          and the notice take pointer events, the rest stays the canvas's. */}
+      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-2 max-md:bottom-16">
+        {problem && (
+          <div
+            role="alert"
+            data-slot="floating-notice"
+            data-surface="solid"
+            className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
+          >
+            <p className="text-xs text-destructive">{problem}</p>
+            {saving.phase === "blocked" && (
+              <Button variant="ghost" onClick={() => saver.retry()}>
+                重新載入
+              </Button>
+            )}
+          </div>
+        )}
+        <div
+          role="group"
+          aria-label="編輯工具"
+          data-slot="floating-toolbar"
+          data-surface="solid"
+          className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border p-1"
+        >
           <Tool
             tip="復原"
             icon={Undo2Icon}
@@ -393,8 +477,7 @@ export function Editor({
             disabled={paused || history.future.length === 0}
             onClick={() => travel("redo")}
           />
-        </div>
-        <div className="flex">
+          <Separator orientation="vertical" className="mx-1 my-2" />
           <Tool
             tip="插入矩形"
             icon={RectGlyph}
@@ -413,8 +496,7 @@ export function Editor({
             disabled={paused}
             onClick={() => insert("ellipse")}
           />
-        </div>
-        <div className="flex">
+          <Separator orientation="vertical" className="mx-1 my-2" />
           <Tool
             tip="移到最上層"
             icon={BringToFrontIcon}
@@ -439,60 +521,60 @@ export function Editor({
             disabled={paused || none}
             onClick={remove}
           />
-        </div>
-        <SaveStatus
-          refusal={refusal}
-          state={saving}
-          onRetry={() => saver.retry()}
-        />
-      </div>
-      <div className="grid gap-5 lg:grid-cols-[8rem_minmax(0,1fr)]">
-        <ol className="order-2 flex gap-3 overflow-x-auto lg:order-1 lg:flex-col lg:overflow-visible">
-          {doc.slides.map((item, i) => (
-            <li key={item.id} className="w-32 shrink-0">
-              <button
-                type="button"
-                aria-label={`第 ${i + 1} 頁`}
-                aria-current={i === index ? "true" : undefined}
-                onClick={() => {
-                  flushNudge();
-                  setSlideIndex(i);
-                  setSelection([]);
-                }}
-                className={cn(
-                  "block w-full rounded-lg outline-offset-4 focus-visible:outline-2",
-                  i === index ? "opacity-100" : "opacity-60 hover:opacity-100"
-                )}
-              >
-                <SlideView slide={item} number={i + 1} decorative />
-              </button>
-            </li>
-          ))}
-        </ol>
-        <div className="order-1 flex flex-col gap-3 lg:order-2">
-          <Canvas
-            slide={shown}
-            number={index + 1}
-            selection={selection}
-            onSelect={select}
-            onMove={(ids, dx, dy) =>
-              commit(moveOps(docRef.current.slides[index], index, ids, dx, dy))
-            }
-            onResize={(id: string, box: Box) =>
-              commit(boxOps(docRef.current.slides[index], index, id, box))
-            }
-            onGestureStart={flushNudge}
-            onKeyDown={onKeyDown}
-            onCopy={copy}
-            onCut={cut}
-            onPaste={paste}
+          <Separator orientation="vertical" className="mx-1 my-2" />
+          <Tool
+            tip="上一頁"
+            icon={ChevronLeftIcon}
+            disabled={index === 0}
+            onClick={() => goTo(index - 1)}
           />
-          <p id="canvas-help" className="text-xs text-muted-foreground">
-            點選形狀來選取，Shift 加選，拖曳空白處框選，Tab
-            換選下一個。方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift
-            鎖定方向，按 Alt 不對齊。⌘Z 復原，⌘D 再製，⌘C、⌘V 複製貼上（Windows
-            用 Ctrl）。
+          <PageList
+            slides={doc.slides}
+            index={index}
+            onPick={(target) => goTo(target)}
+          />
+          <Tool
+            tip="下一頁"
+            icon={ChevronRightIcon}
+            disabled={index === doc.slides.length - 1}
+            onClick={() => goTo(index + 1)}
+          />
+          <Separator orientation="vertical" className="mx-1 my-2" />
+          <p className="min-w-16 px-2 text-center text-xs text-muted-foreground">
+            {status}
           </p>
+          <Popover>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <PopoverTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="操作說明"
+                      />
+                    }
+                  />
+                }
+              >
+                <CircleHelpIcon />
+              </TooltipTrigger>
+              <TooltipContent>操作說明</TooltipContent>
+            </Tooltip>
+            <PopoverContent
+              side="top"
+              sideOffset={12}
+              data-surface="solid"
+              className="w-80"
+            >
+              <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
+                {HELP.map((line) => (
+                  <li key={line}>{line}</li>
+                ))}
+              </ul>
+            </PopoverContent>
+          </Popover>
         </div>
       </div>
     </div>
@@ -500,40 +582,77 @@ export function Editor({
 }
 
 /**
- * Where saving stands. Problems are announced to screen readers; the routine
- * "saving" and "saved" are not, so they do not speak after every edit.
+ * The slide list, opened from the page number in the dock and floating over
+ * the slide, so the slide keeps the page.
  */
-function SaveStatus({
-  refusal,
-  state,
-  onRetry,
+function PageList({
+  slides,
+  index,
+  onPick,
 }: {
-  refusal: string | null;
-  state: SaverState;
-  onRetry: () => void;
+  slides: DeckDocument["slides"];
+  index: number;
+  onPick: (index: number) => void;
 }) {
-  const problem = refusal ?? state.message;
+  const [open, setOpen] = useState(false);
   return (
-    <div className="ml-auto flex items-center gap-3">
-      {problem ? (
-        <p role="alert" className="text-xs text-destructive">
-          {problem}
-        </p>
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {state.phase === "reloading"
-            ? "載入最新版本…"
-            : state.pending > 0
-              ? "儲存中…"
-              : "已儲存"}
-        </p>
-      )}
-      {state.phase === "blocked" && (
-        <Button variant="ghost" onClick={onRetry}>
-          重新載入
-        </Button>
-      )}
-    </div>
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  variant="ghost"
+                  className="tabular-nums"
+                  aria-label={`第 ${index + 1} 頁，共 ${slides.length} 頁`}
+                />
+              }
+            />
+          }
+        >
+          {index + 1} / {slides.length}
+        </TooltipTrigger>
+        <TooltipContent>所有頁面</TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side="top"
+        sideOffset={12}
+        data-surface="solid"
+        className="p-3"
+        // Up to four 8 rem thumbnails a row, no wider than the slides need.
+        style={{
+          width: `min(${Math.min(slides.length, 4) * 8.75 + 1.75}rem, calc(100vw - 2rem))`,
+        }}
+      >
+        <ol className="grid max-h-[60dvh] grid-cols-[repeat(auto-fill,8rem)] justify-center gap-3 overflow-y-auto p-1">
+          {slides.map((slide, i) => (
+            <li key={slide.id}>
+              <button
+                type="button"
+                aria-label={`第 ${i + 1} 頁`}
+                aria-current={i === index ? "page" : undefined}
+                onClick={() => {
+                  onPick(i);
+                  setOpen(false);
+                }}
+                className="flex w-full flex-col gap-1 rounded-lg outline-offset-2 focus-visible:outline-2"
+              >
+                <SlideView
+                  slide={slide}
+                  number={i + 1}
+                  decorative
+                  className={cn(i === index && "ring-2 ring-foreground")}
+                />
+                <span className="text-xs text-muted-foreground tabular-nums">
+                  {i + 1}
+                </span>
+              </button>
+            </li>
+          ))}
+        </ol>
+      </PopoverContent>
+    </Popover>
   );
 }
 

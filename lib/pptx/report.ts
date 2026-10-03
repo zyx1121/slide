@@ -2,11 +2,12 @@
 // with counts.
 
 const NAMES: Record<string, string> = {
-  table: "表格",
+  "table style": "預設以外樣式的表格（儲存格已放入，但沒有套樣式）",
+  "table without a position": "沒有位置的表格",
   "chart or diagram": "圖表或 SmartArt",
   freeform: "自由曲線",
   "picture format": "不支援格式的圖片（如 EMF、SVG、TIFF）",
-  "picture crop": "裁切過的圖片（放入了完整圖片）",
+  "picture crop": "無法照原樣裁切的圖片（放入了完整圖片）",
   "linked picture": "連結到外部的圖片",
   "turned group": "旋轉過的群組（內容已放入，但沒有旋轉）",
   "embedded content": "內嵌內容",

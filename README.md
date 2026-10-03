@@ -94,7 +94,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 ## Limitations
 
 - Slides use the WinLab master; an imported deck keeps its shapes, not its own master
-- Import leaves out tables, charts, SmartArt, freeforms, and pictures in EMF, SVG or TIFF, and says so
+- Import turns a table into a rectangle per cell (its text stays editable, but not as one table), and leaves out charts, SmartArt, freeforms, and pictures in EMF, SVG or TIFF, and says so
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two
 - Decks are private to their owner; sharing with other members is not there yet

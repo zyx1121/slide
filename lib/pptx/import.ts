@@ -253,6 +253,7 @@ function readText(
   defaults: {
     levels?: LevelStyle[];
     color?: string;
+    bold?: boolean;
     align?: Paragraph["align"];
     anchor?: TextBody["anchor"];
   }
@@ -277,7 +278,8 @@ function readText(
         style?.color ??
         defaults.color;
       if (color) out.color = color;
-      if (rPr?.attrs.b === "1") out.bold = true;
+      if (rPr?.attrs.b === "1" || (defaults.bold && rPr?.attrs.b !== "0"))
+        out.bold = true;
       if (rPr?.attrs.i === "1") out.italic = true;
       if (rPr?.attrs.u && rPr.attrs.u !== "none") out.underline = true;
       if (rPr?.attrs.strike && rPr.attrs.strike !== "noStrike")
@@ -450,13 +452,11 @@ async function readShapes(
         );
         break;
       case "p:graphicFrame":
-        ctx.skip(
-          /table/.test(
-            JSON.stringify(path(el, "a:graphic", "a:graphicData")?.attrs ?? {})
-          )
-            ? "table"
-            : "chart or diagram"
-        );
+        if (path(el, "a:graphic", "a:graphicData", "a:tbl")) {
+          readTable(el, ctx, place, out);
+        } else {
+          ctx.skip("chart or diagram");
+        }
         break;
       case "mc:AlternateContent": {
         // Newer content with an older equivalent: read the equivalent.
@@ -472,6 +472,142 @@ async function readShapes(
         break;
     }
   }
+}
+
+/** PowerPoint's default table style, Medium Style 2 - Accent 1. */
+const MEDIUM_STYLE_2 = "{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}";
+
+/** A theme color with a tint, as a table style names it. */
+function themeTint(ctx: Context, name: string, tint?: number) {
+  const holder: El = {
+    tag: "a:solidFill",
+    attrs: {},
+    text: "",
+    children: [
+      {
+        tag: "a:schemeClr",
+        attrs: { val: name },
+        text: "",
+        children: tint
+          ? [
+              {
+                tag: "a:tint",
+                attrs: { val: String(tint) },
+                text: "",
+                children: [],
+              },
+            ]
+          : [],
+      },
+    ],
+  };
+  return readColor(holder, ctx.theme, ctx.colorMap);
+}
+
+/**
+ * A table as one rectangle per cell, with its text, so its words stay
+ * editable. Merged cells span their rows and columns. PowerPoint's default
+ * style is drawn (an accent header, banded rows, white rules); cells of other
+ * styles keep only their own fills, with a thin rule, and are reported.
+ */
+function readTable(el: El, ctx: Context, place: Place, out: Shape[]): void {
+  const tbl = path(el, "a:graphic", "a:graphicData", "a:tbl")!;
+  const frame = boxOf(child(el, "p:xfrm"), ctx, (box) => box);
+  if (!frame) {
+    ctx.skip("table without a position");
+    return;
+  }
+  const tblPr = child(tbl, "a:tblPr");
+  const styled =
+    textOf(child(tblPr, "a:tableStyleId")).trim() === MEDIUM_STYLE_2 ||
+    !child(tblPr, "a:tableStyleId");
+  if (!styled) ctx.skip("table style");
+  const firstRow = tblPr?.attrs.firstRow === "1";
+  const bandRow = tblPr?.attrs.bandRow === "1";
+
+  const cols = children(child(tbl, "a:tblGrid"), "a:gridCol").map(
+    (col) => (num(col, "w") ?? 0) / EMU
+  );
+  const rows = children(tbl, "a:tr").slice(0, 200);
+  // Rows grow with their text in PowerPoint; the frame holds the grown size,
+  // so the stated heights are stretched to fill it.
+  const stated = rows.map((row) => (num(row, "h") ?? 0) / EMU);
+  const total = stated.reduce((a, b) => a + b, 0);
+  const stretch = total > 0 && frame.h > total ? frame.h / total : 1;
+  const heights = stated.map((h) => h * stretch);
+  const xs = [frame.x];
+  for (const w of cols) xs.push(xs[xs.length - 1] + w);
+  const ys = [frame.y];
+  for (const h of heights) ys.push(ys[ys.length - 1] + h);
+
+  const accent = themeTint(ctx, "accent1");
+  const light = themeTint(ctx, "lt1") ?? "#ffffff";
+  const dark = ctx.theme.get(ctx.colorMap.get("tx1") ?? "dk1") ?? "#000000";
+  const rule = styled
+    ? { color: light, width: 2 }
+    : { color: "#a3a3a3", width: 1 };
+
+  rows.forEach((row, r) => {
+    const header = firstRow && r === 0;
+    const body = r - (firstRow ? 1 : 0);
+    let col = 0;
+    for (const tc of children(row, "a:tc")) {
+      const span = Math.max(1, num(tc, "gridSpan") ?? 1);
+      const rowSpan = Math.max(1, num(tc, "rowSpan") ?? 1);
+      const at = col;
+      col += 1;
+      // Cells covered by a merge hold nothing of their own.
+      if (tc.attrs.hMerge === "1" || tc.attrs.vMerge === "1") continue;
+      if (at >= cols.length) continue;
+      if (out.length >= MAX_SHAPES) {
+        ctx.skip("over 1000 shapes");
+        return;
+      }
+      const tcPr = child(tc, "a:tcPr");
+      const own = readColor(
+        child(tcPr, "a:solidFill"),
+        ctx.theme,
+        ctx.colorMap
+      );
+      const styleFill = !styled
+        ? undefined
+        : header
+          ? accent
+          : themeTint(
+              ctx,
+              "accent1",
+              bandRow && body % 2 === 0 ? 40000 : 20000
+            );
+      const fill = child(tcPr, "a:noFill") ? null : (own ?? styleFill ?? null);
+      const box = place({
+        x: xs[at],
+        y: ys[r],
+        w: xs[Math.min(at + span, cols.length)] - xs[at],
+        h: ys[Math.min(r + rowSpan, rows.length)] - ys[r],
+        rotation: 0,
+      });
+      const anchor = tcPr?.attrs.anchor;
+      const text = readText(child(tc, "a:txBody"), ctx, {
+        levels: ctx.shapeStyle,
+        color: header && styled ? light : dark,
+        // The style's header is bold unless a run says otherwise.
+        bold: header && styled,
+        align: "left",
+        anchor: anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top",
+      });
+      out.push({
+        id: newId("sh"),
+        kind: "rect",
+        x: coord(box.x),
+        y: coord(box.y),
+        w: length(box.w),
+        h: length(box.h),
+        fill,
+        stroke: rule,
+        ...(hasText(text) ? { text: text! } : {}),
+      });
+    }
+  });
 }
 
 function readLine(

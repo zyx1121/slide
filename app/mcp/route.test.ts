@@ -2,6 +2,7 @@ import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { sampleDocument } from "@/lib/deck/sample";
+import { saveSelection } from "@/lib/deck/selection";
 import { createDeck, ensureUser } from "@/lib/deck/store";
 import { createTestDb, TEST_DATABASE_URL } from "@/lib/test-db";
 
@@ -99,6 +100,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "delete_shapes",
       "delete_slide",
       "get_deck",
+      "get_selection",
       "list_decks",
       "move_slide",
       "render_slide",
@@ -167,5 +169,40 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     });
     expect(bad.isError).toBe(true);
     expect(bad.content[0].text).toContain("colors look like");
+  });
+
+  it("reads what the member selected, with the words and a picture of it", async () => {
+    const none = await call("get_selection", {});
+    expect(none.isError).toBe(true);
+    // Another member cannot point Alice's selection at their deck.
+    expect(
+      await saveSelection(db, "bob-sub", deckId, {
+        slideId: "sl_overview",
+        targets: [],
+      })
+    ).toBe(false);
+    expect(
+      await saveSelection(db, "alice-sub", deckId, {
+        slideId: "sl_overview",
+        targets: [
+          {
+            shape: "sh_capture",
+            text: { from: { p: 0, o: 0 }, to: { p: 0, o: 5 } },
+          },
+          { shape: "ln_capture_asr" },
+        ],
+      })
+    ).toBe(true);
+    const result = await call("get_selection", {});
+    const summary = JSON.parse(result.content[0].text);
+    expect(summary.slide).toMatchObject({ number: 1, id: "sl_overview" });
+    expect(
+      summary.targets.map((t: { shape: { id: string } }) => t.shape.id)
+    ).toEqual(["sh_capture", "ln_capture_asr"]);
+    expect(summary.targets[0].words).toBe("Audio");
+    expect(result.content[1]).toMatchObject({
+      type: "image",
+      mimeType: "image/png",
+    });
   });
 });

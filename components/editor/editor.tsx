@@ -29,6 +29,7 @@ import {
   editDeckAction,
   loadDeckAction,
   publishDeckAction,
+  selectAction,
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
@@ -654,6 +655,41 @@ export function Editor({
     const ops = deleteOps(current, index, new Set(selection));
     if (commit(ops, index) === "applied") setSelection([]);
   };
+
+  // What the member has selected, for their agent (get_selection): the
+  // shapes on the slide being edited, with the text range being typed in,
+  // or the slide in view when nothing is selected. Sent once it settles.
+  const sentSelection = useRef("");
+  useEffect(() => {
+    const at = selection.length > 0 || draft ? index : visible;
+    const slideNow = doc.slides[at];
+    if (!slideNow) return;
+    const targets =
+      draft && draft.target !== "title" && draft.slide === at
+        ? [
+            collapsed(draft.selection)
+              ? { shape: draft.target }
+              : (() => {
+                  const [from, to] = ordered(draft.selection);
+                  return {
+                    shape: draft.target,
+                    text: {
+                      from: { p: from.p, o: from.o },
+                      to: { p: to.p, o: to.o },
+                    },
+                  };
+                })(),
+          ]
+        : selection.map((shape) => ({ shape }));
+    const input = { slideId: slideNow.id, targets };
+    const key = JSON.stringify(input);
+    if (key === sentSelection.current) return;
+    const timer = setTimeout(() => {
+      sentSelection.current = key;
+      void selectAction(deckId, input).catch(() => {});
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [deckId, doc.slides, draft, index, selection, visible]);
 
   // The page number follows the slide most in view.
   useEffect(() => {

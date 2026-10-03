@@ -76,6 +76,7 @@ import { guard } from "@/lib/editor/guard";
 import {
   EMPTY_HISTORY,
   type History,
+  historyAfterReload,
   record,
   redo,
   undo,
@@ -168,7 +169,7 @@ const TEXT_CHANGES = new Set<StyleChange["kind"]>([
 function useSaver(
   deckId: string,
   initialVersion: number,
-  onReload: (document: DeckDocument) => void
+  onReload: (document: DeckDocument) => boolean | void
 ) {
   const [state, setState] = useState<SaverState>({
     accepting: true,
@@ -251,14 +252,30 @@ export function Editor({
   const textarea = useRef<HTMLTextAreaElement>(null);
   const draftTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  // The first undo or redo not yet saved: the history and document it
+  // started from, so a lost save can put its step back.
+  const unsavedMove = useRef<{
+    history: History;
+    document: DeckDocument;
+  } | null>(null);
+
   const reload = useCallback((fresh: DeckDocument) => {
-    // Undo steps were made against the local document. When the server's
-    // differs (an edit was lost, or another tab changed it), they no longer
-    // apply; when it is the same, nothing was lost and they still do.
-    if (compare(docRef.current, fresh).length > 0) {
-      historyRef.current = EMPTY_HISTORY;
-      setHistoryState(EMPTY_HISTORY);
-    }
+    // Undo steps were made against the local document: they stand when the
+    // server's is the same, come back to before a lost undo or redo, and
+    // otherwise no longer apply.
+    const changed = compare(docRef.current, fresh).length > 0;
+    const lost = unsavedMove.current;
+    const next = historyAfterReload(
+      historyRef.current,
+      !changed,
+      lost && {
+        history: lost.history,
+        fromDocument: compare(lost.document, fresh).length === 0,
+      }
+    );
+    unsavedMove.current = null;
+    historyRef.current = next;
+    setHistoryState(next);
     docRef.current = fresh;
     setDoc(fresh);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
@@ -271,8 +288,13 @@ export function Editor({
     clearTimeout(draftTimer.current);
     draftRef.current = null;
     setDraftState(null);
+    return changed;
   }, []);
   const { saver, state: saving } = useSaver(deckId, initialVersion, reload);
+  // Once every edit is saved, no undo or redo can be lost any more.
+  useEffect(() => {
+    if (saving.pending === 0) unsavedMove.current = null;
+  }, [saving.pending]);
 
   const index = Math.min(slideIndex, doc.slides.length - 1);
   const slide = doc.slides[index];
@@ -702,7 +724,9 @@ export function Editor({
     flushNudge();
     const move = (direction === "undo" ? undo : redo)(historyRef.current);
     if (!move) return;
+    const before = { history: historyRef.current, document: docRef.current };
     const outcome = commit(move.ops, move.slide, false);
+    if (outcome === "applied") unsavedMove.current ??= before;
     if (outcome === "paused") return;
     if (outcome === "refused") {
       // Steps before this one were made on top of it; none can be undone
@@ -1048,7 +1072,7 @@ export function Editor({
             <Tool
               tip="重做"
               icon={Redo2Icon}
-              disabled={paused || history.future.length === 0}
+              disabled={paused || nudging || history.future.length === 0}
               onClick={() => travel("redo")}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />

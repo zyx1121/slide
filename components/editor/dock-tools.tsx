@@ -55,27 +55,8 @@ import type {
   Shared,
   StyleChange,
 } from "@/lib/editor/style";
+import { PALETTE } from "@/lib/editor/palette";
 import { cn } from "@/lib/utils";
-
-/** The colors on offer, from the WinLab template's blues and Office's set. */
-export const PALETTE = [
-  { name: "黑", value: "#000000" },
-  { name: "深灰", value: "#595959" },
-  { name: "灰", value: "#a6a6a6" },
-  { name: "淺灰", value: "#f2f2f2" },
-  { name: "白", value: "#ffffff" },
-  { name: "WinLab 藍", value: "#3297fc" },
-  { name: "深藍", value: "#4f81bd" },
-  { name: "淺藍", value: "#e8f1fe" },
-  { name: "紅", value: "#c00000" },
-  { name: "淺紅", value: "#fbe5d6" },
-  { name: "橘", value: "#ed7d31" },
-  { name: "黃", value: "#ffc000" },
-  { name: "淺黃", value: "#fff2cc" },
-  { name: "綠", value: "#70ad47" },
-  { name: "淺綠", value: "#e2f0d9" },
-  { name: "紫", value: "#7030a0" },
-];
 
 /** Text sizes in points, as PowerPoint lists them; a point is 2 canvas px. */
 const SIZES = [10, 12, 14, 16, 18, 20, 24, 28, 32, 36, 40, 44, 48, 54, 60, 72];

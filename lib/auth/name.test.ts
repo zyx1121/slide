@@ -10,6 +10,12 @@ describe("displayName", () => {
     expect(displayName({ given_name: "太郎", family_name: "山田" })).toBe(
       "山田太郎"
     );
+    expect(displayName({ given_name: "健", family_name: "佐々木" })).toBe(
+      "佐々木健"
+    );
+    expect(displayName({ given_name: "\u{2123c}明", family_name: "陳" })).toBe(
+      "陳\u{2123c}明"
+    );
   });
 
   it("keeps Keycloak's name for Latin and mixed names", () => {

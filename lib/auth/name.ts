@@ -1,5 +1,7 @@
-// CJK characters (ideographs, kana, Hangul), the scripts written family name first.
-const CJK = /^[぀-ヿ㐀-䶿一-鿿豈-﫿가-힯]+$/;
+// CJK characters (ideographs including extensions B to F, the iteration marks
+// 々〆〇, kana, Hangul), the scripts written family name first.
+const CJK =
+  /^[\u3005-\u3007\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff\uac00-\ud7af\u{20000}-\u{3ffff}]+$/u;
 
 const text = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";

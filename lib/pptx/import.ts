@@ -138,6 +138,8 @@ type Context = {
   dy: number;
   bodyStyle: LevelStyle[];
   otherStyle: LevelStyle[];
+  /** What text in a shape that is not a placeholder starts from. */
+  shapeStyle: LevelStyle[];
   placeholders: Placeholder[];
   rels: Map<string, { target: string; type: string; external: boolean }>;
   saveImage: SaveImage;
@@ -189,6 +191,10 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
   }
   return out;
 }
+
+/** Sizes and bullets only: a shape's own style gives its text color. */
+const withoutColor = (levels: LevelStyle[]): LevelStyle[] =>
+  levels.map(({ size, bullet }) => ({ size, bullet }));
 
 /** A shape's box from its <a:xfrm>, on the canvas. */
 function boxOf(xfrm: El | undefined, ctx: Context, place: Place): Box | null {
@@ -622,6 +628,10 @@ async function readSp(
     ctx.theme.get(ctx.colorMap.get("tx1") ?? "dk1");
   // PowerPoint's own defaults for shape text: top left, unless set.
   const body = readText(child(el, "p:txBody"), ctx, {
+    levels: mergeLevels(
+      ctx.shapeStyle,
+      readLevels(path(el, "p:txBody", "a:lstStyle"), ctx)
+    ),
     color: textColor,
     align: kind === "text" ? undefined : "left",
     anchor: kind === "text" ? undefined : "top",
@@ -791,6 +801,7 @@ export async function importPptx(
   const size = child(presentation, "p:sldSz");
   const widthPx = (num(size, "cx") ?? 12192000) / EMU;
   const heightPx = (num(size, "cy") ?? 6858000) / EMU;
+  const defaultTextStyle = child(presentation, "p:defaultTextStyle");
   const k = Math.min(1920 / widthPx, 1080 / heightPx);
   const dx = (1920 - widthPx * k) / 2;
   const dy = (1080 - heightPx * k) / 2;
@@ -839,6 +850,10 @@ export async function importPptx(
     const theme = readTheme(xml(themeName));
     const colorMap = readColorMap(child(master, "p:clrMap"));
     const base = { theme, colorMap, k };
+    const otherStyle = readLevels(
+      path(master, "p:txStyles", "p:otherStyle"),
+      base
+    );
     const ctx: Context = {
       parts,
       theme,
@@ -847,7 +862,12 @@ export async function importPptx(
       dx,
       dy,
       bodyStyle: readLevels(path(master, "p:txStyles", "p:bodyStyle"), base),
-      otherStyle: readLevels(path(master, "p:txStyles", "p:otherStyle"), base),
+      otherStyle,
+      // The presentation's defaults, then the master's for other text.
+      shapeStyle: mergeLevels(
+        withoutColor(readLevels(defaultTextStyle, base)),
+        withoutColor(otherStyle)
+      ),
       placeholders: [
         ...placeholdersOf(path(layout, "p:cSld", "p:spTree"), false),
         ...placeholdersOf(path(master, "p:cSld", "p:spTree"), true),

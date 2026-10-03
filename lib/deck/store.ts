@@ -6,7 +6,7 @@ import type postgres from "postgres";
 import { newId } from "../ids";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
-import { DeckDocument, SCHEMA_VERSION } from "./schema";
+import { DeckDocument, SCHEMA_VERSION, type Slide } from "./schema";
 
 type Db = postgres.Sql;
 
@@ -31,7 +31,11 @@ export type Deck = {
 export type DeckSummary = Pick<
   Deck,
   "id" | "title" | "version" | "published" | "updatedAt"
->;
+> & {
+  slideCount: number;
+  /** The first slide, drawn as the deck's thumbnail. */
+  firstSlide: Slide;
+};
 
 export type MutationResult = {
   status: "applied" | "suggested";
@@ -110,8 +114,15 @@ export async function createDeck(
 }
 
 export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
-  const rows = await db<DeckRow[]>`
-    select id, title, version, published, updated_at
+  const rows = await db<
+    (Pick<DeckRow, "id" | "title" | "version" | "published" | "updated_at"> & {
+      slide_count: number;
+      first_slide: Slide;
+    })[]
+  >`
+    select id, title, version, published, updated_at,
+      jsonb_array_length(document -> 'slides') as slide_count,
+      document -> 'slides' -> 0 as first_slide
     from decks
     where owner_sub = ${owner}
     order by updated_at desc
@@ -122,6 +133,8 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
     version: row.version,
     published: row.published,
     updatedAt: row.updated_at,
+    slideCount: row.slide_count,
+    firstSlide: row.first_slide,
   }));
 }
 
@@ -201,6 +214,61 @@ export async function mutateDeck(
     `;
     return { status: "applied", version, revisionId: String(revision.id) };
   });
+}
+
+/**
+ * Renames a deck. The rename is a member's patch like any other edit, so it
+ * gets a revision and can be reverted. It does not depend on the rest of the
+ * document, so it is written against the deck's current version, and tried
+ * again if another write lands in between. Returns false when the deck is
+ * missing or someone else's; renaming to the same title changes nothing.
+ */
+export async function renameDeck(
+  db: Db,
+  owner: string,
+  id: string,
+  title: string
+): Promise<boolean> {
+  const value = title.trim();
+  for (let attempt = 1; ; attempt++) {
+    const [row] = await db<Pick<DeckRow, "title" | "version">[]>`
+      select title, version from decks where id = ${id} and owner_sub = ${owner}
+    `;
+    if (!row) return false;
+    if (row.title === value) return true;
+    try {
+      await mutateDeck(db, {
+        deckId: id,
+        actor: { kind: "member", sub: owner },
+        baseVersion: row.version,
+        ops: [{ op: "replace", path: "/title", value }],
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof DeckError && error.code === "not_found") {
+        return false;
+      }
+      if (error instanceof DeckError && error.code === "conflict") {
+        if (attempt < 3) continue;
+      }
+      throw error;
+    }
+  }
+}
+
+/**
+ * Deletes a deck with its revisions. Returns false when the deck is missing
+ * or someone else's.
+ */
+export async function deleteDeck(
+  db: Db,
+  owner: string,
+  id: string
+): Promise<boolean> {
+  const rows = await db`
+    delete from decks where id = ${id} and owner_sub = ${owner} returning id
+  `;
+  return rows.length > 0;
 }
 
 export type { Operation };

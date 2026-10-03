@@ -1,6 +1,6 @@
-import Link from "next/link";
-
 import { AccountActions } from "@/components/account-actions";
+import { DeckCard } from "@/components/deck-card";
+import { NewDeckButton } from "@/components/new-deck-button";
 import { TaskShell } from "@/components/task-shell";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -16,24 +16,21 @@ export default async function Home() {
     <TaskShell
       title="簡報"
       lang="zh-TW"
-      actions={<AccountActions user={user} current="decks" />}
+      actions={
+        <>
+          <NewDeckButton />
+          <AccountActions user={user} current="decks" />
+        </>
+      }
     >
       {decks.length === 0 ? (
-        <p className="text-muted-foreground">還沒有簡報。</p>
+        <p className="text-muted-foreground">
+          還沒有簡報。按右上角的「新增」，從 WinLab 範本開始。
+        </p>
       ) : (
-        <ul className="flex flex-col gap-3">
+        <ul className="grid grid-cols-1 gap-x-5 gap-y-10 sm:grid-cols-2 2xl:grid-cols-3">
           {decks.map((deck) => (
-            <li
-              key={deck.id}
-              className="flex items-baseline justify-between gap-4"
-            >
-              <Link href={`/decks/${deck.id}`} className="hover:underline">
-                {deck.title}
-              </Link>
-              <span className="text-xs text-muted-foreground tabular-nums">
-                {deck.updatedAt.toLocaleDateString("zh-TW")}
-              </span>
-            </li>
+            <DeckCard key={deck.id} deck={deck} />
           ))}
         </ul>
       )}

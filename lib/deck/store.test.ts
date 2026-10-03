@@ -7,10 +7,12 @@ import { sampleDocument } from "./sample";
 import {
   type Actor,
   createDeck,
+  deleteDeck,
   ensureUser,
   getDeck,
   listDecks,
   mutateDeck,
+  renameDeck,
 } from "./store";
 
 const alice: Actor = { kind: "member", sub: "alice-sub" };
@@ -199,5 +201,89 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     `;
     expect(count).toBe(0);
     expect((await getDeck(db, alice.sub, deck.id))?.version).toBe(0);
+  });
+
+  const revisionCount = async (deckId: string) => {
+    const [{ count }] = await db`
+      select count(*)::int as count from revisions where deck_id = ${deckId}
+    `;
+    return count as number;
+  };
+
+  it("lists each deck with its slide count and first slide", async () => {
+    await ensureUser(db, { sub: "carol-sub", name: "Carol" });
+    const deck = await createDeck(db, "carol-sub", sampleDocument());
+    const [summary] = await listDecks(db, "carol-sub");
+    expect(summary).toMatchObject({
+      id: deck.id,
+      title: "Agent Sense",
+      slideCount: deck.document.slides.length,
+    });
+    expect(summary.firstSlide).toEqual(deck.document.slides[0]);
+  });
+
+  it("renames a deck as a revision, whatever version it is at", async () => {
+    const deck = await createDeck(db, alice.sub);
+    await mutateDeck(db, {
+      deckId: deck.id,
+      actor: alice,
+      baseVersion: 0,
+      ops: [{ op: "replace", path: "/slides/0/title", value: "Intro" }],
+    });
+    expect(await renameDeck(db, alice.sub, deck.id, "  Weekly  ")).toBe(true);
+    const after = await getDeck(db, alice.sub, deck.id);
+    expect(after).toMatchObject({ title: "Weekly", version: 2 });
+    expect(after?.document.title).toBe("Weekly");
+    const [revision] = await db`
+      select patch, inverse from revisions
+      where deck_id = ${deck.id} order by id desc limit 1
+    `;
+    expect(revision.patch).toEqual([
+      { op: "replace", path: "/title", value: "Weekly" },
+    ]);
+    expect(revision.inverse).toContainEqual(
+      expect.objectContaining({ path: "/title", value: "未命名簡報" })
+    );
+  });
+
+  it("writes nothing when a deck is renamed to its own title", async () => {
+    const deck = await createDeck(db, alice.sub);
+    expect(await renameDeck(db, alice.sub, deck.id, "未命名簡報 ")).toBe(true);
+    expect((await getDeck(db, alice.sub, deck.id))?.version).toBe(0);
+    expect(await revisionCount(deck.id)).toBe(0);
+  });
+
+  it("lets two concurrent renames both land, one after the other", async () => {
+    const deck = await createDeck(db, alice.sub);
+    const results = await Promise.all(
+      ["Left", "Right"].map((title) =>
+        renameDeck(db, alice.sub, deck.id, title)
+      )
+    );
+    expect(results).toEqual([true, true]);
+    const after = await getDeck(db, alice.sub, deck.id);
+    expect(after?.version).toBe(2);
+    expect(["Left", "Right"]).toContain(after?.title);
+  });
+
+  it("neither renames nor deletes someone else's deck", async () => {
+    const deck = await createDeck(db, alice.sub);
+    expect(await renameDeck(db, bob.sub, deck.id, "Mine now")).toBe(false);
+    expect(await deleteDeck(db, bob.sub, deck.id)).toBe(false);
+    expect(await getDeck(db, alice.sub, deck.id)).toMatchObject({
+      title: "未命名簡報",
+      version: 0,
+    });
+  });
+
+  it("deletes a deck with its revisions", async () => {
+    const deck = await createDeck(db, alice.sub);
+    await renameDeck(db, alice.sub, deck.id, "Doomed");
+    expect(await revisionCount(deck.id)).toBe(1);
+    expect(await deleteDeck(db, alice.sub, deck.id)).toBe(true);
+    expect(await getDeck(db, alice.sub, deck.id)).toBeNull();
+    expect(await revisionCount(deck.id)).toBe(0);
+    expect(await deleteDeck(db, alice.sub, deck.id)).toBe(false);
+    expect(await renameDeck(db, alice.sub, deck.id, "Back")).toBe(false);
   });
 });

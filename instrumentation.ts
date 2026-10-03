@@ -9,20 +9,21 @@ import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { OTLPHttpJsonTraceExporter, registerOTel } from "@vercel/otel";
 
 import { emitErrorLog } from "@/lib/otel/log";
+import { RedactingExporter } from "@/lib/otel/redact";
 
 export function register() {
   const endpoint = process.env.OTEL_EXPORTER_OTLP_ENDPOINT?.replace(/\/+$/, "");
   if (!endpoint) return;
   const headers = parseHeaders(process.env.OTEL_EXPORTER_OTLP_HEADERS);
   registerOTel({
-    serviceName: process.env.OTEL_SERVICE_NAME ?? "slide",
+    serviceName: process.env.OTEL_SERVICE_NAME || "slide",
     // Only the JSON exporter below: @vercel/otel's "auto" processor would
     // also send protobuf, which Sensorium refuses.
     spanProcessors: [],
-    traceExporter: new OTLPHttpJsonTraceExporter({
-      url: `${endpoint}/v1/traces`,
-      headers,
-    }),
+    // Paths lose their queries and public ids before they leave.
+    traceExporter: new RedactingExporter(
+      new OTLPHttpJsonTraceExporter({ url: `${endpoint}/v1/traces`, headers })
+    ),
     logRecordProcessors: [
       new BatchLogRecordProcessor({
         exporter: new OTLPLogExporter({ url: `${endpoint}/v1/logs`, headers }),

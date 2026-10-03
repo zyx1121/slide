@@ -81,7 +81,11 @@ export async function POST(request: Request) {
       "import.shapes": imported.report.shapes,
       "import.pictures": outcome.pictures.length,
       "import.skipped": Object.values(skipped).reduce((a, b) => a + b, 0),
-      "import.skipped_kinds": Object.keys(skipped).sort().join(","),
+      // Kinds can carry a file's own names (shape presets): kept short.
+      "import.skipped_kinds": Object.keys(skipped)
+        .sort()
+        .join(",")
+        .slice(0, 300),
     });
     return Response.json(
       { id: deck.id, report: imported.report },

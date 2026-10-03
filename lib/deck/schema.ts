@@ -17,6 +17,10 @@ export const SLIDE_HEIGHT = 1080;
 const Id = z
   .string()
   .regex(/^[a-z]+_[0-9a-z_-]{2,48}$/, "ids look like sh_k4m9x2qa");
+// Postgres cannot store U+0000 in jsonb, so no text may hold it.
+const noNul = (value: string) => !value.includes("\u0000");
+const NUL = "text cannot contain U+0000";
+const Text = (max: number) => z.string().max(max).refine(noNul, NUL);
 const Coord = z.number().min(-10_000).max(10_000);
 const Length = z.number().min(0).max(10_000);
 const Color = z
@@ -27,7 +31,7 @@ const Color = z
   );
 
 export const Run = z.strictObject({
-  text: z.string().max(10_000),
+  text: Text(10_000),
   /** px on the 1920 x 1080 canvas; PowerPoint points are half of it. */
   size: z.number().min(1).max(800).optional(),
   color: Color.optional(),
@@ -159,16 +163,16 @@ export const Shape = z.discriminatedUnion("kind", [
 export const Slide = z.strictObject({
   id: Id,
   /** The title placeholder; its position and style come from the template. */
-  title: z.string().max(500),
+  title: Text(500),
   /** Back to front: later shapes are drawn on top. */
   shapes: z.array(Shape).max(1000),
-  notes: z.string().max(50_000).optional(),
+  notes: Text(50_000).optional(),
 });
 
 export const DeckDocument = z
   .strictObject({
     schema: z.literal(SCHEMA_VERSION),
-    title: z.string().trim().min(1).max(DECK_TITLE_MAX),
+    title: z.string().trim().min(1).max(DECK_TITLE_MAX).refine(noNul, NUL),
     slides: z.array(Slide).min(1).max(500),
   })
   .superRefine((document, ctx) => {

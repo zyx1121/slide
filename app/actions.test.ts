@@ -7,7 +7,7 @@ vi.mock("@/lib/deck/store", () => ({
   renameDeck: vi.fn(),
   deleteDeck: vi.fn(),
 }));
-vi.mock("next/cache", () => ({ refresh: vi.fn() }));
+vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     throw new Error(`redirect ${url}`);
@@ -16,7 +16,8 @@ vi.mock("next/navigation", () => ({
 
 const { requireUser } = await import("@/lib/auth/session");
 const { createDeck, deleteDeck, renameDeck } = await import("@/lib/deck/store");
-const { refresh } = await import("next/cache");
+const { refresh, revalidatePath } = await import("next/cache");
+const { DeckError } = await import("@/lib/deck/errors");
 const { createDeckAction, deleteDeckAction, renameDeckAction } =
   await import("./actions");
 
@@ -54,6 +55,21 @@ describe("deck actions", () => {
     vi.mocked(createDeck).mockResolvedValue({ id: "dk_new" } as never);
     await expect(createDeckAction()).rejects.toThrow("redirect /decks/dk_new");
     expect(createDeck).toHaveBeenCalledWith({}, "alice-sub");
+    expect(revalidatePath).toHaveBeenCalledWith("/");
+  });
+
+  it("explain a rename the store refuses instead of failing the page", async () => {
+    for (const code of ["conflict", "invalid_document"] as const) {
+      vi.mocked(renameDeck).mockRejectedValueOnce(new DeckError(code, "no"));
+      expect(
+        await renameDeckAction(form({ id: "dk_1", title: "Report" }))
+      ).toEqual({ ok: false, error: expect.any(String) });
+    }
+    vi.mocked(renameDeck).mockRejectedValueOnce(new Error("database down"));
+    await expect(
+      renameDeckAction(form({ id: "dk_1", title: "Report" }))
+    ).rejects.toThrow("database down");
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("rename with the trimmed title, as the member", async () => {

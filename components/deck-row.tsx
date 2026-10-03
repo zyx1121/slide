@@ -5,7 +5,10 @@ import Link from "next/link";
 import {
   type ComponentType,
   type Ref,
+  type RefObject,
+  startTransition,
   useActionState,
+  useEffect,
   useId,
   useRef,
   useState,
@@ -42,10 +45,17 @@ export function DeckRow({ id, title, slideCount, updated }: Props) {
   const [mode, setMode] = useState<"view" | "rename" | "delete">("view");
   const renameButton = useRef<HTMLButtonElement>(null);
   const deleteButton = useRef<HTMLButtonElement>(null);
-  const back = (button: typeof renameButton) => {
+  // The button that opened a form gets focus back once the view returns,
+  // which after a save waits for the refreshed list.
+  const restore = useRef<RefObject<HTMLButtonElement | null>>(null);
+  useEffect(() => {
+    if (mode !== "view" || !restore.current) return;
+    restore.current.current?.focus();
+    restore.current = null;
+  }, [mode]);
+  const back = (button: RefObject<HTMLButtonElement | null>) => {
+    restore.current = button;
     setMode("view");
-    // The action buttons mount again on the next render; focus them then.
-    requestAnimationFrame(() => button.current?.focus());
   };
 
   if (mode === "rename") {
@@ -139,7 +149,10 @@ function useDeckAction(
 ) {
   return useActionState(async (_: ActionResult | null, form: FormData) => {
     const result = await run(form);
-    if (result.ok) onDone?.();
+    // Updates after an await leave the action's transition; a new one keeps
+    // the form up until the refreshed list arrives, so the old title never
+    // flashes.
+    if (result.ok && onDone) startTransition(onDone);
     return result;
   }, null);
 }
@@ -154,6 +167,9 @@ function RenameForm({
   onClose: () => void;
 }) {
   const [state, action, pending] = useDeckAction(renameDeckAction, onClose);
+  // Controlled, so the field keeps what was typed when a save is refused
+  // (React resets uncontrolled fields after every form action).
+  const [value, setValue] = useState(title);
   const errorId = useId();
   const error = state && !state.ok ? state.error : null;
 
@@ -163,7 +179,8 @@ function RenameForm({
       <div className="flex items-center gap-2">
         <Input
           name="title"
-          defaultValue={title}
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
           maxLength={DECK_TITLE_MAX}
           autoComplete="off"
           autoFocus
@@ -203,8 +220,11 @@ function DeleteForm({
   title: string;
   onCancel: () => void;
 }) {
-  // On success the list refreshes without this deck, which unmounts the form.
-  const [state, action, pending] = useDeckAction(deleteDeckAction);
+  // On success the list refreshes without this deck, which unmounts the
+  // form; focus moves to the page's main region instead of being lost.
+  const [state, action, pending] = useDeckAction(deleteDeckAction, () =>
+    document.getElementById("task")?.focus()
+  );
   const messageId = useId();
   const error = state && !state.ok ? state.error : null;
 

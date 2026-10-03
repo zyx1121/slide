@@ -23,6 +23,16 @@ describe("DeckDocument", () => {
     ]);
   });
 
+  it("rejects U+0000 in any text, which Postgres cannot store", () => {
+    const doc = sampleDocument();
+    doc.title = "Agent\u0000Sense";
+    doc.slides[0].title = "\u0000";
+    expect(issuesOf(doc)).toEqual([
+      "title: text cannot contain U+0000",
+      "slides.0.title: text cannot contain U+0000",
+    ]);
+  });
+
   it("rejects fields the schema does not know", () => {
     const doc = sampleDocument() as unknown as {
       slides: { shapes: Record<string, unknown>[] }[];

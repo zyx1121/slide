@@ -247,6 +247,8 @@ export function layoutText(
   defaults: TextDefaults
 ): TextLayout {
   const inner = Math.max(0, box.w - 2 * defaults.inset.x);
+  // A body that keeps its paragraphs on one line overrides the shape's way.
+  const wrap = body.wrap ?? defaults.wrap;
   const lines: Line[] = [];
   const counters: number[] = [];
   let y = 0;
@@ -317,7 +319,7 @@ export function layoutText(
     const limitFor = (line: number) =>
       Math.max(1, inner - (line === 0 ? firstIndent : marL));
 
-    breakLines(chars, limitFor, defaults.wrap).forEach((range, index) => {
+    breakLines(chars, limitFor, wrap).forEach((range, index) => {
       const lineChars = chars.slice(range.start, range.end);
       const visible = trimTrailingSpaces(lineChars);
       let size = 0;

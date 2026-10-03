@@ -52,6 +52,8 @@ export const Paragraph = z.strictObject({
 export const TextBody = z.strictObject({
   paragraphs: z.array(Paragraph).min(1).max(500),
   anchor: z.enum(["top", "middle", "bottom"]).optional(),
+  /** False keeps each paragraph on one line (PowerPoint's wrap="none"). */
+  wrap: z.boolean().optional(),
 });
 
 export const Stroke = z.strictObject({

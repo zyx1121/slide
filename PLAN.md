@@ -58,6 +58,8 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 
 One renderer turns a slide into SVG (`lib/render`), and the server rasterizes the same SVG with resvg. The WinLab master's background (gradient, logo, title rule, footer bar) is a 3840 x 2160 image rendered once from `template/winlab.pptx`; the title and the slide number are drawn as text in the master's placeholder boxes. Text is laid out by our own engine: Carlito's advance widths (Calibri's metrics) for Latin, one em for CJK, kinsoku for CJK punctuation, PowerPoint's default insets, bullets and single line spacing (1.2207). Every run is placed with `textLength`, and runs split where the script changes so each is drawn in one font, so the browser and resvg draw the same lines. Elbow connectors leave and enter perpendicular to the shape's side with the fewest bends the ends allow.
 
+Text is edited where it is drawn. The renderer draws the draft as it is typed, and the editor draws the caret and the selection from the same layout, so a line wraps while typing exactly where it is stored and exported. Keys, IME composition and the clipboard go through a hidden field kept at the caret, which also opens the IME's candidate window there. Typing is saved as one edit when it pauses and when editing ends; a text box without fill or outline grows and shrinks with its text, and one left empty is deleted, as in PowerPoint.
+
 ### MCP tools
 
 | Tool                                           | Does                                                                 |

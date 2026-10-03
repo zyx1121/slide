@@ -5,6 +5,9 @@ import { compare } from "fast-json-patch";
 
 import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
+import { LINE_HEIGHT } from "../render/metrics";
+import { DEFAULT_TEXT } from "../render/template";
+import { DEFAULT_INSET } from "../render/text";
 import { type Box, tidy } from "./geometry";
 
 /** The slide with shapes moved by (dx, dy); glued connector ends stay glued. */
@@ -47,16 +50,23 @@ export function resizedSlide(slide: Slide, id: string, box: Box): Slide {
   };
 }
 
-export type NewShapeKind = "rect" | "roundRect" | "ellipse";
+export type NewShapeKind = "rect" | "roundRect" | "ellipse" | "text";
+
+/** A new text box's width, and its height: one line of 18 pt text. */
+export const TEXT_BOX = {
+  w: 640,
+  h: tidy(DEFAULT_TEXT.size * LINE_HEIGHT + 2 * DEFAULT_INSET.y),
+};
 
 /**
- * A new shape in WinLab's usual style (light blue fill, blue outline),
+ * A new shape in WinLab's usual style (light blue fill, blue outline), or
+ * an empty text box without either,
  * centered on the slide, or stepped down and right when another shape
  * already sits there, so repeated inserts stay visible.
  */
 export function newShape(kind: NewShapeKind, slide: Slide): Shape {
-  const w = kind === "ellipse" ? 320 : 480;
-  const h = kind === "ellipse" ? 320 : 200;
+  const w = kind === "ellipse" ? 320 : kind === "text" ? TEXT_BOX.w : 480;
+  const h = kind === "ellipse" ? 320 : kind === "text" ? TEXT_BOX.h : 200;
   let x = (1920 - w) / 2;
   let y = (1080 - h) / 2;
   const taken = (px: number, py: number) =>
@@ -66,6 +76,17 @@ export function newShape(kind: NewShapeKind, slide: Slide): Shape {
   while (taken(x, y) && y < 1080 - h) {
     x += 40;
     y += 40;
+  }
+  if (kind === "text") {
+    return {
+      id: newId("sh"),
+      kind,
+      x,
+      y,
+      w,
+      h,
+      text: { paragraphs: [{ runs: [] }] },
+    };
   }
   const base = {
     id: newId("sh"),

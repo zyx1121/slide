@@ -10,7 +10,11 @@ import {
   BaselineIcon,
   BoldIcon,
   CornerDownRightIcon,
+  IndentDecreaseIcon,
+  IndentIncreaseIcon,
   ItalicIcon,
+  ListIcon,
+  ListOrderedIcon,
   MinusIcon,
   PaintBucketIcon,
   PenLineIcon,
@@ -20,7 +24,14 @@ import {
   TextAlignStartIcon,
   UnderlineIcon,
 } from "lucide-react";
-import { type ComponentType, type ReactNode, useState } from "react";
+import {
+  type ComponentType,
+  type ReactNode,
+  useContext,
+  useState,
+} from "react";
+
+import { TextFocus } from "@/components/editor/text-editor";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -37,6 +48,7 @@ import type {
   Align,
   Anchor,
   ArrowHead,
+  Bullet,
   Dash,
   Route,
   SelectionStyle,
@@ -93,6 +105,11 @@ const ALIGNS: { value: Align; name: string; icon: ComponentType }[] = [
   { value: "center", name: "置中", icon: TextAlignCenterIcon },
   { value: "right", name: "靠右", icon: TextAlignEndIcon },
 ];
+const BULLETS: { value: Bullet; name: string; icon: ComponentType }[] = [
+  { value: "none", name: "無", icon: TextAlignStartIcon },
+  { value: "bullet", name: "項目符號", icon: ListIcon },
+  { value: "number", name: "編號", icon: ListOrderedIcon },
+];
 const ANCHORS: { value: Anchor; name: string; icon: ComponentType }[] = [
   { value: "top", name: "靠上", icon: AlignVerticalJustifyStartIcon },
   { value: "middle", name: "垂直置中", icon: AlignVerticalJustifyCenterIcon },
@@ -122,6 +139,8 @@ function DockPopover({
   wide?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // While a text is edited, closing hands the keys back to it.
+  const text = useContext(TextFocus);
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <Tooltip>
@@ -147,6 +166,7 @@ function DockPopover({
         sideOffset={12}
         data-surface="tinted"
         className={wide ? "w-80" : "w-auto"}
+        finalFocus={() => text?.current ?? true}
       >
         {children(() => setOpen(false))}
       </PopoverContent>
@@ -408,6 +428,8 @@ export function TextTools({
   const align =
     ALIGNS.find((option) => option.value === text.align) ?? ALIGNS[0];
   const AlignIcon = align.icon;
+  const bullet = BULLETS.find((option) => option.value === text.bullet);
+  const BulletIcon = bullet && bullet.value !== "none" ? bullet.icon : ListIcon;
   return (
     <>
       <DockPopover
@@ -502,7 +524,65 @@ export function TextTools({
           </div>
         )}
       </DockPopover>
+      <DockPopover
+        tip="項目符號"
+        label={`項目符號：${bullet?.name ?? "混合"}`}
+        trigger={<BulletIcon />}
+      >
+        {(close) => (
+          <Choices
+            options={BULLETS}
+            value={text.bullet}
+            onPick={(value) => {
+              onChange({ kind: "bullet", bullet: value });
+              close();
+            }}
+            render={(option) => {
+              const Icon = BULLETS.find((b) => b.value === option.value)!.icon;
+              return <Icon />;
+            }}
+          />
+        )}
+      </DockPopover>
+      <Action
+        tip="減少縮排"
+        icon={IndentDecreaseIcon}
+        onClick={() => onChange({ kind: "level", delta: -1 })}
+      />
+      <Action
+        tip="增加縮排"
+        icon={IndentIncreaseIcon}
+        onClick={() => onChange({ kind: "level", delta: 1 })}
+      />
     </>
+  );
+}
+
+function Action({
+  tip,
+  icon: Icon,
+  onClick,
+}: {
+  tip: string;
+  icon: ComponentType;
+  onClick: () => void;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={tip}
+            onClick={onClick}
+          />
+        }
+      >
+        <Icon />
+      </TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
   );
 }
 

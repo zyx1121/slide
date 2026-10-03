@@ -41,10 +41,22 @@ export type Segment = {
   strike: boolean;
 };
 
+/** Where the caret stands before character `at` of a paragraph. */
+export type Caret = { at: number; x: number };
+
 export type Line = {
+  /** The paragraph the line belongs to. */
+  paragraph: number;
+  /** Offsets, in code points of the paragraph's text, the line covers. */
+  start: number;
+  end: number;
+  /** Top of the line, from the top of the text block. */
+  top: number;
   /** Baseline, from the top of the text block. */
   baseline: number;
   height: number;
+  /** Every caret stop on the line, left to right, for text editing. */
+  carets: Caret[];
   segments: Segment[];
   bullet?: Omit<Segment, "underline" | "strike" | "script">;
 };
@@ -74,7 +86,14 @@ const HYPHENS = new Set(["-", "‐", "–", "—"]);
 const LINE_BREAKS = new Set(["\n", "\u000b", " "]);
 
 type RunStyle = Omit<Segment, "text" | "x" | "width" | "script">;
-type Char = { ch: string; cp: number; width: number; style: RunStyle };
+type Char = {
+  ch: string;
+  cp: number;
+  /** Offset in code points within the paragraph's text. */
+  at: number;
+  width: number;
+  style: RunStyle;
+};
 
 const NO_BREAK_SPACE = "\u00a0";
 const isSpace = (ch: string) =>
@@ -117,14 +136,15 @@ function canBreakAfter(chars: Char[], i: number): boolean {
 
 /**
  * Splits characters into lines, line `n` no wider than `limit(n)`; spaces
- * hang past the limit.
+ * hang past the limit. Each line is a range of `chars`, without the forced
+ * break that ends it.
  */
 function breakLines(
   chars: Char[],
   limit: (line: number) => number,
   wrap: boolean
-): Char[][] {
-  const lines: Char[][] = [];
+): { start: number; end: number }[] {
+  const lines: { start: number; end: number }[] = [];
   let start = 0;
   while (start <= chars.length) {
     const max = limit(lines.length);
@@ -146,7 +166,7 @@ function breakLines(
       width += c.width;
       if (canBreakAfter(chars, i)) lastBreak = i;
     }
-    lines.push(chars.slice(start, end));
+    lines.push({ start, end });
     if (end >= chars.length && !forced) break;
     start = forced ? end + 1 : end;
     if (start === chars.length && !forced) break;
@@ -196,7 +216,7 @@ export function layoutText(
   const counters: number[] = [];
   let y = 0;
 
-  for (const paragraph of body.paragraphs) {
+  body.paragraphs.forEach((paragraph, paragraphIndex) => {
     const level = paragraph.level ?? 0;
     const bulletKind = paragraph.bullet ?? "none";
     const hang =
@@ -209,6 +229,7 @@ export function layoutText(
     const align = paragraph.align ?? defaults.align;
 
     const chars: Char[] = [];
+    let at = 0;
     for (const run of paragraph.runs) {
       const style: RunStyle = {
         size: run.size ?? defaults.size,
@@ -220,15 +241,20 @@ export function layoutText(
       };
       for (const ch of run.text) {
         const cp = ch.codePointAt(0)!;
-        if (invisible(ch, cp)) continue;
+        if (invisible(ch, cp)) {
+          at++;
+          continue;
+        }
         const width = LINE_BREAKS.has(ch)
           ? 0
           : ch === "\t"
             ? 4 * charWidth(0x20, style)
             : charWidth(cp, style);
-        chars.push({ ch, cp, width, style });
+        chars.push({ ch, cp, at: at++, width, style });
       }
     }
+    const offsetAt = (index: number) =>
+      index < chars.length ? chars[index].at : at;
     const first = paragraph.runs[0];
     const paraSize = first?.size ?? defaults.size;
 
@@ -256,7 +282,8 @@ export function layoutText(
     const limitFor = (line: number) =>
       Math.max(1, inner - (line === 0 ? firstIndent : marL));
 
-    breakLines(chars, limitFor, defaults.wrap).forEach((lineChars, index) => {
+    breakLines(chars, limitFor, defaults.wrap).forEach((range, index) => {
+      const lineChars = chars.slice(range.start, range.end);
       const visible = trimTrailingSpaces(lineChars);
       let size = 0;
       for (const c of lineChars) size = Math.max(size, c.style.size);
@@ -272,10 +299,23 @@ export function layoutText(
           : align === "right"
             ? room - width
             : 0;
+      const x0 = defaults.inset.x + indent + offset;
+      const carets: Caret[] = [];
+      let x = x0;
+      for (const c of lineChars) {
+        carets.push({ at: c.at, x });
+        x += c.width;
+      }
+      carets.push({ at: offsetAt(range.end), x });
       const line: Line = {
+        paragraph: paragraphIndex,
+        start: offsetAt(range.start),
+        end: offsetAt(range.end),
+        top: y,
         baseline: y + size * ASCENT,
         height,
-        segments: segmentsOf(visible, defaults.inset.x + indent + offset),
+        carets,
+        segments: segmentsOf(visible, x0),
       };
       if (label && index === 0) {
         line.bullet = {
@@ -288,7 +328,7 @@ export function layoutText(
       lines.push(line);
       y += height;
     });
-  }
+  });
 
   const room = box.h - 2 * defaults.inset.y;
   const anchor = body.anchor ?? defaults.anchor;

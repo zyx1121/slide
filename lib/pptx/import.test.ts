@@ -553,6 +553,25 @@ describe("importPptx", () => {
     ]);
   });
 
+  it("takes text PowerPoint shrank to fit at the size it drew it", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_fit", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="80" name="Box"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr><a:normAutofit fontScale="85000" lnSpcReduction="20000"/></a:bodyPr><a:p><a:r><a:rPr lang="en-US" sz="2000"/><a:t>sized</a:t></a:r><a:r><a:rPr lang="en-US"/><a:t> default</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${shape}</p:spTree>`)
+    );
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const got = document.slides[0].shapes[0];
+    const paragraph = got.kind === "text" ? got.text.paragraphs[0] : undefined;
+    // 20 pt is 40 px, at 85% 34; the run without a size scales the
+    // presentation's default for shapes.
+    expect(paragraph?.runs[0].size).toBe(34);
+    expect(paragraph?.runs[1].size).toBeGreaterThan(0);
+    expect(paragraph?.lineSpacing).toBe(0.8);
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

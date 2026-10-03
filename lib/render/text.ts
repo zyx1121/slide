@@ -296,7 +296,12 @@ export function layoutText(
     const paraSize = first?.size ?? defaults.size;
 
     let label: string | undefined;
-    if (bulletKind === "number") {
+    // PowerPoint draws no bullet or number on an empty paragraph, and the
+    // numbering carries on past it.
+    const empty = chars.every((c) => LINE_BREAKS.has(c.ch));
+    if (empty) {
+      // Neither labelled nor counted.
+    } else if (bulletKind === "number") {
       counters.length = level + 1;
       counters[level] = (counters[level] ?? 0) + 1;
       label = `${counters[level]}.`;

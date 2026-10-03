@@ -50,7 +50,7 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 
 1. Every write, from the editor or from MCP, goes through one mutation path: validate against the schema, check the base version, store a revision.
 2. Agent writes land as suggestions. The member accepts or rejects each one in the editor, and any applied revision can be reverted on its own.
-3. A shape keeps its id for life. Tools address shapes by id, never by position.
+3. A shape keeps its id for life. Tools address shapes by id, never by position. The editor's patches address positions, so each carries RFC 6902 `test` operations on the ids it touches and is refused whole if they no longer match. Patches may use add, remove, replace, move and test; copy is refused, since it could double the document with every operation.
 4. One renderer: the document renders to SVG for the editor, the public page, and MCP snapshots (rasterized to PNG on the server). Text is laid out by our own line breaker with bundled font files, so the browser and the server wrap lines the same way.
 5. A connector stores which shape and site each end attaches to. Its geometry is recomputed whenever either end moves, and export writes the routed geometry, because PowerPoint draws the stored geometry until a shape moves.
 

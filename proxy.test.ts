@@ -30,6 +30,21 @@ describe("proxy", () => {
     );
   });
 
+  it("lets a Server Action POST through to its own session check", async () => {
+    const action = (method: string, headers: Record<string, string>) =>
+      proxy(
+        new NextRequest("http://internal:3000/decks/dk_2345", {
+          method,
+          headers,
+        })
+      );
+    const post = await action("POST", { "next-action": "abc123" });
+    expect(post.headers.get("x-middleware-next")).toBe("1");
+    // Only a POST is an action: a GET with the header meets the gate.
+    expect((await action("GET", { "next-action": "abc123" })).status).toBe(307);
+    expect((await action("POST", {})).status).toBe(307);
+  });
+
   it("lets a member with a valid session through", async () => {
     const token = await sealSession(
       { sub: "alice-sub", name: "Alice", email: "" },

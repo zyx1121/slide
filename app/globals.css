@@ -289,3 +289,13 @@
 [data-slot="slide-view"] text.cjk {
   font-family: var(--font-noto-sans-tc), sans-serif;
 }
+
+/*
+ * The editor draws selection, handles and guides over a slide, which is white
+ * in both themes, so these grays stay the same in light and dark.
+ */
+:root {
+  --canvas-selection: oklch(0.45 0 0);
+  --canvas-handle: oklch(1 0 0);
+  --canvas-guide: oklch(0.55 0 0);
+}

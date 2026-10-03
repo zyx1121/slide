@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 
 import { AccountActions } from "@/components/account-actions";
-import { SlideView } from "@/components/slide-view";
+import { Editor } from "@/components/editor/editor";
 import { TaskShell } from "@/components/task-shell";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
@@ -19,21 +19,15 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
   return (
     <TaskShell
       title={deck.title}
-      description={`${deck.document.slides.length} 頁，版本 ${deck.version}`}
       lang="zh-TW"
       actions={<AccountActions user={user} />}
       wide
     >
-      <ol className="flex flex-col gap-10">
-        {deck.document.slides.map((slide, index) => (
-          <li key={slide.id} className="flex flex-col gap-3">
-            <SlideView slide={slide} number={index + 1} />
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {index + 1}
-            </span>
-          </li>
-        ))}
-      </ol>
+      <Editor
+        deckId={deck.id}
+        initialDocument={deck.document}
+        initialVersion={deck.version}
+      />
     </TaskShell>
   );
 }

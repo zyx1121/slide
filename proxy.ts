@@ -7,8 +7,11 @@ import { readSession } from "@/lib/auth/session";
 // the session themselves (requireUser); this is the first gate, not the only one.
 export async function proxy(request: NextRequest) {
   // A Server Action redirects a signed-out member itself (requireUser). A 307
-  // from here would make the browser repeat the POST at /auth/login.
-  if (request.headers.has("next-action")) return NextResponse.next();
+  // from here would make the browser repeat the POST at /auth/login. Actions
+  // are POSTs only, so a GET with the header still meets this gate.
+  if (request.method === "POST" && request.headers.has("next-action")) {
+    return NextResponse.next();
+  }
   const env = authEnv();
   if (await readSession(request, env)) return NextResponse.next();
   const login = new URL("/auth/login", env.appUrl);

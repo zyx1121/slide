@@ -343,6 +343,39 @@ describe("importPptx", () => {
     expect(fills[3]).not.toBe(fills[5]);
   });
 
+  it("reads a freeform of one straight segment as a line with its arrow", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_free", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const px = (n: number) => n * 6350;
+    const freeform = (id: number, flip: string, from: string, to: string) =>
+      `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="Freeform"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm${flip}><a:off x="${px(100)}" y="${px(200)}"/><a:ext cx="${px(400)}" cy="${px(100)}"/></a:xfrm><a:custGeom><a:pathLst><a:path w="400" h="100"><a:moveTo><a:pt ${from}/></a:moveTo><a:lnTo><a:pt ${to}/></a:lnTo></a:path></a:pathLst></a:custGeom><a:noFill/><a:ln w="34925"><a:solidFill><a:srgbClr val="E8710A"/></a:solidFill><a:tailEnd type="triangle"/></a:ln></p:spPr></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace(
+        "</p:spTree>",
+        // Top left to bottom right, then the same path flipped: top right
+        // to bottom left.
+        freeform(20, "", 'x="0" y="0"', 'x="400" y="100"') +
+          freeform(21, ' flipH="1"', 'x="0" y="0"', 'x="400" y="100"') +
+          "</p:spTree>"
+      )
+    );
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(report.skipped).toEqual({});
+    const lines = document.slides[0].shapes.filter((s) => s.kind === "line");
+    expect(lines).toMatchObject([
+      {
+        route: "straight",
+        start: { x: 100, y: 200 },
+        end: { x: 500, y: 300 },
+        stroke: { color: "#e8710a", width: 5.5 },
+        endArrow: "triangle",
+      },
+      { start: { x: 500, y: 200 }, end: { x: 100, y: 300 } },
+    ]);
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

@@ -107,6 +107,25 @@ describe("renderPng", () => {
     expect(red).toBe(box.w * box.h);
     // Nothing spills past the box.
     expect(pixel(image, 820, 500)).not.toBe("#0000ff");
+    // Padded a quarter on each side: the picture's middle half of the box.
+    const padded = render(
+      renderSlideSvg(
+        {
+          ...slide,
+          shapes: [
+            {
+              ...slide.shapes[0],
+              crop: { left: -0.5, top: 0, right: -0.5, bottom: 0 },
+            },
+          ],
+        },
+        { slideNumber: 1, background: null, assetHref: () => picture }
+      )
+    );
+    expect(pixel(padded, 410, 500)).not.toBe("#ff0000");
+    expect(pixel(padded, 550, 500)).toBe("#ff0000");
+    expect(pixel(padded, 650, 500)).toBe("#0000ff");
+    expect(pixel(padded, 790, 500)).not.toBe("#0000ff");
   });
 
   it("draws bold CJK with Noto Sans TC Bold, heavier than regular", () => {

@@ -156,8 +156,10 @@ export const TextBox = z.strictObject({
   text: TextBody,
 });
 
-/** How much of the picture each side cuts away, as a fraction of it. */
-const CropSide = z.number().min(0).max(0.99);
+/** How much of the picture each side cuts away (or pads), as a fraction of it. */
+// Negative sides pad the picture with empty space inside its box, as
+// PowerPoint's a:srcRect allows.
+const CropSide = z.number().min(-1).max(0.99);
 export const Crop = z
   .strictObject({
     left: CropSide,

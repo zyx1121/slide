@@ -1018,8 +1018,9 @@ async function readSp(
 }
 
 /**
- * A picture's crop from its <a:srcRect>. Negative sides, which pad the
- * picture with empty space, and crops that keep almost nothing are left out.
+ * A picture's crop from its <a:srcRect>; negative sides pad the picture with
+ * empty space. Padding past the picture's own size, and crops that keep
+ * almost nothing, are left out.
  */
 function readCrop(
   srcRect: El | undefined,
@@ -1029,7 +1030,7 @@ function readCrop(
   const [left, top, right, bottom] = ["l", "t", "r", "b"].map(side);
   if ([left, top, right, bottom].every((s) => s === 0)) return undefined;
   if (
-    [left, top, right, bottom].some((s) => !(s >= 0)) ||
+    [left, top, right, bottom].some((s) => !(s >= -1)) ||
     left + right > 0.99 ||
     top + bottom > 0.99
   ) {

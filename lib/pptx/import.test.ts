@@ -417,6 +417,24 @@ describe("importPptx", () => {
     expect(d.endsWith("0 1000 Z")).toBe(true);
   });
 
+  it("aligns paragraphs by their list style's level unless they say", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_align", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const p = (text: string, pPr = "") =>
+      `<a:p>${pPr}<a:r><a:rPr lang="en-US"/><a:t>${text}</a:t></a:r></a:p>`;
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="40" name="Box"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="1270000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr anchor="ctr"/><a:lstStyle><a:lvl1pPr algn="ctr"/></a:lstStyle>${p("styled")}${p("own", '<a:pPr algn="r"/>')}${p("deeper", '<a:pPr lvl="1"/>')}</p:txBody></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${shape}</p:spTree>`)
+    );
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const got = document.slides[0].shapes[0];
+    expect(
+      got.kind === "rect" && got.text?.paragraphs.map((q) => q.align)
+    ).toEqual(["center", "right", "left"]);
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

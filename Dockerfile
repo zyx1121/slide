@@ -27,6 +27,9 @@ COPY --from=build --chown=node:node /app/fonts/slide ./fonts/slide
 COPY --from=build --chown=node:node /app/dist/migrate.mjs ./dist/migrate.mjs
 COPY --from=build --chown=node:node /app/migrations ./migrations
 COPY docker-entrypoint.sh /usr/local/bin/slide
+# Uploaded images. A new volume mounted here takes this directory's owner.
+RUN mkdir -p /data/assets && chown node:node /data/assets
+ENV ASSETS_DIR=/data/assets
 
 USER node
 EXPOSE 3000

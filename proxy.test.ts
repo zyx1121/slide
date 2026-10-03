@@ -86,13 +86,20 @@ describe("proxy", () => {
 
   it("leaves sign-in, the health check, public decks and static files alone", () => {
     const pattern = new RegExp(`^${config.matcher[0]}$`);
-    for (const path of ["/", "/decks/dk_2345", "/settings", "/api/healthz"]) {
+    for (const path of [
+      "/",
+      "/decks/dk_2345",
+      "/settings",
+      "/api/healthz",
+      "/api/assets/" + "a".repeat(64),
+    ]) {
       expect(pattern.test(path)).toBe(true);
     }
     for (const path of [
       "/auth/login",
       "/auth/callback",
       "/api/health",
+      "/api/assets",
       "/s/abc",
       "/template/winlab-background.png",
       "/_next/static/chunk.js",

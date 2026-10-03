@@ -32,6 +32,10 @@ applied=$(docker compose exec -T postgres psql -U slide -d slide -tAc \
 docker compose exec -T postgres psql -U slide -d slide -tAc \
 	"select count(*) from decks" >/dev/null || fail "the decks table is missing"
 
+# The web service can write uploaded images to its volume.
+docker compose exec -T web sh -c 'touch "$ASSETS_DIR/.smoke" && rm "$ASSETS_DIR/.smoke"' ||
+	fail "the web service cannot write to ASSETS_DIR"
+
 # Signed out, a page sends the visitor to sign-in on APP_URL, keeping the path.
 app=${APP_URL:-http://localhost:3000}
 location=$(curl -sS -o /dev/null -w '%{redirect_url}' "$web/decks/x?y=1")

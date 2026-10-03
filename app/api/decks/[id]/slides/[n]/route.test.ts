@@ -5,6 +5,9 @@ import { sampleDocument } from "@/lib/deck/sample";
 vi.mock("@/lib/auth/session", () => ({ getSession: vi.fn() }));
 vi.mock("@/lib/db", () => ({ sql: {} }));
 vi.mock("@/lib/deck/store", () => ({ getDeck: vi.fn() }));
+vi.mock("@/lib/assets/store", () => ({
+  slideAssetUris: vi.fn(async () => new Map()),
+}));
 
 const { getSession } = await import("@/lib/auth/session");
 const { getDeck } = await import("@/lib/deck/store");

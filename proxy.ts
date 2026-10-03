@@ -23,9 +23,11 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // Everything except sign-in itself, the health check, public decks (/s/),
-  // the template background public decks draw on, and static files.
+  // Everything except sign-in itself, the health check, uploads (which
+  // check the session themselves, and whose bodies a proxy would buffer and
+  // cut at its own limit), public decks (/s/), the template background
+  // public decks draw on, and static files.
   matcher: [
-    "/((?!auth/|api/health$|s/|template/|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!auth/|api/health$|api/assets$|s/|template/|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };

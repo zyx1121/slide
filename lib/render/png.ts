@@ -3,7 +3,7 @@
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { Resvg } from "@resvg/resvg-js";
+import { renderAsync, Resvg, type ResvgRenderOptions } from "@resvg/resvg-js";
 
 import { SLIDE_WIDTH } from "../deck/schema";
 import { BACKGROUND_PATH } from "./template";
@@ -44,14 +44,8 @@ export function backgroundDataUri(): string {
   return background;
 }
 
-/** A slide SVG as PNG bytes, `width` px wide (1920 by default). */
-export function renderPng(svg: string, width = SLIDE_WIDTH): Buffer {
-  return render(svg, width).asPng();
-}
-
-/** The raw rendering, for tests that read pixels. */
-export function render(svg: string, width = SLIDE_WIDTH) {
-  return new Resvg(svg, {
+function options(width: number): ResvgRenderOptions {
+  return {
     fitTo: { mode: "width", value: width },
     background: "#ffffff",
     font: {
@@ -59,5 +53,69 @@ export function render(svg: string, width = SLIDE_WIDTH) {
       loadSystemFonts: false,
       defaultFontFamily: "Carlito",
     },
-  }).render();
+  };
+}
+
+/**
+ * A slide SVG as PNG bytes, `width` px wide (1920 by default), on this
+ * thread. Requests use renderPngAsync, which keeps the server responsive.
+ */
+export function renderPng(svg: string, width = SLIDE_WIDTH): Buffer {
+  return render(svg, width).asPng();
+}
+
+/** The raw rendering, for tests that read pixels. */
+export function render(svg: string, width = SLIDE_WIDTH) {
+  return new Resvg(svg, options(width)).render();
+}
+
+/** Rendering is busy or took too long; the request should be retried. */
+export class RenderBusyError extends Error {
+  constructor(readonly reason: "busy" | "timeout") {
+    super(reason === "busy" ? "too many renders waiting" : "render timed out");
+  }
+}
+
+/** How many slides render at once, how many may wait, and for how long. */
+export const RENDER_LIMITS = { running: 2, waiting: 8, timeoutMs: 10_000 };
+
+let running = 0;
+const queue: (() => void)[] = [];
+
+/**
+ * A slide SVG as PNG bytes, rendered on libuv's thread pool rather than the
+ * request thread, a few at a time. It gives up with RenderBusyError when too
+ * many renders wait or one runs past the time limit, so one huge slide
+ * cannot stall every request.
+ */
+export async function renderPngAsync(
+  svg: string,
+  width = SLIDE_WIDTH,
+  limits = RENDER_LIMITS
+): Promise<Buffer> {
+  if (running >= limits.running) {
+    if (queue.length >= limits.waiting) throw new RenderBusyError("busy");
+    // A finishing render hands its slot over, so the count stays exact.
+    await new Promise<void>((resolve) => queue.push(resolve));
+  } else {
+    running++;
+  }
+  const abort = new AbortController();
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const rendered = renderAsync(svg, options(width), abort.signal);
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => {
+        // Settle first: aborting rejects the render at once.
+        reject(new RenderBusyError("timeout"));
+        abort.abort();
+      }, limits.timeoutMs);
+    });
+    return (await Promise.race([rendered, timeout])).asPng();
+  } finally {
+    clearTimeout(timer);
+    const next = queue.shift();
+    if (next) next();
+    else running--;
+  }
 }

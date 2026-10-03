@@ -100,4 +100,38 @@ describe("DeckDocument", () => {
     doc.slides.push({ id: "sl_blank", title: "", shapes: [] });
     expect(issuesOf(doc)).toEqual([]);
   });
+
+  it("caps the text one shape and one slide may hold", () => {
+    const doc = sampleDocument();
+    const box = (id: string, length: number) => ({
+      id,
+      kind: "text" as const,
+      x: 0,
+      y: 0,
+      w: 100,
+      h: 100,
+      text: { paragraphs: [{ runs: [{ text: "x".repeat(length) }] }] },
+    });
+    const one = DeckDocument.safeParse({
+      ...doc,
+      slides: [{ id: "sl_one", title: "", shapes: [box("tx_big", 5_001)] }],
+    });
+    expect(one.success).toBe(false);
+    expect(describeIssues(one.error!)).toEqual([
+      "slides.0.shapes.0.text: a shape holds at most 5000 characters of text",
+    ]);
+    const many = DeckDocument.safeParse({
+      ...doc,
+      slides: [
+        {
+          id: "sl_one",
+          title: "x",
+          shapes: [0, 1, 2, 3].map((i) => box(`tx_full${i}`, 5_000)),
+        },
+      ],
+    });
+    expect(describeIssues(many.error!)).toEqual([
+      "slides.0: a slide holds at most 20000 characters of text",
+    ]);
+  });
 });

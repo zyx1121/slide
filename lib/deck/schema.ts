@@ -3,7 +3,7 @@
 // .pptx export and import map one to one. Every write is validated here.
 import * as z from "zod";
 
-import { DECK_TITLE_MAX } from "./limits";
+import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "./limits";
 
 export const SCHEMA_VERSION = 1;
 
@@ -192,6 +192,31 @@ export const DeckDocument = z
 
     document.slides.forEach((slide, s) => {
       claim(slide.id, ["slides", s, "id"]);
+      let slideText = slide.title.length;
+      slide.shapes.forEach((shape, i) => {
+        if (shape.kind === "line" || shape.kind === "image" || !shape.text) {
+          return;
+        }
+        let shapeText = 0;
+        for (const paragraph of shape.text.paragraphs) {
+          for (const run of paragraph.runs) shapeText += run.text.length;
+        }
+        slideText += shapeText;
+        if (shapeText > SHAPE_TEXT_MAX) {
+          ctx.addIssue({
+            code: "custom",
+            message: `a shape holds at most ${SHAPE_TEXT_MAX} characters of text`,
+            path: ["slides", s, "shapes", i, "text"],
+          });
+        }
+      });
+      if (slideText > SLIDE_TEXT_MAX) {
+        ctx.addIssue({
+          code: "custom",
+          message: `a slide holds at most ${SLIDE_TEXT_MAX} characters of text`,
+          path: ["slides", s],
+        });
+      }
       const kinds = new Map<string, string>();
       slide.shapes.forEach((shape, i) => {
         claim(shape.id, ["slides", s, "shapes", i, "id"]);

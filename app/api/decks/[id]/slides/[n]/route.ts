@@ -2,7 +2,11 @@ import { slideAssetUris } from "@/lib/assets/store";
 import { getSession } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getDeck } from "@/lib/deck/store";
-import { backgroundDataUri, renderPng } from "@/lib/render/png";
+import {
+  backgroundDataUri,
+  RenderBusyError,
+  renderPngAsync,
+} from "@/lib/render/png";
 import { renderSlideSvg } from "@/lib/render/svg";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +33,17 @@ export async function GET(
     background: backgroundDataUri(),
     assetHref: (sha256) => assets.get(sha256) ?? null,
   });
-  return new Response(new Uint8Array(renderPng(svg)), {
+  let png: Buffer;
+  try {
+    png = await renderPngAsync(svg);
+  } catch (error) {
+    if (!(error instanceof RenderBusyError)) throw error;
+    return Response.json(
+      { error: "rendering is busy, try again" },
+      { status: 503, headers: { "retry-after": "5" } }
+    );
+  }
+  return new Response(new Uint8Array(png), {
     headers: {
       "content-type": "image/png",
       "cache-control": "private, no-store",

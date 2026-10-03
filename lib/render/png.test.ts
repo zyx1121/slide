@@ -3,7 +3,13 @@
 import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
-import { backgroundDataUri, render, renderPng } from "./png";
+import {
+  backgroundDataUri,
+  render,
+  RenderBusyError,
+  renderPng,
+  renderPngAsync,
+} from "./png";
 import { renderSlideSvg } from "./svg";
 
 const svg = () =>
@@ -89,5 +95,54 @@ describe("renderPng", () => {
     expect(() =>
       renderPng(renderSlideSvg(slide, { slideNumber: 3, background: null }))
     ).not.toThrow();
+  });
+});
+
+describe("renderPngAsync", () => {
+  it("renders off the request thread", async () => {
+    const png = await renderPngAsync(svg(), 480);
+    expect(png.subarray(1, 4).toString()).toBe("PNG");
+  });
+
+  it("gives up on a render past its time limit", async () => {
+    // A heavy slide: a lot of text, a millisecond to draw it in.
+    const heavy = renderSlideSvg(
+      {
+        id: "sl_heavy",
+        title: "",
+        shapes: Array.from({ length: 4 }, (_, i) => ({
+          id: `tx_heavy${i}`,
+          kind: "text" as const,
+          x: 0,
+          y: 0,
+          w: 1900,
+          h: 1000,
+          text: { paragraphs: [{ runs: [{ text: "word ".repeat(1000) }] }] },
+        })),
+      },
+      { slideNumber: 1, background: null }
+    );
+    const failed = await renderPngAsync(heavy, 1920, {
+      running: 2,
+      waiting: 8,
+      timeoutMs: 1,
+    }).catch((error: RenderBusyError) => error);
+    expect(failed).toBeInstanceOf(RenderBusyError);
+    expect((failed as RenderBusyError).reason).toBe("timeout");
+  });
+
+  it("turns away a render when too many wait", async () => {
+    const limits = { running: 1, waiting: 0, timeoutMs: 10_000 };
+    const first = renderPngAsync(svg(), 480, limits);
+    const second = await renderPngAsync(svg(), 480, limits).catch(
+      (error: RenderBusyError) => error
+    );
+    expect(second).toBeInstanceOf(RenderBusyError);
+    expect((second as RenderBusyError).reason).toBe("busy");
+    await first;
+    // The slot is free again.
+    await expect(renderPngAsync(svg(), 480, limits)).resolves.toBeInstanceOf(
+      Buffer
+    );
   });
 });

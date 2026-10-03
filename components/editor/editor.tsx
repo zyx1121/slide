@@ -22,6 +22,12 @@ import {
 
 import { editDeckAction, loadDeckAction } from "@/app/decks/[id]/actions";
 import { Canvas } from "@/components/editor/canvas";
+import {
+  FillTool,
+  LineTools,
+  StrokeTool,
+  TextTools,
+} from "@/components/editor/dock-tools";
 import { SlideView } from "@/components/slide-view";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,6 +77,7 @@ import {
   shareSlides,
 } from "@/lib/editor/preview";
 import { createSaver, type SaverState } from "@/lib/editor/saver";
+import { selectionStyle, type StyleChange, styleOps } from "@/lib/editor/style";
 import { cn } from "@/lib/utils";
 
 /** What became of an edit: applied, a no-op, paused while saving is, or refused. */
@@ -269,6 +276,13 @@ export function Editor({
     }
   };
 
+  /** Applies a style from the dock to the selection. */
+  const restyle = (change: StyleChange) => {
+    flushNudge();
+    const current = docRef.current.slides[index];
+    commit(styleOps(current, index, new Set(selection), change), index);
+  };
+
   const reorder = (to: "front" | "back") => {
     flushNudge();
     const current = docRef.current.slides[index];
@@ -464,6 +478,7 @@ export function Editor({
       ? movedSlide(slide, new Set(selection), nudge.dx, nudge.dy)
       : slide;
   const none = selection.length === 0;
+  const style = selectionStyle(slide, new Set(selection));
   const paused = !saving.accepting;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
@@ -559,49 +574,68 @@ export function Editor({
             onClick={() => travel("redo")}
           />
           <Separator orientation="vertical" className="mx-1 my-2" />
-          <Tool
-            tip="插入矩形"
-            icon={RectGlyph}
+          {/* The middle of the dock follows the selection: inserting with
+              nothing selected, otherwise the selection's own tools. */}
+          <fieldset
             disabled={paused}
-            onClick={() => insert("rect")}
-          />
-          <Tool
-            tip="插入圓角矩形"
-            icon={RoundRectGlyph}
-            disabled={paused}
-            onClick={() => insert("roundRect")}
-          />
-          <Tool
-            tip="插入橢圓"
-            icon={EllipseGlyph}
-            disabled={paused}
-            onClick={() => insert("ellipse")}
-          />
-          <Separator orientation="vertical" className="mx-1 my-2" />
-          <Tool
-            tip="移到最上層"
-            icon={BringToFrontIcon}
-            disabled={paused || none}
-            onClick={() => reorder("front")}
-          />
-          <Tool
-            tip="移到最下層"
-            icon={SendToBackIcon}
-            disabled={paused || none}
-            onClick={() => reorder("back")}
-          />
-          <Tool
-            tip="再製"
-            icon={CopyPlusIcon}
-            disabled={paused || none}
-            onClick={duplicate}
-          />
-          <Tool
-            tip="刪除"
-            icon={Trash2Icon}
-            disabled={paused || none}
-            onClick={remove}
-          />
+            aria-label={none ? "插入" : "選取的物件"}
+            className="contents"
+          >
+            {none ? (
+              <>
+                <Tool
+                  tip="插入矩形"
+                  icon={RectGlyph}
+                  onClick={() => insert("rect")}
+                />
+                <Tool
+                  tip="插入圓角矩形"
+                  icon={RoundRectGlyph}
+                  onClick={() => insert("roundRect")}
+                />
+                <Tool
+                  tip="插入橢圓"
+                  icon={EllipseGlyph}
+                  onClick={() => insert("ellipse")}
+                />
+              </>
+            ) : (
+              <>
+                {style.fill !== undefined && (
+                  <FillTool value={style.fill} onChange={restyle} />
+                )}
+                {style.stroke && (
+                  <StrokeTool
+                    stroke={style.stroke}
+                    line={style.line !== undefined}
+                    onChange={restyle}
+                  />
+                )}
+                {style.line && (
+                  <LineTools line={style.line} onChange={restyle} />
+                )}
+                {style.text && (
+                  <>
+                    <Separator orientation="vertical" className="mx-1 my-2" />
+                    <TextTools text={style.text} onChange={restyle} />
+                  </>
+                )}
+                <Separator orientation="vertical" className="mx-1 my-2" />
+                <Tool
+                  tip="移到最上層"
+                  icon={BringToFrontIcon}
+                  onClick={() => reorder("front")}
+                />
+                <Tool
+                  tip="移到最下層"
+                  icon={SendToBackIcon}
+                  onClick={() => reorder("back")}
+                />
+                <Tool tip="再製" icon={CopyPlusIcon} onClick={duplicate} />
+                <Tool tip="刪除" icon={Trash2Icon} onClick={remove} />
+              </>
+            )}
+          </fieldset>
           <Separator orientation="vertical" className="mx-1 my-2" />
           <Tool
             tip="上一頁"

@@ -1,6 +1,5 @@
 import { notFound } from "next/navigation";
 
-import { AccountActions } from "@/components/account-actions";
 import { Editor } from "@/components/editor/editor";
 import { StageShell } from "@/components/stage-shell";
 import { requireUser } from "@/lib/auth/session";
@@ -17,7 +16,7 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
   if (!deck) notFound();
 
   return (
-    <StageShell title={deck.title} actions={<AccountActions user={user} />}>
+    <StageShell title={deck.title}>
       <Editor
         deckId={deck.id}
         initialDocument={deck.document}

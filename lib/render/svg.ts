@@ -29,6 +29,11 @@ export type RenderOptions = {
   slideNumber: number;
   /** The template background's href; null draws a plain white slide. */
   background: string | null;
+  /**
+   * Leaves out the white base and the background, for a page that draws
+   * them in a layer of its own so they are not rebuilt with every edit.
+   */
+  bare?: boolean;
   /** An image asset's href, or null to draw a placeholder in its place. */
   assetHref?: (sha256: string) => string | null;
 };
@@ -290,9 +295,13 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
   const shapes = new Map(slide.shapes.map((shape) => [shape.id, shape]));
   const parts = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" font-family="${LATIN_FONT}">`,
-    `<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff"/>`,
   ];
-  if (options.background) {
+  if (!options.bare) {
+    parts.push(
+      `<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff"/>`
+    );
+  }
+  if (options.background && !options.bare) {
     parts.push(
       `<image href="${esc(options.background)}" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" preserveAspectRatio="none"/>`
     );

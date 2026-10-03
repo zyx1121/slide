@@ -5,18 +5,15 @@ import { TopCorners } from "@/components/corners";
 
 /**
  * The shell for a page whose working surface fills the viewport, as Plump's
- * canvas does: the zyx mark and the page's actions in the top corners, over
- * the surface, which scrolls under a fade. The owner keeps the bottom
- * corners off this page. Column pages use TaskShell instead.
+ * canvas does: the zyx mark over the surface, which scrolls under it. Column
+ * pages use TaskShell instead.
  */
 export function StageShell({
   title,
-  actions,
   children,
 }: {
   /** The page's heading, for screen readers; the surface shows itself. */
   title: string;
-  actions?: ReactNode;
   children: ReactNode;
 }) {
   return (
@@ -27,19 +24,10 @@ export function StageShell({
       >
         跳至主要內容
       </a>
-      <TopCorners
-        fade
-        nav={
-          actions && (
-            <nav
-              aria-label="任務操作"
-              className="flex max-w-[calc(100vw-6.25rem)] items-center gap-4"
-            >
-              {actions}
-            </nav>
-          )
-        }
-      />
+      {/* Only the mark: the owner keeps the other corners and the edge fade
+          off this page. The mark's ink follows what scrolls under it
+          (--stage-logo-ink, set by the editor), as on the Made pages. */}
+      <TopCorners className="text-[color:var(--stage-logo-ink,var(--foreground))] motion-safe:transition-colors" />
       <main
         id="task"
         tabIndex={-1}

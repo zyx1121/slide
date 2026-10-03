@@ -11,7 +11,7 @@ RUN bun install --frozen-lockfile
 
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN sh scripts/fetch-fonts.sh && bun run build && bun run build:migrate
+RUN sh scripts/fetch-fonts.sh && bun run build && bun run build:migrate && bun run build:worker
 
 FROM node:22-alpine
 WORKDIR /app
@@ -26,6 +26,7 @@ COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/fonts/slide ./fonts/slide
 COPY --from=build --chown=node:node /app/template/winlab.pptx ./template/winlab.pptx
 COPY --from=build --chown=node:node /app/dist/migrate.mjs ./dist/migrate.mjs
+COPY --from=build --chown=node:node /app/dist/import-worker.mjs ./dist/import-worker.mjs
 COPY --from=build --chown=node:node /app/migrations ./migrations
 COPY docker-entrypoint.sh /usr/local/bin/slide
 # Uploaded images. A new volume mounted here takes this directory's owner.

@@ -10,6 +10,7 @@ const ERRORS: Record<string, string> = {
   "too-large": "檔案超過 100 MB，沒有匯入。",
   "not-pptx": "這不是 .pptx 檔。",
   malformed: "這個 .pptx 讀不出來，可能已損壞。",
+  busy: "伺服器正忙，請稍後再試。",
 };
 
 /**

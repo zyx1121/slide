@@ -39,6 +39,21 @@ describe("presetPath", () => {
     }
   });
 
+  it("bends an arrow up from the bottom left into a head at the right", () => {
+    const { fill } = presetPath("bentArrow", box);
+    expect(fill.startsWith("M100 300L100 ")).toBe(true);
+    // The head's tip: the right edge, half the head's width down.
+    expect(fill).toContain("L500 150");
+    expect(fill.endsWith("L150 300Z")).toBe(true);
+  });
+
+  it("crosses a summing junction's circle with an X", () => {
+    const { fill, stroke } = presetPath("flowChartSummingJunction", box);
+    expect(fill).toMatch(/^M100 200A200 100 /);
+    expect(stroke!.startsWith(fill)).toBe(true);
+    expect(stroke!.match(/M/g)).toHaveLength(3);
+  });
+
   it("strokes a bracket open and fills it closed", () => {
     const { fill, stroke } = presetPath("rightBracket", box);
     expect(stroke).toMatch(/^M100 100A/);

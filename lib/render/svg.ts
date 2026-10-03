@@ -330,6 +330,12 @@ function shapeSvg(
       body = outline.stroke
         ? `<path d="${outline.fill}" ${fill} stroke="none"/><path d="${outline.stroke}" fill="none" ${strokeAttrs(shape.stroke)}/>`
         : `<path d="${outline.fill}" ${fill} ${strokeAttrs(shape.stroke)}/>`;
+      if (shape.flipH || shape.flipV) {
+        // Mirrored about the box's center; its text reads as usual.
+        const cx = num(box.x + box.w / 2);
+        const cy = num(box.y + box.h / 2);
+        body = `<g transform="translate(${cx} ${cy}) scale(${shape.flipH ? -1 : 1} ${shape.flipV ? -1 : 1}) translate(${-cx} ${-cy})">${body}</g>`;
+      }
       body += shapeText(shape, box);
       break;
     }

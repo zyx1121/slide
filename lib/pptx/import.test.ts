@@ -476,6 +476,40 @@ describe("importPptx", () => {
     });
   });
 
+  it("reads a rectangle filled with a picture, as an equation's fallback, as a picture", async () => {
+    const shas = [SHA];
+    const parts = unzipSync(
+      exportPptx(
+        richDeck(),
+        new Map(shas.map((sha) => [sha, { mime: "image/png", data: PNG_1X1 }]))
+      )
+    );
+    const name = Object.keys(parts).find(
+      (n) =>
+        /ppt\/slides\/slide\d+\.xml$/.test(n) &&
+        strFromU8(parts[n]).includes("r:embed")
+    )!;
+    const xml = strFromU8(parts[name]);
+    const rId = /r:embed="(rId\d+)"/.exec(xml)![1];
+    const px = (n: number) => n * 6350;
+    // Newer readers get the equation, older ones a rectangle filled with its
+    // picture, stretched 22.857% past the bottom (so its bottom is cut).
+    const equation = `<mc:AlternateContent xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"><mc:Choice Requires="a14"><p:sp><p:nvSpPr><p:cNvPr id="60" name="Math"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:p/></p:txBody></p:sp></mc:Choice><mc:Fallback><p:sp><p:nvSpPr><p:cNvPr id="60" name="Math"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="${px(300)}" y="${px(400)}"/><a:ext cx="${px(500)}" cy="${px(50)}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect b="-22857"/></a:stretch></a:blipFill></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:rPr lang="en-US"/><a:t> </a:t></a:r></a:p></p:txBody></p:sp></mc:Fallback></mc:AlternateContent>`;
+    parts[name] = strToU8(xml.replace("</p:spTree>", `${equation}</p:spTree>`));
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(report.skipped).toEqual({});
+    const pictures = document.slides
+      .flatMap((slide) => slide.shapes)
+      .filter((shape) => shape.kind === "image");
+    expect(pictures.at(-1)).toMatchObject({
+      x: 300,
+      y: 400,
+      w: 500,
+      h: 50,
+      crop: { left: 0, top: 0, right: 0, bottom: 0.18605 },
+    });
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

@@ -29,6 +29,7 @@ const PREFIX: Record<Shape["kind"], string> = {
   roundRect: "sh",
   ellipse: "sh",
   preset: "sh",
+  freeform: "sh",
   text: "tx",
   image: "im",
   line: "ln",

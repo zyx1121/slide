@@ -14,6 +14,7 @@ import {
   type TextBody,
 } from "../deck/schema";
 import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "../deck/limits";
+import { formatPath, type PathCommand, PATH_UNITS } from "../deck/path";
 import { readColor, readColorMap, readTheme, type Theme } from "./color";
 import {
   child,
@@ -703,6 +704,114 @@ function readLine(
   lines.push({ shape, st: glue("a:stCxn"), end: glue("a:endCxn") });
 }
 
+/**
+ * A freeform's outline from its <a:pathLst>, in 0 to 1000 units across its
+ * box with flips applied, or null when a point is not a plain number (a
+ * guide formula) or nothing is drawn. Arcs become cubic curves.
+ */
+function readFreeform(
+  pathLst: El | undefined,
+  cx: number,
+  cy: number,
+  flipH: boolean,
+  flipV: boolean
+): { path: string; filled: boolean } | null {
+  const paths = children(pathLst, "a:path");
+  if (paths.length === 0) return null;
+  const commands: PathCommand[] = [];
+  let filled = false;
+  for (const p of paths) {
+    // Path coordinates span w and h; without them, the shape's size in EMU.
+    const w = num(p, "w") || cx;
+    const h = num(p, "h") || cy;
+    if (!(w > 0) && !(h > 0)) return null;
+    const norm = (x: number, y: number): [number, number] => {
+      const u = w > 0 ? clamp((x / w) * PATH_UNITS, 0, PATH_UNITS) : 0;
+      const v = h > 0 ? clamp((y / h) * PATH_UNITS, 0, PATH_UNITS) : 0;
+      return [flipH ? PATH_UNITS - u : u, flipV ? PATH_UNITS - v : v];
+    };
+    if (p.attrs.fill !== "none") filled = true;
+    let current: [number, number] = [0, 0];
+    for (const c of p.children) {
+      const pts: [number, number][] = [];
+      for (const pt of children(c, "a:pt")) {
+        const x = Number(pt.attrs.x);
+        const y = Number(pt.attrs.y);
+        if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+        pts.push([x, y]);
+      }
+      const op = {
+        "a:moveTo": "M",
+        "a:lnTo": "L",
+        "a:cubicBezTo": "C",
+        "a:quadBezTo": "Q",
+      }[c.tag] as "M" | "L" | "C" | "Q" | undefined;
+      if (op) {
+        if (pts.length !== { M: 1, L: 1, C: 3, Q: 2 }[op]) return null;
+        commands.push({ op, points: pts.map(([x, y]) => norm(x, y)) });
+        current = pts[pts.length - 1];
+      } else if (c.tag === "a:close") {
+        commands.push({ op: "Z", points: [] });
+      } else if (c.tag === "a:arcTo") {
+        const [wR, hR, stAng, swAng] = ["wR", "hR", "stAng", "swAng"].map(
+          (name) => Number(c.attrs[name])
+        );
+        if (![wR, hR, stAng, swAng].every(Number.isFinite)) return null;
+        for (const curve of arcCurves(current, wR, hR, stAng, swAng)) {
+          commands.push({ op: "C", points: curve.map(([x, y]) => norm(x, y)) });
+          current = curve[2];
+        }
+      }
+      if (commands.length > 2000) return null;
+    }
+  }
+  if (commands.length < 2 || commands[0].op !== "M") return null;
+  return { path: formatPath(commands), filled };
+}
+
+/**
+ * Cubic curves along DrawingML's arcTo from `from`: an ellipse of radii wR
+ * and hR, from angle stAng through swAng (60,000ths of a degree, measured
+ * as seen, so turned into the ellipse's own angles first).
+ */
+function arcCurves(
+  from: [number, number],
+  wR: number,
+  hR: number,
+  stAng: number,
+  swAng: number
+): [number, number][][] {
+  const rad = (a: number) => ((a / 60000) * Math.PI) / 180;
+  const param = (a: number) => Math.atan2(wR * Math.sin(a), hR * Math.cos(a));
+  const sweep = clamp(rad(swAng), -2 * Math.PI, 2 * Math.PI);
+  const t0 = param(rad(stAng));
+  let t1 = param(rad(stAng) + sweep);
+  if (Math.abs(sweep) >= 2 * Math.PI - 1e-9) t1 = t0 + sweep;
+  else if (sweep > 0) while (t1 < t0) t1 += 2 * Math.PI;
+  else while (t1 > t0) t1 -= 2 * Math.PI;
+  const center = [from[0] - wR * Math.cos(t0), from[1] - hR * Math.sin(t0)];
+  const at = (t: number): [number, number] => [
+    center[0] + wR * Math.cos(t),
+    center[1] + hR * Math.sin(t),
+  ];
+  const n = Math.max(1, Math.ceil(Math.abs(t1 - t0) / (Math.PI / 2)));
+  const step = (t1 - t0) / n;
+  const k = (4 / 3) * Math.tan(step / 4);
+  const curves: [number, number][][] = [];
+  for (let i = 0; i < n; i++) {
+    const a = t0 + i * step;
+    const b = a + step;
+    const p0 = at(a);
+    const p3 = at(b);
+    curves.push([
+      [p0[0] - k * wR * Math.sin(a), p0[1] + k * hR * Math.cos(a)],
+      [p3[0] + k * wR * Math.sin(b), p3[1] - k * hR * Math.cos(b)],
+      p3,
+    ]);
+  }
+  return curves;
+}
+
 /** Placeholders that hold text: the body, a subtitle, a content placeholder. */
 const TEXT_PLACEHOLDERS = new Set(["body", "subTitle", "obj"]);
 
@@ -803,6 +912,14 @@ async function readSp(
   if (!box) return;
   const textBox = path(nv, "p:cNvSpPr")?.attrs.txBox === "1";
   const geometry = PresetGeometry.safeParse(prst).data;
+  const xfrm = child(spPr, "a:xfrm");
+  const freeform = readFreeform(
+    path(spPr, "a:custGeom", "a:pathLst"),
+    num(child(xfrm, "a:ext"), "cx") ?? 0,
+    num(child(xfrm, "a:ext"), "cy") ?? 0,
+    xfrm?.attrs.flipH === "1",
+    xfrm?.attrs.flipV === "1"
+  );
   const kind =
     textBox && (!prst || prst === "rect")
       ? "text"
@@ -810,7 +927,9 @@ async function readSp(
         ? prst
         : geometry
           ? "preset"
-          : null;
+          : freeform
+            ? "freeform"
+            : null;
   const fontRef = child(style, "a:fontRef");
   const textColor =
     readColor(fontRef, ctx.theme, ctx.colorMap) ??
@@ -873,6 +992,14 @@ async function readSp(
       };
     } else if (kind === "preset") {
       shape = { ...common, kind, geometry: geometry! };
+    } else if (kind === "freeform") {
+      shape = {
+        ...common,
+        kind,
+        // Outlines only (every path fill="none") are not filled.
+        fill: freeform!.filled ? common.fill : null,
+        path: freeform!.path,
+      };
     } else {
       shape = { ...common, kind };
     }

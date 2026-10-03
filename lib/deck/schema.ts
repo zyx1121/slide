@@ -4,6 +4,7 @@
 import * as z from "zod";
 
 import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "./limits";
+import { parsePath, PATH_MAX } from "./path";
 
 export const SCHEMA_VERSION = 1;
 
@@ -129,6 +130,22 @@ export const Preset = z.strictObject({
   text: TextBody.optional(),
 });
 
+/** A custom outline (a:custGeom), stretched over its box; see ./path. */
+export const Freeform = z.strictObject({
+  id: Id,
+  kind: z.literal("freeform"),
+  ...box,
+  ...paint,
+  text: TextBody.optional(),
+  path: z
+    .string()
+    .max(PATH_MAX)
+    .refine(
+      (d) => parsePath(d) !== null,
+      "paths use M, L, C, Q and Z with coordinates 0 to 1000 across the box"
+    ),
+});
+
 export const TextBox = z.strictObject({
   id: Id,
   kind: z.literal("text"),
@@ -202,6 +219,7 @@ export const Shape = z.discriminatedUnion("kind", [
   RoundRect,
   Ellipse,
   Preset,
+  Freeform,
   TextBox,
   Image,
   Line,

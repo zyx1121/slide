@@ -11,6 +11,7 @@ import {
 } from "../deck/schema";
 import { type Point, routeConnector } from "./connector";
 import { presetPath } from "./preset";
+import { parsePath, PATH_UNITS } from "../deck/path";
 import { DEFAULT_TEXT, SLIDE_NUMBER, TITLE } from "./template";
 import {
   DEFAULT_INSET,
@@ -147,7 +148,7 @@ function textSvg(body: TextBody, box: Box, defaults: TextDefaults): string {
 /** Shapes that hold text: everything but connectors and pictures. */
 export type TextShape = Extract<
   Shape,
-  { kind: "rect" | "roundRect" | "ellipse" | "preset" | "text" }
+  { kind: "rect" | "roundRect" | "ellipse" | "preset" | "freeform" | "text" }
 >;
 
 export const holdsText = (shape: Shape): shape is TextShape =>
@@ -330,6 +331,26 @@ function shapeSvg(
         ? `<path d="${outline.fill}" ${fill} stroke="none"/><path d="${outline.stroke}" fill="none" ${strokeAttrs(shape.stroke)}/>`
         : `<path d="${outline.fill}" ${fill} ${strokeAttrs(shape.stroke)}/>`;
       body += shapeText(shape, box);
+      break;
+    }
+    case "freeform": {
+      // The outline's 0 to 1000 units stretched over the box.
+      const commands = parsePath(shape.path) ?? [];
+      const d = commands
+        .map((c) =>
+          [
+            c.op,
+            ...c.points.map(
+              ([px, py]) =>
+                `${num(box.x + (px / PATH_UNITS) * box.w)} ${num(box.y + (py / PATH_UNITS) * box.h)}`
+            ),
+          ].join(" ")
+        )
+        .join(" ");
+      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
+      body =
+        `<path d="${d}" ${fill} ${strokeAttrs(shape.stroke)} stroke-linejoin="round"/>` +
+        shapeText(shape, box);
       break;
     }
     case "text": {

@@ -307,6 +307,42 @@ describe("importPptx", () => {
     expect(kept.skipped).toEqual({});
   });
 
+  it("reads a table as a rectangle per cell, merges spanning", async () => {
+    const doc = richDeck();
+    doc.slides = [{ id: "sl_table", title: "", shapes: [] }];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const cell = (text: string, attrs = "") =>
+      `<a:tc${attrs}><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US"/><a:t>${text}</a:t></a:r></a:p></a:txBody><a:tcPr/></a:tc>`;
+    // 3 columns of 100 px, rows of 50 px in a frame 150 px tall: a header
+    // cell over two columns, then a cell two rows tall.
+    const px = (n: number) => n * 6350;
+    const table = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table"/><p:cNvGraphicFramePr/><p:nvPr/></p:nvGraphicFramePr><p:xfrm><a:off x="${px(200)}" y="${px(300)}"/><a:ext cx="${px(300)}" cy="${px(150)}"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table"><a:tbl><a:tblPr firstRow="1" bandRow="1"><a:tableStyleId>{5C22544A-7EE6-4342-B048-85BDC9FD1C3A}</a:tableStyleId></a:tblPr><a:tblGrid><a:gridCol w="${px(100)}"/><a:gridCol w="${px(100)}"/><a:gridCol w="${px(100)}"/></a:tblGrid><a:tr h="${px(50)}">${cell("Head", ' gridSpan="2"')}${cell("", ' hMerge="1"')}${cell("C")}</a:tr><a:tr h="${px(50)}">${cell("Tall", ' rowSpan="2"')}${cell("b")}${cell("c")}</a:tr><a:tr h="${px(50)}">${cell("", ' vMerge="1"')}${cell("e")}${cell("f")}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${table}</p:spTree>`)
+    );
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(report.skipped).toEqual({});
+    const cells = document.slides[0].shapes.filter((s) => s.kind === "rect");
+    const summary = cells.map((s) => {
+      const run = s.kind === "rect" ? s.text?.paragraphs[0].runs[0] : undefined;
+      return [run?.text ?? "", s.x, s.y, s.w, s.h, run?.bold ?? false];
+    });
+    expect(summary).toEqual([
+      ["Head", 200, 300, 200, 50, true],
+      ["C", 400, 300, 100, 50, true],
+      ["Tall", 200, 350, 100, 100, false],
+      ["b", 300, 350, 100, 50, false],
+      ["c", 400, 350, 100, 50, false],
+      ["e", 300, 400, 100, 50, false],
+      ["f", 400, 400, 100, 50, false],
+    ]);
+    // The default style: the theme's accent behind the header, banded rows.
+    const fills = cells.map((s) => (s.kind === "rect" ? s.fill : null));
+    expect(fills[0]).toBe(fills[1]);
+    expect(fills[3]).not.toBe(fills[5]);
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

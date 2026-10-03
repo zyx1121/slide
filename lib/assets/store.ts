@@ -45,6 +45,17 @@ async function exists(path: string): Promise<boolean> {
   }
 }
 
+/** What an upload is, or why it cannot be an asset; nothing is stored. */
+export function inspectAsset(bytes: Uint8Array): Asset {
+  if (bytes.length === 0) throw new AssetError("empty");
+  if (bytes.length > ASSET_MAX_BYTES) throw new AssetError("too-large");
+  const info = sniffImage(bytes);
+  if (!info) throw new AssetError("unsupported");
+  if (!withinPixels(info)) throw new AssetError("too-many-pixels");
+  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  return { sha256, bytes: bytes.length, ...info };
+}
+
 /**
  * Stores an upload for a member and returns what it is. The file is written
  * (through a temporary name, then renamed) before the rows, so a row never
@@ -55,12 +66,8 @@ export async function saveAsset(
   sub: string,
   bytes: Uint8Array
 ): Promise<Asset> {
-  if (bytes.length === 0) throw new AssetError("empty");
-  if (bytes.length > ASSET_MAX_BYTES) throw new AssetError("too-large");
-  const info = sniffImage(bytes);
-  if (!info) throw new AssetError("unsupported");
-  if (!withinPixels(info)) throw new AssetError("too-many-pixels");
-  const sha256 = createHash("sha256").update(bytes).digest("hex");
+  const asset = inspectAsset(bytes);
+  const { sha256, ...info } = asset;
   const path = pathOf(sha256);
   if (!(await exists(path))) {
     await mkdir(dirname(path), { recursive: true });
@@ -78,7 +85,7 @@ export async function saveAsset(
       insert into asset_owners (sha256, sub) values (${sha256}, ${sub})
       on conflict do nothing`;
   });
-  return { sha256, bytes: bytes.length, ...info };
+  return asset;
 }
 
 /** An asset's bytes and type, when the member owns it. */

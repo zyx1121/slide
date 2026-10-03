@@ -1,4 +1,9 @@
-import { AssetError, saveAsset } from "@/lib/assets/store";
+import {
+  AssetError,
+  inspectAsset,
+  saveAsset,
+  slideAssets,
+} from "@/lib/assets/store";
 import { getSession } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { IMPORT_MAX_BYTES } from "@/lib/deck/limits";
@@ -36,14 +41,18 @@ export async function POST(request: Request) {
   }
   const fallback = name.replace(/\.pptx$/i, "").trim() || undefined;
 
+  // Pictures are checked as the file is read but stored only once all of it
+  // has been, so a file that fails part way leaves none behind.
+  const pictures = new Map<string, Uint8Array>();
   let imported: Awaited<ReturnType<typeof importPptx>>;
   try {
     imported = await importPptx(
       bytes,
       async (image) => {
         try {
-          const asset = await saveAsset(sql, user.sub, image);
-          return { sha256: asset.sha256 };
+          const { sha256 } = inspectAsset(image);
+          pictures.set(sha256, image);
+          return { sha256 };
         } catch (error) {
           if (error instanceof AssetError) return null;
           throw error;
@@ -62,6 +71,11 @@ export async function POST(request: Request) {
       { error: code },
       { status: code === "too-large" ? 413 : 422 }
     );
+  }
+  // Only the pictures the deck draws: shapes over the limits were dropped.
+  const drawn = new Set(imported.document.slides.flatMap(slideAssets));
+  for (const [sha256, image] of pictures) {
+    if (drawn.has(sha256)) await saveAsset(sql, user.sub, image);
   }
   const deck = await createDeck(sql, user.sub, imported.document);
   return Response.json(

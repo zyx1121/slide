@@ -30,8 +30,11 @@ export type SaverOptions = {
   version: number;
   send: (version: number, ops: Operation[]) => Promise<SendResult>;
   load: () => Promise<Loaded | null>;
-  /** Replaces the editor's document after a load. */
-  onReload: (document: DeckDocument) => void;
+  /**
+   * Replaces the editor's document after a load; returns whether it differed
+   * from the local one, so a lost answer that lost no edit says so.
+   */
+  onReload: (document: DeckDocument) => boolean | void;
   onChange: (state: SaverState) => void;
   /** How long to wait before loading again while blocked, in ms. */
   retryDelay?: number;
@@ -41,6 +44,7 @@ const MESSAGES = {
   conflict: "簡報在別處改過了，已載入最新版本。",
   refused: "這個修改沒有存到，已載入最新版本。",
   failed: "連線中斷，已載入伺服器上的版本。",
+  kept: "連線中斷過，修改都已儲存。",
   blocked: "連不上伺服器，修改暫停。重新連上後會自動載入。",
 } as const;
 
@@ -78,9 +82,10 @@ export function createSaver(options: SaverOptions) {
       return;
     }
     version = loaded.version;
-    options.onReload(loaded.document);
+    const changed = options.onReload(loaded.document) !== false;
     phase = "ready";
-    message = MESSAGES[reason === "blocked" ? "failed" : reason];
+    const said = reason === "blocked" ? "failed" : reason;
+    message = MESSAGES[said === "failed" && !changed ? "kept" : said];
     notify();
   }
 

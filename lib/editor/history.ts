@@ -37,6 +37,23 @@ export function undo(
   };
 }
 
+/**
+ * The history after the server's document replaced the local one. When it is
+ * the same document nothing was lost and the history stands. When it is the
+ * document an unsaved undo or redo started from, only that move (and what
+ * came after it) was lost: the history it started from applies again, so
+ * the member can try it once more. Otherwise the steps no longer apply.
+ */
+export function historyAfterReload(
+  current: History,
+  sameDocument: boolean,
+  lostMove: { history: History; fromDocument: boolean } | null
+): History {
+  if (sameDocument) return current;
+  if (lostMove?.fromDocument) return lostMove.history;
+  return EMPTY_HISTORY;
+}
+
 /** The patch that redoes the last undone edit, and the history after it. */
 export function redo(
   history: History

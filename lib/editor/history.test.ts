@@ -7,6 +7,7 @@ import {
   EMPTY_HISTORY,
   type History,
   HISTORY_LIMIT,
+  historyAfterReload,
   record,
   redo,
   undo,
@@ -68,5 +69,26 @@ describe("history", () => {
     }
     expect(history.past).toHaveLength(HISTORY_LIMIT);
     expect(history.past[0].ops).toEqual(rename("T5"));
+  });
+
+  it("keeps, restores or clears the history after a reload", () => {
+    const step = {
+      ops: [{ op: "replace" as const, path: "/title", value: "B" }],
+      inverse: [{ op: "replace" as const, path: "/title", value: "A" }],
+      slide: 0,
+    };
+    const before = record(EMPTY_HISTORY, step);
+    const after = undo(before)!.history;
+    // Nothing lost: the history stands.
+    expect(historyAfterReload(after, true, null)).toBe(after);
+    // The undo's save was lost and the server has what it started from.
+    expect(
+      historyAfterReload(after, false, { history: before, fromDocument: true })
+    ).toBe(before);
+    // Anything else: the steps no longer apply.
+    expect(
+      historyAfterReload(after, false, { history: before, fromDocument: false })
+    ).toBe(EMPTY_HISTORY);
+    expect(historyAfterReload(after, false, null)).toBe(EMPTY_HISTORY);
   });
 });

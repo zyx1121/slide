@@ -144,4 +144,24 @@ describe("createSaver", () => {
     expect(send).toHaveBeenCalledTimes(2);
     expect(load).not.toHaveBeenCalled();
   });
+
+  it("says nothing was lost when only the answer to a save was", async () => {
+    const loaded = { document: sampleDocument(), version: 1 };
+    const { saver, onReload } = setup(
+      async () => {
+        throw new Error("network");
+      },
+      async () => loaded
+    );
+    onReload.mockReturnValue(false);
+    saver.save(ops("A"));
+    await tick();
+    await tick();
+    expect(saver.state().message).toBe("連線中斷過，修改都已儲存。");
+    onReload.mockReturnValue(true);
+    saver.save(ops("B"));
+    await tick();
+    await tick();
+    expect(saver.state().message).toBe("連線中斷，已載入伺服器上的版本。");
+  });
 });

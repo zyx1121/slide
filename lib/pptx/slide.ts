@@ -128,7 +128,8 @@ export function textBodyXml(
 ): string {
   const anchor = ANCHOR[body?.anchor ?? defaults.anchor];
   const fit = options.autofit ? "<a:spAutoFit/>" : "<a:noAutofit/>";
-  const bodyPr = `<a:bodyPr wrap="square" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="${anchor}" rtlCol="0">${fit}</a:bodyPr>`;
+  const wrap = body?.wrap === false ? "none" : "square";
+  const bodyPr = `<a:bodyPr wrap="${wrap}" lIns="91440" tIns="45720" rIns="91440" bIns="45720" anchor="${anchor}" rtlCol="0">${fit}</a:bodyPr>`;
   const paragraphs = (body?.paragraphs ?? [{ runs: [] }]).map((paragraph) => {
     const level = paragraph.level ?? 0;
     const bullet = paragraph.bullet ?? "none";

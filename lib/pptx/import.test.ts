@@ -92,7 +92,10 @@ function richDeck(): DeckDocument {
             h: 120,
             fill: "#3297fc",
             stroke: null,
-            text: { paragraphs: [{ runs: [{ text: "next", size: 36 }] }] },
+            text: {
+              paragraphs: [{ runs: [{ text: "next", size: 36 }] }],
+              wrap: false,
+            },
           },
           {
             id: "im_pic",

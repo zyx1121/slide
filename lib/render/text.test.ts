@@ -174,6 +174,13 @@ describe("layoutText", () => {
       { ...defaults, wrap: false }
     );
     expect(layout.lines).toHaveLength(1);
+    // A body can turn wrapping off for itself, as an imported wrap="none".
+    const unwrapped = layoutText(
+      { paragraphs: [{ runs: [{ text: "a b c d e f g" }] }], wrap: false },
+      { w: 10, h: 100 },
+      defaults
+    );
+    expect(unwrapped.lines).toHaveLength(1);
   });
 
   it("does not break a Latin word in the middle", () => {

@@ -343,6 +343,7 @@ function readText(
           ? "top"
           : defaults.anchor;
   if (resolved) body.anchor = resolved;
+  if (bodyPr?.attrs.wrap === "none") body.wrap = false;
   return body;
 }
 

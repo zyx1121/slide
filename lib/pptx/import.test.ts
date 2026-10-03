@@ -79,6 +79,7 @@ function richDeck(): DeckDocument {
             w: 300,
             h: 200,
             asset: SHA,
+            crop: { left: 0.1, top: 0, right: 0.25, bottom: 0.05 },
           },
           {
             id: "ln_join",
@@ -258,6 +259,40 @@ describe("importPptx", () => {
     expect(under.size).toBe(40);
     // Colors in those defaults do not reach shapes, which have their own.
     expect(top.color).not.toBe("#FF0000");
+  });
+
+  it("leaves out crops that pad a picture or keep almost none of it", async () => {
+    const shas = [SHA];
+    const exported = unzipSync(
+      exportPptx(
+        richDeck(),
+        new Map(shas.map((sha) => [sha, { mime: "image/png", data: PNG_1X1 }]))
+      )
+    );
+    const name = Object.keys(exported).find((n) =>
+      strFromU8(exported[n]).includes("<a:srcRect")
+    )!;
+    const pictureOf = async (srcRect: string) => {
+      const parts = { ...exported };
+      parts[name] = strToU8(
+        strFromU8(exported[name]).replace(/<a:srcRect [^>]*\/>/, srcRect)
+      );
+      const { document, report } = await importPptx(zipSync(parts), saveImage);
+      const picture = document.slides
+        .flatMap((slide) => slide.shapes)
+        .find((shape) => shape.kind === "image");
+      return { picture, skipped: report.skipped };
+    };
+    const padded = await pictureOf('<a:srcRect l="-5000" r="10000"/>');
+    expect(padded.picture).not.toHaveProperty("crop");
+    expect(padded.skipped).toEqual({ "picture crop": 1 });
+    const sliver = await pictureOf('<a:srcRect l="60000" r="39500"/>');
+    expect(sliver.picture).not.toHaveProperty("crop");
+    const kept = await pictureOf('<a:srcRect t="12345"/>');
+    expect(kept.picture).toMatchObject({
+      crop: { left: 0, top: 0.12345, right: 0, bottom: 0 },
+    });
+    expect(kept.skipped).toEqual({});
   });
 
   it("reads a slide listed twice once, and holds text to the limits", async () => {

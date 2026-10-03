@@ -690,6 +690,34 @@ async function readSp(
   if (numericId) ids.set(numericId, shape);
 }
 
+/**
+ * A picture's crop from its <a:srcRect>. Negative sides, which pad the
+ * picture with empty space, and crops that keep almost nothing are left out.
+ */
+function readCrop(
+  srcRect: El | undefined,
+  ctx: Context
+): Extract<Shape, { kind: "image" }>["crop"] {
+  const side = (name: string) => (num(srcRect, name) ?? 0) / 100000;
+  const [left, top, right, bottom] = ["l", "t", "r", "b"].map(side);
+  if ([left, top, right, bottom].every((s) => s === 0)) return undefined;
+  if (
+    [left, top, right, bottom].some((s) => !(s >= 0)) ||
+    left + right > 0.99 ||
+    top + bottom > 0.99
+  ) {
+    ctx.skip("picture crop");
+    return undefined;
+  }
+  const round = (s: number) => Math.round(s * 100000) / 100000;
+  return {
+    left: round(left),
+    top: round(top),
+    right: round(right),
+    bottom: round(bottom),
+  };
+}
+
 async function readPic(
   el: El,
   ctx: Context,
@@ -715,11 +743,7 @@ async function readPic(
     ctx.skip("picture format");
     return;
   }
-  if (child(path(el, "p:blipFill"), "a:srcRect")?.attrs) {
-    const crop = child(path(el, "p:blipFill"), "a:srcRect")!.attrs;
-    if (Object.values(crop).some((v) => Number(v) !== 0))
-      ctx.skip("picture crop");
-  }
+  const crop = readCrop(child(path(el, "p:blipFill"), "a:srcRect"), ctx);
   const stroke = readStroke(spPr, child(el, "p:style"), ctx);
   const shape: Shape = {
     id: newId("im"),
@@ -729,6 +753,7 @@ async function readPic(
     w: length(box.w),
     h: length(box.h),
     asset: sha256,
+    ...(crop ? { crop } : {}),
     ...(box.rotation ? { rotation: clamp(box.rotation, -360, 360) } : {}),
     ...(stroke ? { stroke } : {}),
   };

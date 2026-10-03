@@ -189,8 +189,15 @@ function boxXml(shape: TextShape, id: number): string {
   return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr${textBox}/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation)}${geom}${fill}${line(shape.stroke)}</p:spPr>${textBodyXml(shape.text, defaults, { autofit })}</p:sp>`;
 }
 
+/** A crop in DrawingML's thousandths of a percent. */
+function srcRect(crop: ImageShape["crop"]): string {
+  if (!crop) return "";
+  const at = (side: number) => Math.round(side * 100000);
+  return `<a:srcRect l="${at(crop.left)}" t="${at(crop.top)}" r="${at(crop.right)}" b="${at(crop.bottom)}"/>`;
+}
+
 function pictureXml(shape: ImageShape, id: number, rId: string): string {
-  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${rId}"/><a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>${xfrm(shape, shape.rotation)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${shape.stroke ? line(shape.stroke) : ""}</p:spPr></p:pic>`;
+  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvPicPr><a:picLocks noChangeAspect="1"/></p:cNvPicPr><p:nvPr/></p:nvPicPr><p:blipFill><a:blip r:embed="${rId}"/>${srcRect(shape.crop)}<a:stretch><a:fillRect/></a:stretch></p:blipFill><p:spPr>${xfrm(shape, shape.rotation)}<a:prstGeom prst="rect"><a:avLst/></a:prstGeom>${shape.stroke ? line(shape.stroke) : ""}</p:spPr></p:pic>`;
 }
 
 function connectorXml(

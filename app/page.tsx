@@ -1,5 +1,6 @@
 import { AccountActions } from "@/components/account-actions";
 import { DeckCard } from "@/components/deck-card";
+import { ImportDeckButton } from "@/components/import-deck-button";
 import { NewDeckButton } from "@/components/new-deck-button";
 import { TaskShell } from "@/components/task-shell";
 import { requireUser } from "@/lib/auth/session";
@@ -19,13 +20,15 @@ export default async function Home() {
       actions={
         <>
           <NewDeckButton />
+          <ImportDeckButton />
           <AccountActions user={user} current="decks" />
         </>
       }
     >
       {decks.length === 0 ? (
         <p className="text-muted-foreground">
-          還沒有簡報。按右上角的「新增」，從 WinLab 範本開始。
+          還沒有簡報。按右上角的「新增」，從 WinLab 範本開始；或按「匯入」，從
+          PowerPoint 檔開始。
         </p>
       ) : (
         <ul className="grid grid-cols-1 gap-x-5 gap-y-10 sm:grid-cols-2 2xl:grid-cols-3">

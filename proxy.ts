@@ -28,6 +28,6 @@ export const config = {
   // cut at its own limit), public decks (/s/), the template background
   // public decks draw on, and static files.
   matcher: [
-    "/((?!auth/|api/health$|api/assets$|s/|template/|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!auth/|api/health$|api/assets$|api/decks/import$|s/|template/|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };

@@ -198,10 +198,12 @@ describe("layoutText", () => {
   it("breaks after a hyphen inside a word", () => {
     const layout = layoutText(
       { paragraphs: [{ runs: [{ text: "end-to-end pipeline" }] }] },
-      { w: measure("end-to-", style) + 1, h: 500 },
+      { w: measure("end-to-en", style), h: 500 },
       defaults
     );
+    // Room for "end-to-en", but the break comes after the hyphen.
     expect(lineTexts(layout)[0]).toBe("end-to-");
+    expect(lineTexts(layout)[1].startsWith("end")).toBe(true);
   });
 
   it("keeps a full-width comma off the start of a line", () => {
@@ -259,13 +261,17 @@ describe("layoutText", () => {
     const layout = layoutText(
       {
         paragraphs: [
-          { runs: [{ text: "line\u0001 one\u000bline two\u0007" }] },
+          {
+            runs: [
+              { text: "line\u0001 one\u000bline two\u0007\u2028line three" },
+            ],
+          },
         ],
       },
       { w: 2000, h: 500 },
       defaults
     );
-    expect(lineTexts(layout)).toEqual(["line one", "line two"]);
+    expect(lineTexts(layout)).toEqual(["line one", "line two", "line three"]);
   });
 
   it("splits symbols by the font that draws them", () => {
@@ -287,5 +293,14 @@ describe("layoutText", () => {
       defaults
     );
     expect(layout.lines.length).toBeGreaterThan(100);
+  });
+
+  it("never breaks at a no-break space", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "aaaa bbbb\u00a0cccc" }] }] },
+      { w: measure("aaaa bbbb", style), h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)).toEqual(["aaaa", "bbbb\u00a0cccc"]);
   });
 });

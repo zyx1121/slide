@@ -118,27 +118,48 @@ function crosses(a: Point, b: Point, r: Rect): boolean {
   );
 }
 
-/** A route's cost: running through a connected shape first, then doubling back, bends, length. */
-function cost(points: Point[], obstacles: Rect[]): number {
+const unitOf = (a: Point, b: Point): Point => {
+  const length = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+  return { x: (b.x - a.x) / length, y: (b.y - a.y) / length };
+};
+
+/**
+ * A route's cost. Running through a connected shape costs most, then leaving
+ * or entering against the site's direction and doubling back; among routes
+ * without those, fewer bends win (a bend outweighs 200 px), then shorter ones.
+ */
+function cost(
+  points: Point[],
+  obstacles: Rect[],
+  va: Point,
+  vb: Point
+): number {
+  if (points.length < 2) return Infinity;
   let length = 0;
   let through = 0;
-  let back = 0;
+  let wrong = 0;
   for (let i = 1; i < points.length; i++) {
     const a = points[i - 1];
     const b = points[i];
     length += Math.abs(b.x - a.x) + Math.abs(b.y - a.y);
     for (const r of obstacles) if (crosses(a, b, r)) through++;
-    if (i >= 2 && dot(sub(a, points[i - 2]), sub(b, a)) < 0) back++;
+    if (i >= 2 && dot(sub(a, points[i - 2]), sub(b, a)) < 0) wrong++;
   }
-  return through * 1e7 + back * 1e6 + (points.length - 2) * 40 + length;
+  if (dot(unitOf(points[0], points[1]), va) < 0.99) wrong++;
+  const last = points.length - 1;
+  if (dot(unitOf(points[last - 1], points[last]), scale(vb, -1)) < 0.99) {
+    wrong++;
+  }
+  return through * 1e7 + wrong * 1e6 + (points.length - 2) * 200 + length;
 }
 
 /**
  * An orthogonal route from `a` leaving along `da` to `b` entering against
- * `db`. It runs a short stub straight out of each end, then joins the stubs
- * with the cheapest of a few one- and two-bend paths, including detours
- * around `obstacles` (the boxes of the shapes it connects), so it never runs
- * through them when the shapes leave room.
+ * `db`. It runs a stub straight out of each end (30 px, 10 px or none, so
+ * shapes close together still get a straight line or a single bend), then
+ * joins the stubs with the cheapest of a few one- and two-bend paths,
+ * including detours around `obstacles` (the boxes of the shapes it connects),
+ * so it never runs through them when the shapes leave room.
  */
 export function elbowRoute(
   a: Point,
@@ -147,27 +168,33 @@ export function elbowRoute(
   db: Dir,
   obstacles: Rect[] = []
 ): Point[] {
-  const a1 = add(a, scale(VECTORS[da], STUB));
-  const b1 = add(b, scale(VECTORS[db], STUB));
-  // The middle line first: among routes of equal cost, the symmetric one wins.
-  const xs = [(a1.x + b1.x) / 2, a1.x, b1.x];
-  const ys = [(a1.y + b1.y) / 2, a1.y, b1.y];
-  for (const r of obstacles) {
-    xs.push(r.x - STUB, r.x + r.w + STUB);
-    ys.push(r.y - STUB, r.y + r.h + STUB);
-  }
-  const candidates: Point[][] = [
-    ...xs.map((x) => [a, a1, { x, y: a1.y }, { x, y: b1.y }, b1, b]),
-    ...ys.map((y) => [a, a1, { x: a1.x, y }, { x: b1.x, y }, b1, b]),
-  ];
-  let best: Point[] = [];
+  const va = VECTORS[da];
+  const vb = VECTORS[db];
+  let best: Point[] = [a, b];
   let bestCost = Infinity;
-  for (const candidate of candidates) {
-    const route = simplify(candidate);
-    const c = cost(route, obstacles);
-    if (c < bestCost) {
-      best = route;
-      bestCost = c;
+  for (const stub of [STUB, STUB / 3, 0]) {
+    const a1 = add(a, scale(va, stub));
+    const b1 = add(b, scale(vb, stub));
+    // The middle line first: among routes of equal cost, the symmetric one wins.
+    const xs = [(a1.x + b1.x) / 2, a1.x, b1.x];
+    const ys = [(a1.y + b1.y) / 2, a1.y, b1.y];
+    for (const r of obstacles) {
+      xs.push(r.x - STUB, r.x + r.w + STUB);
+      ys.push(r.y - STUB, r.y + r.h + STUB);
+    }
+    const candidates: Point[][] = [
+      ...xs.map((x) => [a, a1, { x, y: a1.y }, { x, y: b1.y }, b1, b]),
+      ...ys.map((y) => [a, a1, { x: a1.x, y }, { x: b1.x, y }, b1, b]),
+    ];
+    for (const candidate of candidates) {
+      const route = simplify(candidate);
+      // A shorter stub only wins when it saves a bend or a wrong turn: keep
+      // 30 px of clearance otherwise.
+      const c = cost(route, obstacles, va, vb) + (STUB - stub) * 5;
+      if (c < bestCost) {
+        best = route;
+        bestCost = c;
+      }
     }
   }
   return best;

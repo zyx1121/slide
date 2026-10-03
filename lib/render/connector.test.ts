@@ -266,3 +266,63 @@ describe("elbow routes between two boxes", () => {
     expect([...new Set(failures)]).toEqual([]);
   });
 });
+
+describe("elbow routes between boxes close together", () => {
+  const box = (id: string, x: number, y: number) => ({
+    id,
+    kind: "rect" as const,
+    x,
+    y,
+    w: 200,
+    h: 120,
+  });
+  const route = (
+    a: ReturnType<typeof box>,
+    s0: number,
+    b: ReturnType<typeof box>,
+    s1: number
+  ) =>
+    routeConnector(
+      {
+        id: "ln_close",
+        kind: "line",
+        route: "elbow",
+        start: { shape: a.id, site: s0 },
+        end: { shape: b.id, site: s1 },
+        stroke: { color: "#000000", width: 2 },
+      },
+      new Map<string, Shape>([
+        [a.id, a],
+        [b.id, b],
+      ])
+    ).points;
+
+  it("draws a straight line between facing sides 40, 20 and 10 px apart", () => {
+    for (const gap of [40, 20, 10]) {
+      const a = box("sh_a1", 100, 100);
+      const b = box("sh_b1", 300 + gap, 100);
+      expect(route(a, 3, b, 1)).toHaveLength(2);
+      const c = box("sh_c1", 100, 220 + gap);
+      expect(route(a, 2, c, 0)).toHaveLength(2);
+    }
+  });
+
+  it("uses one Z between facing sides that are offset", () => {
+    const a = box("sh_a1", 100, 100);
+    const b = box("sh_b1", 340, 110);
+    expect(route(a, 3, b, 1).length - 2).toBeLessThanOrEqual(2);
+  });
+
+  it("bends once when the corner is 10 or 20 px ahead", () => {
+    for (const ahead of [10, 20]) {
+      const a = box("sh_a1", 100, 100);
+      // a's bottom site is (200, 220); b's left site sits `ahead` px below it.
+      const b = box("sh_b1", 400, 220 + ahead - 60);
+      expect(route(a, 2, b, 1)).toEqual([
+        { x: 200, y: 220 },
+        { x: 200, y: 220 + ahead },
+        { x: 400, y: 220 + ahead },
+      ]);
+    }
+  });
+});

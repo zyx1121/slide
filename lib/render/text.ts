@@ -76,7 +76,9 @@ const LINE_BREAKS = new Set(["\n", "\u000b", " "]);
 type RunStyle = Omit<Segment, "text" | "x" | "width" | "script">;
 type Char = { ch: string; cp: number; width: number; style: RunStyle };
 
-const isSpace = (ch: string) => ch === " " || ch === " " || ch === "\t";
+const NO_BREAK_SPACE = "\u00a0";
+const isSpace = (ch: string) =>
+  ch === " " || ch === NO_BREAK_SPACE || ch === "\t";
 
 /**
  * Characters that are neither drawn nor allowed in XML: C0 and C1 controls
@@ -104,6 +106,8 @@ function canBreakAfter(chars: Char[], i: number): boolean {
   const next = chars[i + 1];
   if (!next) return true;
   if (NO_START.has(next.ch) || NO_END.has(here.ch)) return false;
+  // A no-break space holds its neighbours together.
+  if (here.ch === NO_BREAK_SPACE || next.ch === NO_BREAK_SPACE) return false;
   if (isSpace(here.ch)) return !isSpace(next.ch);
   if (isSpace(next.ch)) return false;
   // After a hyphen inside a word: "end-to-end" may break as "end-" / "to-end".

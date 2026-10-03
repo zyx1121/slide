@@ -31,6 +31,7 @@ import {
   publishDeckAction,
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
+import { CheckTool } from "@/components/editor/check-tool";
 import {
   FillTool,
   LineTools,
@@ -1143,6 +1144,14 @@ export function Editor({
               onClick={() => goTo(visible + 1)}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
+            <CheckTool
+              document={doc}
+              onShow={(violation) => {
+                const at = violation.slide - 1;
+                goTo(at, true);
+                select(at, violation.shape ? [violation.shape] : []);
+              }}
+            />
             <p className="min-w-16 px-2 text-center text-xs text-muted-foreground">
               {status}
             </p>

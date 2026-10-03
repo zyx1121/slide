@@ -7,6 +7,7 @@ import {
   CircleHelpIcon,
   CopyPlusIcon,
   DownloadIcon,
+  GalleryVerticalIcon,
   GlobeIcon,
   ImageIcon,
   LayoutGridIcon,
@@ -129,6 +130,13 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText } from "@/lib/render/svg";
+import {
+  blankSlide,
+  deleteSlideOps,
+  duplicateSlide,
+  insertSlideOps,
+  moveSlideOps,
+} from "@/lib/editor/slides";
 import { uploadImage } from "@/lib/editor/upload";
 import { cn } from "@/lib/utils";
 
@@ -554,6 +562,52 @@ export function Editor({
     if (placed.length > 0) select(target, placed);
   };
 
+  // A slide to scroll to once the list has redrawn with it.
+  const pendingScroll = useRef<number | null>(null);
+  useEffect(() => {
+    const at = pendingScroll.current;
+    if (at === null) return;
+    pendingScroll.current = null;
+    slideItems.current[at]?.scrollIntoView({ block: "start" });
+  });
+
+  /**
+   * Changes the slide list around the slide in view: a blank slide or a
+   * copy after it, moving it, deleting it. The slide it leaves in view is
+   * scrolled to once the list has redrawn.
+   */
+  const changeSlides = (
+    action: "add" | "duplicate" | "up" | "down" | "delete"
+  ) => {
+    endEdit();
+    flushNudge();
+    const at = visible;
+    const slides = docRef.current.slides;
+    const plan: { ops: Operation[]; show: number } =
+      action === "add"
+        ? { ops: insertSlideOps(at + 1, blankSlide()), show: at + 1 }
+        : action === "duplicate"
+          ? {
+              ops: insertSlideOps(at + 1, duplicateSlide(slides[at])),
+              show: at + 1,
+            }
+          : action === "up"
+            ? { ops: moveSlideOps(at, at - 1), show: at - 1 }
+            : action === "down"
+              ? { ops: moveSlideOps(at, at + 1), show: at + 1 }
+              : {
+                  ops: slides.length > 1 ? deleteSlideOps(at) : [],
+                  show: Math.max(0, at - 1),
+                };
+    if (commit(plan.ops, plan.show) !== "applied") return;
+    setSelection([]);
+    setSlideIndex(plan.show);
+    // The slide in view is the one the action left, now, not once the
+    // scroll has caught up: a second action in a row acts on it.
+    setVisibleIndex(plan.show);
+    pendingScroll.current = plan.show;
+  };
+
   /** Adds a connector drawn on a slide and selects it. */
   const drawLine = (at: number, start: End, end: End) => {
     setTool(null);
@@ -691,6 +745,7 @@ export function Editor({
     return () => clearTimeout(timer);
   }, [deckId, doc.slides, draft, index, selection, visible]);
 
+  const slideOrder = doc.slides.map((slide) => slide.id).join(" ");
   // The page number follows the slide most in view.
   useEffect(() => {
     const root = scroller.current;
@@ -712,7 +767,9 @@ export function Editor({
     );
     for (const item of slideItems.current) if (item) observer.observe(item);
     return () => observer.disconnect();
-  }, [doc.slides.length]);
+    // Again whenever the slides change order, so no ratio is kept under an
+    // index that now names another slide.
+  }, [slideOrder]);
 
   // The zyx mark turns black over a slide and back over the page, as on the
   // Made pages, since no fade separates it from what scrolls beneath.
@@ -1254,6 +1311,13 @@ export function Editor({
               disabled={visible === doc.slides.length - 1}
               onClick={() => goTo(visible + 1)}
             />
+            <SlideMenu
+              disabled={paused}
+              first={visible === 0}
+              last={visible === doc.slides.length - 1}
+              only={doc.slides.length === 1}
+              onAction={changeSlides}
+            />
             <Separator orientation="vertical" className="mx-1 my-2" />
             <ReviewTool
               deckId={deckId}
@@ -1545,6 +1609,72 @@ function PublishTool({
             {note}
           </p>
         )}
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/** The slide in view: add one after it, copy it, move it, delete it. */
+function SlideMenu({
+  disabled,
+  first,
+  last,
+  only,
+  onAction,
+}: {
+  disabled: boolean;
+  first: boolean;
+  last: boolean;
+  only: boolean;
+  onAction: (action: "add" | "duplicate" | "up" | "down" | "delete") => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const item = (
+    label: string,
+    action: Parameters<typeof onAction>[0],
+    off = false
+  ) => (
+    <Button
+      variant="ghost"
+      className="justify-start"
+      disabled={disabled || off}
+      onClick={() => {
+        onAction(action);
+        setOpen(false);
+      }}
+    >
+      {label}
+    </Button>
+  );
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button variant="ghost" size="icon" aria-label="投影片" />
+              }
+            />
+          }
+        >
+          <GalleryVerticalIcon />
+        </TooltipTrigger>
+        <TooltipContent>投影片</TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side="top"
+        sideOffset={12}
+        data-surface="tinted"
+        className="w-48"
+      >
+        <div className="flex flex-col">
+          {item("新增空白頁", "add")}
+          {item("複製這一頁", "duplicate")}
+          {item("上移", "up", first)}
+          {item("下移", "down", last)}
+          {item("刪除這一頁", "delete", only)}
+        </div>
       </PopoverContent>
     </Popover>
   );

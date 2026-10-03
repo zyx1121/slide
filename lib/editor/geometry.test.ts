@@ -60,6 +60,47 @@ describe("hitTest", () => {
     expect(hitTest(stacked, { x: 500, y: 500 }, 4)).toBeNull();
   });
 
+  it("looks through a hollow frame to the shapes inside it", () => {
+    const framed: Slide = {
+      ...slide,
+      shapes: [
+        rect({
+          id: "sh_inside",
+          x: 100,
+          y: 100,
+          w: 100,
+          h: 50,
+          fill: "#ffffff",
+        }),
+        rect({
+          id: "sh_frame",
+          x: 50,
+          y: 50,
+          w: 400,
+          h: 300,
+          stroke: { color: "#3297fc", width: 4 },
+        }),
+      ],
+    };
+    // Inside the frame, over the filled box: the box.
+    expect(hitTest(framed, { x: 150, y: 125 }, 4)).toBe("sh_inside");
+    // Inside the frame over nothing else: the frame. On its edge: the frame.
+    expect(hitTest(framed, { x: 300, y: 250 }, 4)).toBe("sh_frame");
+    expect(hitTest(framed, { x: 52, y: 125 }, 4)).toBe("sh_frame");
+    // A frame with words, or with a fill, is picked anywhere inside.
+    const worded: Slide = {
+      ...framed,
+      shapes: [
+        framed.shapes[0],
+        {
+          ...framed.shapes[1],
+          text: { paragraphs: [{ runs: [{ text: "Hearing" }] }] },
+        } as BoxShape,
+      ],
+    };
+    expect(hitTest(worded, { x: 150, y: 125 }, 4)).toBe("sh_frame");
+  });
+
   it("picks a box with no height near where it is drawn", () => {
     const flat: Slide = {
       ...slide,

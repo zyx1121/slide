@@ -116,7 +116,9 @@ export function readColor(
     base =
       last && /^[0-9a-f]{6}$/i.test(last)
         ? `#${last.toLowerCase()}`
-        : SYSTEM[el.attrs.val ?? ""];
+        : Object.hasOwn(SYSTEM, el.attrs.val ?? "")
+          ? SYSTEM[el.attrs.val!]
+          : undefined;
   } else if (el.tag === "a:prstClr") {
     base = el.attrs.val === "white" ? "#ffffff" : "#000000";
   } else {

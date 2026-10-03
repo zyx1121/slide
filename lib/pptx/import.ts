@@ -12,7 +12,7 @@ import {
   type Slide,
   type TextBody,
 } from "../deck/schema";
-import { DECK_TITLE_MAX } from "../deck/limits";
+import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "../deck/limits";
 import { readColor, readColorMap, readTheme, type Theme } from "./color";
 import {
   child,
@@ -49,6 +49,64 @@ type Place = (box: Box) => Box;
 
 const EMU = 6350;
 const MAX_SLIDES = 500;
+/** How long an import may read before it gives up. */
+const TIME_BUDGET_MS = 20_000;
+/** The most text an imported deck may hold: 500 slides' worth is too much. */
+const DECK_TEXT_MAX = 2_000_000;
+
+const shapeTextLength = (body: TextBody) =>
+  body.paragraphs.reduce(
+    (sum, p) => sum + p.runs.reduce((n, r) => n + r.text.length, 0),
+    0
+  );
+
+function slideTextLength(slide: Slide): number {
+  let length = slide.title.length;
+  for (const shape of slide.shapes) {
+    if (shape.kind !== "line" && shape.kind !== "image" && shape.text) {
+      length += shapeTextLength(shape.text);
+    }
+  }
+  return length;
+}
+
+/** Cuts a text body down to `budget` characters, dropping what follows. */
+function cutText(body: TextBody, budget: number): TextBody {
+  let left = budget;
+  const paragraphs: TextBody["paragraphs"] = [];
+  for (const paragraph of body.paragraphs) {
+    const runs = [];
+    for (const run of paragraph.runs) {
+      if (left <= 0) break;
+      runs.push({ ...run, text: run.text.slice(0, left) });
+      left -= Math.min(left, run.text.length);
+    }
+    paragraphs.push({ ...paragraph, runs });
+    if (left <= 0) break;
+  }
+  return { ...body, paragraphs };
+}
+
+/**
+ * Holds a slide to the schema's text limits (SHAPE_TEXT_MAX a shape,
+ * SLIDE_TEXT_MAX a slide), cutting text past them. True when it cut any.
+ */
+function capText(slide: Slide): boolean {
+  let cut = false;
+  let left = SLIDE_TEXT_MAX - slide.title.length;
+  for (const shape of slide.shapes) {
+    if (shape.kind === "line" || shape.kind === "image" || !shape.text)
+      continue;
+    const length = shapeTextLength(shape.text);
+    const allowed = Math.max(0, Math.min(SHAPE_TEXT_MAX, left));
+    if (length > allowed) {
+      shape.text = cutText(shape.text, allowed);
+      cut = true;
+    }
+    left -= Math.min(length, allowed);
+  }
+  return cut;
+}
 const MAX_SHAPES = 1000;
 
 /** Level defaults from a master's text style: size, bullet and color. */
@@ -696,10 +754,32 @@ export async function importPptx(
   saveImage: SaveImage,
   fallbackTitle = "匯入的簡報"
 ): Promise<ImportResult> {
+  const started = Date.now();
   const parts = unzipPptx(bytes);
+  // Each part is parsed once: slides share layouts, masters and themes.
+  const parsedParts = new Map<string, El>();
+  const xml = (name: string | undefined): El | undefined => {
+    if (!name) return undefined;
+    const cached = parsedParts.get(name);
+    if (cached) return cached;
+    const bytes = parts.get(name);
+    if (!bytes) return undefined;
+    const el = parseXml(bytes);
+    parsedParts.set(name, el);
+    return el;
+  };
+  const relsCache = new Map<string, ReturnType<typeof relationships>>();
+  const relsOf = (name: string) => {
+    let rels = relsCache.get(name);
+    if (!rels) {
+      rels = relationships(parts, name);
+      relsCache.set(name, rels);
+    }
+    return rels;
+  };
   const presentationName = "ppt/presentation.xml";
-  const presentation = parseXml(parts.get(presentationName)!);
-  const presentationRels = relationships(parts, presentationName);
+  const presentation = xml(presentationName)!;
+  const presentationRels = relsOf(presentationName);
   const size = child(presentation, "p:sldSz");
   const widthPx = (num(size, "cx") ?? 12192000) / EMU;
   const heightPx = (num(size, "cy") ?? 6858000) / EMU;
@@ -718,38 +798,37 @@ export async function importPptx(
   const pictures = new Map<string, string | null>();
   let shapeCount = 0;
 
+  const seen = new Set<string>();
+  let text = 0;
   for (const sldId of slideIds.slice(0, MAX_SLIDES)) {
+    if (Date.now() - started > TIME_BUDGET_MS) {
+      throw new PptxError("too-large", "the file takes too long to read");
+    }
     const rel = presentationRels.get(sldId.attrs["r:id"] ?? "");
-    const slideBytes = rel && parts.get(rel.target);
-    if (!rel || !slideBytes) continue;
-    const slideXml = parseXml(slideBytes);
-    const rels = relationships(parts, rel.target);
+    if (!rel || !parts.has(rel.target)) continue;
+    // A slide part listed twice would make one small file a huge deck.
+    if (seen.has(rel.target)) {
+      skip("repeated slide");
+      continue;
+    }
+    seen.add(rel.target);
+    const slideXml = xml(rel.target)!;
+    const rels = relsOf(rel.target);
     const layoutName = [...rels.values()].find((r) =>
       r.type.endsWith("/slideLayout")
     )?.target;
-    const layout =
-      layoutName && parts.get(layoutName)
-        ? parseXml(parts.get(layoutName)!)
-        : undefined;
+    const layout = xml(layoutName);
     const masterName =
       layoutName &&
-      [...relationships(parts, layoutName).values()].find((r) =>
+      [...relsOf(layoutName).values()].find((r) =>
         r.type.endsWith("/slideMaster")
       )?.target;
-    const master =
-      masterName && parts.get(masterName)
-        ? parseXml(parts.get(masterName)!)
-        : undefined;
+    const master = xml(masterName);
     const themeName =
       masterName &&
-      [...relationships(parts, masterName).values()].find((r) =>
-        r.type.endsWith("/theme")
-      )?.target;
-    const theme = readTheme(
-      themeName && parts.get(themeName)
-        ? parseXml(parts.get(themeName)!)
-        : undefined
-    );
+      [...relsOf(masterName).values()].find((r) => r.type.endsWith("/theme"))
+        ?.target;
+    const theme = readTheme(xml(themeName));
     const colorMap = readColorMap(child(master, "p:clrMap"));
     const base = { theme, colorMap, k };
     const ctx: Context = {
@@ -792,21 +871,26 @@ export async function importPptx(
       }
       shapes.push(shape);
     }
-    shapeCount += shapes.length;
-    slides.push({
+    const slide: Slide = {
       id: newId("sl"),
       title: clean(title.text).slice(0, 500),
       shapes,
-    });
+    };
+    if (capText(slide)) skip("text over the limit");
+    shapeCount += shapes.length;
+    text += slideTextLength(slide);
+    if (text > DECK_TEXT_MAX) {
+      skip("text over the limit");
+      break;
+    }
+    slides.push(slide);
   }
   if (slides.length === 0) {
     slides.push({ id: newId("sl"), title: "", shapes: [] });
   }
 
-  const core = parts.get("docProps/core.xml");
-  const coreTitle = core
-    ? textOf(child(parseXml(core), "dc:title")).trim()
-    : "";
+  const core = xml("docProps/core.xml");
+  const coreTitle = core ? textOf(child(core, "dc:title")).trim() : "";
   const documentTitle =
     clean(coreTitle || fallbackTitle)
       .trim()

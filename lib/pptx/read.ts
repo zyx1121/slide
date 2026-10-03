@@ -1,14 +1,19 @@
-// Reading an uploaded .pptx safely: unzipping within limits and parsing
-// its XML parts into a small element tree. The file is untrusted, so the
-// zip's declared sizes are capped before anything is inflated, and XML
-// with a document type (where entity expansion lives) is refused.
-import { unzipSync } from "fflate";
+// Reading an uploaded .pptx safely: unzipping within limits (unzip.ts
+// holds every entry to its declared size) and parsing its XML parts into a
+// small element tree. XML with a document type (where entity expansion
+// lives) is refused, and a part's size and element count are capped, so a
+// small upload cannot unfold into gigabytes of objects.
 import { XMLParser } from "fast-xml-parser";
+
+import { unzip, ZipError } from "./unzip";
 
 /** Limits for an uploaded file: its parts, one part, and all of them. */
 export const MAX_PARTS = 5000;
 export const MAX_PART_BYTES = 40 * 1024 * 1024;
-export const MAX_TOTAL_BYTES = 400 * 1024 * 1024;
+export const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
+/** Limits for one XML part: its size and its elements. */
+export const MAX_XML_BYTES = 8 * 1024 * 1024;
+export const MAX_XML_ELEMENTS = 200_000;
 
 export class PptxError extends Error {
   constructor(
@@ -19,40 +24,32 @@ export class PptxError extends Error {
   }
 }
 
-/**
- * The parts of a .pptx. fflate inflates each part into a buffer of its
- * declared size and never past it, so capping the declared sizes caps the
- * memory a zip bomb can take.
- */
+/** The parts of a .pptx the importer reads. */
 export function unzipPptx(bytes: Uint8Array): Map<string, Uint8Array> {
-  let count = 0;
-  let total = 0;
-  let tooLarge = false;
-  let files: Record<string, Uint8Array>;
+  let parts: Map<string, Uint8Array>;
   try {
-    files = unzipSync(bytes, {
-      filter: (file) => {
-        count++;
-        total += file.originalSize;
-        if (
-          count > MAX_PARTS ||
-          file.originalSize > MAX_PART_BYTES ||
-          total > MAX_TOTAL_BYTES
-        ) {
-          tooLarge = true;
-          return false;
-        }
-        return true;
+    parts = unzip(
+      bytes,
+      {
+        entries: MAX_PARTS,
+        entryBytes: MAX_PART_BYTES,
+        totalBytes: MAX_TOTAL_BYTES,
       },
-    });
-  } catch {
-    throw new PptxError("not-pptx", "not a zip file");
+      (name) =>
+        name === "docProps/core.xml" ||
+        (name.startsWith("ppt/") && !name.startsWith("ppt/notesSlides/"))
+    );
+  } catch (error) {
+    if (!(error instanceof ZipError)) throw error;
+    throw new PptxError(
+      error.code === "not-zip" ? "not-pptx" : error.code,
+      error.message
+    );
   }
-  if (tooLarge) throw new PptxError("too-large", "the file unpacks too large");
-  if (!files["ppt/presentation.xml"]) {
+  if (!parts.has("ppt/presentation.xml")) {
     throw new PptxError("not-pptx", "no ppt/presentation.xml");
   }
-  return new Map(Object.entries(files));
+  return parts;
 }
 
 /** An XML element: its tag (with prefix), attributes, children and text. */
@@ -104,6 +101,14 @@ function convert(raw: Raw[]): El[] {
 
 /** The root element of an XML part. */
 export function parseXml(bytes: Uint8Array): El {
+  if (bytes.length > MAX_XML_BYTES) {
+    throw new PptxError("too-large", "an XML part is too large");
+  }
+  let elements = 0;
+  for (const byte of bytes)
+    if (byte === 0x3c && ++elements > MAX_XML_ELEMENTS) {
+      throw new PptxError("too-large", "an XML part has too many elements");
+    }
   const text = new TextDecoder().decode(bytes);
   if (/<!DOCTYPE|<!ENTITY/i.test(text)) {
     throw new PptxError("malformed", "XML with a document type");

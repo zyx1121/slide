@@ -1,11 +1,11 @@
-import { strToU8, zipSync } from "fflate";
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import type { DeckDocument, Shape } from "../deck/schema";
 import { exportPptx } from "./export";
 import { importPptx } from "./import";
-import { MAX_PART_BYTES, PptxError } from "./read";
+import { MAX_PART_BYTES, MAX_XML_ELEMENTS, PptxError } from "./read";
 import { describeSkipped } from "./report";
 
 const PNG_1X1 = Uint8Array.from(
@@ -189,5 +189,60 @@ describe("importPptx", () => {
     expect(
       await importPptx(bomb, saveImage).catch((e: PptxError) => e.code)
     ).toBe("malformed");
+  });
+
+  it("refuses an XML part with too many elements", async () => {
+    const many = zipSync({
+      "ppt/presentation.xml": strToU8(
+        `<p:presentation>${"<a/>".repeat(MAX_XML_ELEMENTS)}</p:presentation>`
+      ),
+    });
+    expect(
+      await importPptx(many, saveImage).catch((e: PptxError) => e.code)
+    ).toBe("too-large");
+  });
+
+  it("reads a slide listed twice once, and holds text to the limits", async () => {
+    const doc = richDeck();
+    doc.slides = [
+      {
+        id: "sl_long",
+        title: "",
+        shapes: [
+          {
+            id: "tx_long",
+            kind: "text",
+            x: 0,
+            y: 0,
+            w: 100,
+            h: 100,
+            text: { paragraphs: [{ runs: [{ text: "x".repeat(4000) }] }] },
+          },
+        ],
+      },
+    ];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    // List the one slide twice, and make its text longer than a shape may hold.
+    const presentation = strFromU8(parts["ppt/presentation.xml"]).replace(
+      /(<p:sldId [^>]*\/>)/,
+      '$1<p:sldId id="999" r:id="rId101"/>'
+    );
+    parts["ppt/presentation.xml"] = strToU8(presentation);
+    parts["ppt/slides/slide1.xml"] = strToU8(
+      strFromU8(parts["ppt/slides/slide1.xml"]).replace(
+        "x".repeat(4000),
+        "x".repeat(9000)
+      )
+    );
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(document.slides).toHaveLength(1);
+    expect(report.skipped).toEqual({
+      "repeated slide": 1,
+      "text over the limit": 1,
+    });
+    const shape = document.slides[0].shapes[0];
+    expect(
+      shape.kind === "text" && shape.text.paragraphs[0].runs[0].text.length
+    ).toBe(5000);
   });
 });

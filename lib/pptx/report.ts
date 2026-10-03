@@ -12,6 +12,9 @@ const NAMES: Record<string, string> = {
   "embedded content": "內嵌內容",
   "over 1000 shapes": "超過 1,000 個形狀的部分",
   "over 500 slides": "超過 500 頁的部分",
+  "repeated slide": "重複列出的投影片",
+  "text over the limit":
+    "超過字數上限的文字（每個框 5,000 字、每頁 20,000 字）",
 };
 
 /** A sentence for the editor after an import, or null when nothing was left out. */

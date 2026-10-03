@@ -36,8 +36,9 @@ export async function POST(request: Request) {
   }
   const fallback = name.replace(/\.pptx$/i, "").trim() || undefined;
 
+  let imported: Awaited<ReturnType<typeof importPptx>>;
   try {
-    const { document, report } = await importPptx(
+    imported = await importPptx(
       bytes,
       async (image) => {
         try {
@@ -50,13 +51,20 @@ export async function POST(request: Request) {
       },
       fallback
     );
-    const deck = await createDeck(sql, user.sub, document);
-    return Response.json({ id: deck.id, report }, { status: 201 });
   } catch (error) {
-    if (!(error instanceof PptxError)) throw error;
+    // Anything the importer trips over is the file's fault, not the server's.
+    const code = error instanceof PptxError ? error.code : "malformed";
+    if (!(error instanceof PptxError)) {
+      console.warn("import: unreadable .pptx", error);
+    }
     return Response.json(
-      { error: error.code },
-      { status: error.code === "too-large" ? 413 : 422 }
+      { error: code },
+      { status: code === "too-large" ? 413 : 422 }
     );
   }
+  const deck = await createDeck(sql, user.sub, imported.document);
+  return Response.json(
+    { id: deck.id, report: imported.report },
+    { status: 201 }
+  );
 }

@@ -5,6 +5,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import * as client from "openid-client";
 
 import { callbackUrl, oidc, type AuthEnv } from "./config";
+import { displayName } from "./name";
 import { safeNext } from "./redirect";
 import { seal, unseal } from "./seal";
 import {
@@ -104,7 +105,7 @@ export async function finishSignIn(
     const claims = tokens.claims()!;
     user = {
       sub: claims.sub,
-      name: String(claims.name ?? claims.preferred_username ?? ""),
+      name: displayName(claims as Record<string, unknown>),
       email: String(claims.email ?? ""),
     };
     idToken = tokens.id_token;

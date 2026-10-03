@@ -129,6 +129,31 @@ describe("sign-in flow", () => {
     expect(cookie).toMatch(/Path=\//);
   });
 
+  it("records a CJK name as Taiwan writes it", async () => {
+    // Both the access token and the ID token are signed; name both.
+    const chinese = (token: { payload: Record<string, unknown> }) => {
+      token.payload.given_name = "詠翔";
+      token.payload.family_name = "詹";
+      token.payload.name = "詠翔 詹";
+    };
+    server.service.on("beforeTokenSigning", chinese);
+    try {
+      const onSignIn = vi.fn(async () => {});
+      const { request } = await signInUpTo("/");
+      const response = await finishSignIn(request, env, onSignIn);
+      expect(onSignIn).toHaveBeenCalledWith(
+        expect.objectContaining({ name: "詹詠翔" })
+      );
+      const session = await unsealSession(
+        cookieFrom(response, sessionCookie(env)),
+        env.secret
+      );
+      expect(session?.name).toBe("詹詠翔");
+    } finally {
+      server.service.off("beforeTokenSigning", chinese);
+    }
+  });
+
   it("sends the PKCE verifier from the sign-in cookie with the code", async () => {
     let sent: unknown;
     const capture = (_: unknown, req: { body?: Record<string, unknown> }) => {

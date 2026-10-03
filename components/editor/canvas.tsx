@@ -30,6 +30,15 @@ import {
   unionRects,
 } from "@/lib/editor/geometry";
 import { TextEditor, type TextKeys } from "@/components/editor/text-editor";
+import {
+  type End,
+  newLine,
+  otherGlue,
+  type Side,
+  type Snap,
+  snapEnd,
+  withLineEnd,
+} from "@/lib/editor/connect";
 import { movedSlide, resizedSlide } from "@/lib/editor/preview";
 import { ALL_EDGES, type Edges, type Guide, snapRect } from "@/lib/editor/snap";
 import { caretAt, paragraphAt, type Pos, wordAt } from "@/lib/editor/text-edit";
@@ -49,6 +58,11 @@ import { cn } from "@/lib/utils";
 /** Screen px within which a click picks a connector or a handle, and snaps. */
 const PICK = 6;
 const HANDLE = 10;
+/** Screen px within which a connector end snaps to a shape's site. */
+const SITE_REACH = 14;
+/** The shortest connector a drag draws, in screen px. */
+const MIN_LINE = 8;
+
 /** Presses closer together than this, in ms, count as a double click. */
 const MULTI_CLICK_MS = 500;
 const SNAP = 6;
@@ -95,6 +109,19 @@ type Drag =
       /** Selecting text by dragging across it. */
       kind: "text";
       anchor: Pos;
+    }
+  | {
+      /** Drawing a new connector from `start`. */
+      kind: "draw";
+      start: Snap;
+      current: Snap;
+    }
+  | {
+      /** Moving one end of a selected connector. */
+      kind: "end";
+      id: string;
+      side: Side;
+      snap: Snap;
     };
 
 /** The text being edited on this slide, and what its keys do. */
@@ -133,6 +160,9 @@ export function Canvas({
   onPaste,
   text,
   onEditText,
+  tool,
+  onDrawLine,
+  onLineEnd,
   className,
 }: {
   slide: Slide;
@@ -152,12 +182,21 @@ export function Canvas({
   text: CanvasText | null;
   /** A double click on a shape's text or the title, at a canvas point. */
   onEditText: (target: string, at: Point) => void;
+  /** A tool that draws instead of selecting: a connector. */
+  tool: "connector" | null;
+  /** A connector drawn with the tool, from one end to the other. */
+  onDrawLine: (start: End, end: End) => void;
+  /** One end of a connector dragged to a new place or site. */
+  onLineEnd: (id: string, side: Side, end: End) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(SLIDE_WIDTH);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [cursor, setCursor] = useState("default");
+  // The site a connector end would glue to under the pointer, shown while
+  // the connector tool is on.
+  const [hover, setHover] = useState<Snap | null>(null);
   // Pointer events report no click count (detail is 0 in Chromium), so
   // presses on text are counted here: two select a word, three a paragraph.
   const presses = useRef({ count: 0, time: 0, x: 0, y: 0 });
@@ -209,13 +248,33 @@ export function Canvas({
   );
 
   // The text being edited shows as typed, before it is saved.
-  const base = text ? draftSlide(slide, text.draft) : slide;
-  const preview =
-    drag?.kind === "move"
-      ? movedSlide(base, drag.ids, drag.dx, drag.dy)
-      : drag?.kind === "resize"
-        ? resizedSlide(base, drag.id, drag.box)
-        : base;
+  const draft = text?.draft;
+  const base = useMemo(
+    () => (draft ? draftSlide(slide, draft) : slide),
+    [slide, draft]
+  );
+  const preview = useMemo(
+    () =>
+      drag?.kind === "move"
+        ? movedSlide(base, drag.ids, drag.dx, drag.dy)
+        : drag?.kind === "resize"
+          ? resizedSlide(base, drag.id, drag.box)
+          : drag?.kind === "end"
+            ? withLineEnd(base, drag.id, drag.side, drag.snap.end)
+            : drag?.kind === "draw"
+              ? {
+                  ...base,
+                  shapes: [
+                    ...base.shapes,
+                    {
+                      ...newLine(drag.start.end, drag.current.end),
+                      id: "ln_drawing",
+                    },
+                  ],
+                }
+              : base,
+    [base, drag]
+  );
   const frame = text ? frameOf(base, text.draft.target) : null;
   const shown = text ? shownBody(text.draft) : null;
   const layout = frame && shown ? draftLayout(frame, shown.body) : null;
@@ -235,6 +294,20 @@ export function Canvas({
       ? base.shapes.find((shape) => shape.id === selection[0])
       : undefined;
   const box = single && single.kind !== "line" ? single : undefined;
+  const line = single && single.kind === "line" ? single : undefined;
+
+  /** The end of the selected connector under a point, if any. */
+  const lineEndAt = (p: Point): Side | undefined => {
+    if (!line) return undefined;
+    const points = linePoints(line, shapes);
+    const ends: [Side, Point][] = [
+      ["start", points[0]],
+      ["end", points[points.length - 1]],
+    ];
+    return ends.find(
+      ([, q]) => Math.hypot(q.x - p.x, q.y - p.y) <= HANDLE * scale
+    )?.[0];
+  };
 
   const toCanvas = (event: { clientX: number; clientY: number }): Point => {
     const rect = ref.current!.getBoundingClientRect();
@@ -305,6 +378,22 @@ export function Canvas({
     // A text selection left on the page would take over copy and paste.
     window.getSelection()?.removeAllRanges();
     const p = toCanvas(event);
+
+    if (tool === "connector") {
+      const start = snapEnd(slide, p, SITE_REACH * scale);
+      setDrag({ kind: "draw", start, current: start });
+      return;
+    }
+    const side = lineEndAt(p);
+    if (line && side) {
+      setDrag({
+        kind: "end",
+        id: line.id,
+        side,
+        snap: snapEnd(slide, p, SITE_REACH * scale, otherGlue(line, side)),
+      });
+      return;
+    }
 
     const handle = handleAt(p);
     if (box && handle) {
@@ -379,6 +468,34 @@ export function Canvas({
       );
       return;
     }
+    if (drag?.kind === "draw") {
+      const avoid = "shape" in drag.start.end ? drag.start.end : undefined;
+      setDrag({
+        ...drag,
+        current: snapEnd(slide, p, SITE_REACH * scale, avoid),
+      });
+      return;
+    }
+    if (drag?.kind === "end") {
+      const current = shapes.get(drag.id);
+      if (current?.kind !== "line") return;
+      setDrag({
+        ...drag,
+        snap: snapEnd(
+          slide,
+          p,
+          SITE_REACH * scale,
+          otherGlue(current, drag.side)
+        ),
+      });
+      return;
+    }
+    if (!drag && tool === "connector") {
+      setCursor("crosshair");
+      const snap = snapEnd(slide, p, SITE_REACH * scale);
+      setHover(snap.shape ? snap : null);
+      return;
+    }
     if (!drag) {
       if (text && frame && layout && pointInFrame(frame, layout, p).inside) {
         setCursor("text");
@@ -386,11 +503,13 @@ export function Canvas({
       }
       const handle = handleAt(p);
       setCursor(
-        handle
-          ? CURSORS[handle]
-          : hitTest(slide, p, PICK * scale)
-            ? "move"
-            : "default"
+        lineEndAt(p)
+          ? "crosshair"
+          : handle
+            ? CURSORS[handle]
+            : hitTest(slide, p, PICK * scale)
+              ? "move"
+              : "default"
       );
       return;
     }
@@ -459,6 +578,19 @@ export function Canvas({
     if (!drag) return;
     setDrag(null);
     if (drag.kind === "text") return;
+    if (drag.kind === "draw") {
+      const { start, current } = drag;
+      const length = Math.hypot(
+        current.point.x - start.point.x,
+        current.point.y - start.point.y
+      );
+      if (length >= MIN_LINE * scale) onDrawLine(start.end, current.end);
+      return;
+    }
+    if (drag.kind === "end") {
+      onLineEnd(drag.id, drag.side, drag.snap.end);
+      return;
+    }
     if (drag.kind === "move") {
       if (drag.dx || drag.dy) onMove(drag.ids, drag.dx, drag.dy);
       else if (!event.shiftKey && drag.ids.size > 1) onSelect([drag.hit]);
@@ -503,9 +635,25 @@ export function Canvas({
   const handleSize = HANDLE * scale;
   const guides =
     drag && (drag.kind === "move" || drag.kind === "resize") ? drag.guides : [];
+  // Sites to glue to: under the end being drawn or dragged, or under the
+  // pointer while the connector tool is on.
+  const snap =
+    drag?.kind === "draw"
+      ? drag.current
+      : drag?.kind === "end"
+        ? drag.snap
+        : tool === "connector"
+          ? hover
+          : null;
   const previewShapes = new Map(
     preview.shapes.map((shape) => [shape.id, shape])
   );
+  const shownLine =
+    line && drag?.kind !== "move"
+      ? preview.shapes.find((shape) => shape.id === line.id)
+      : undefined;
+  const lineEnds =
+    shownLine?.kind === "line" ? linePoints(shownLine, previewShapes) : null;
 
   return (
     <div
@@ -530,6 +678,7 @@ export function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => setDrag(null)}
+      onPointerLeave={() => setHover(null)}
       onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
     >
@@ -589,6 +738,35 @@ export function Canvas({
             })}
           </g>
         )}
+        {lineEnds &&
+          [lineEnds[0], lineEnds[lineEnds.length - 1]].map((p, i) => (
+            <circle
+              key={i}
+              cx={p.x}
+              cy={p.y}
+              r={(HANDLE / 2) * scale}
+              fill="var(--canvas-handle)"
+              stroke="var(--canvas-selection)"
+              strokeWidth={stroke}
+              vectorEffect="non-scaling-stroke"
+            />
+          ))}
+        {snap?.sites.map((p, i) => {
+          const active =
+            Math.hypot(p.x - snap.point.x, p.y - snap.point.y) < 0.5;
+          return (
+            <circle
+              key={`site-${i}`}
+              cx={p.x}
+              cy={p.y}
+              r={(active ? 6 : 4) * scale}
+              fill={active ? "var(--canvas-selection)" : "var(--canvas-handle)"}
+              stroke="var(--canvas-selection)"
+              strokeWidth={stroke}
+              vectorEffect="non-scaling-stroke"
+            />
+          );
+        })}
         {guides.map((guide, i) =>
           guide.axis === "x" ? (
             <line

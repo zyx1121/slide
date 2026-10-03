@@ -1,0 +1,71 @@
+# slide on Docker Compose: Postgres, a one-shot migration job, and the web app,
+# all from one image.
+#
+#   cp .env.example .env      # set POSTGRES_PASSWORD
+#   docker compose up -d
+#
+# The web port binds to 127.0.0.1: put a reverse proxy with TLS in front before
+# it leaves the machine (SLIDE_BIND=0.0.0.0 exposes plain HTTP to the network).
+name: slide
+
+x-slide: &slide
+  image: ghcr.io/zyx1121/slide.winlab.tw:${SLIDE_VERSION:-latest}
+  init: true
+  restart: unless-stopped
+  env_file: .env
+
+x-database: &database
+  DATABASE_URL: postgres://slide:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/slide
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: slide
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: slide
+    volumes:
+      # Postgres 18 images keep their data under /var/lib/postgresql/18.
+      - postgres:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "slide", "-d", "slide"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  # Applies the schema and exits; the web app starts once it succeeds.
+  migrate:
+    <<: *slide
+    command: migrate
+    restart: "no"
+    environment: *database
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    <<: *slide
+    command: web
+    environment: *database
+    ports:
+      - "${SLIDE_BIND:-127.0.0.1}:${SLIDE_PORT:-3000}:3000"
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "wget",
+          "-q",
+          "-O",
+          "/dev/null",
+          "http://127.0.0.1:3000/api/health",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres:

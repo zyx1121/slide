@@ -46,6 +46,34 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
+  --text-xs: 0.875rem;
+  --text-xs--line-height: 1.25rem;
+  --text-sm: 1rem;
+  --text-sm--line-height: 1.5rem;
+  --text-base: 1rem;
+  --text-base--line-height: 1.5rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1rem;
+  --text-xl--line-height: 1.5rem;
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2rem;
+  --text-3xl: 1.5rem;
+  --text-3xl--line-height: 2rem;
+  --text-4xl: 1.5rem;
+  --text-4xl--line-height: 2rem;
+  --text-5xl: 1.5rem;
+  --text-5xl--line-height: 2rem;
+  --text-6xl: 1.5rem;
+  --text-6xl--line-height: 2rem;
+  --text-7xl: 1.5rem;
+  --text-7xl--line-height: 2rem;
+  --text-8xl: 1.5rem;
+  --text-8xl--line-height: 2rem;
+  --text-9xl: 1.5rem;
+  --text-9xl--line-height: 2rem;
+  --text-display: 5rem;
+  --text-display--line-height: 5rem;
 }
 
 :root {
@@ -60,7 +88,7 @@
   --secondary: oklch(0.97 0 0);
   --secondary-foreground: oklch(0.205 0 0);
   --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
+  --muted-foreground: oklch(0.54 0 0);
   --accent: oklch(0.97 0 0);
   --accent-foreground: oklch(0.205 0 0);
   --destructive: oklch(0.577 0.245 27.325);
@@ -72,7 +100,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 1rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -84,7 +112,7 @@
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(0 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -95,7 +123,7 @@
   --secondary: oklch(0.269 0 0);
   --secondary-foreground: oklch(0.985 0 0);
   --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
+  --muted-foreground: oklch(0.65 0 0);
   --accent: oklch(0.269 0 0);
   --accent-foreground: oklch(0.985 0 0);
   --destructive: oklch(0.704 0.191 22.216);
@@ -109,8 +137,8 @@
   --chart-5: oklch(0.269 0 0);
   --sidebar: oklch(0.205 0 0);
   --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --sidebar-primary: oklch(0.922 0 0);
+  --sidebar-primary-foreground: oklch(0.205 0 0);
   --sidebar-accent: oklch(0.269 0 0);
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 10%);
@@ -123,8 +151,94 @@
   }
   body {
     @apply bg-background text-foreground;
+    font-size: 1rem;
+    line-height: 1.5rem;
   }
   html {
     @apply font-sans;
+  }
+  small,
+  sub,
+  sup {
+    font-size: 0.875rem;
+  }
+}
+[data-slot="button"],
+[data-slot="toggle"],
+[data-slot="calendar"],
+[class~="text-[0.8rem]"] {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+[data-slot="calendar"] .rdp-weekday,
+[data-slot="calendar"] .rdp-week_number,
+[data-slot="questionnaire-choice-shortcut"],
+[class~="text-[0.625rem]"] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] {
+  font-size: 1rem;
+  line-height: 1.5rem;
+}
+[data-sonner-toaster]
+  [data-sonner-toast][data-styled="true"]
+  [data-description],
+[data-sonner-toaster] [data-sonner-toast][data-styled="true"] [data-button] {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+
+@supports (backdrop-filter: blur(0)) or (-webkit-backdrop-filter: blur(0)) {
+  [data-slot="dialog-overlay"],
+  [data-slot="alert-dialog-overlay"],
+  [data-slot="sheet-overlay"],
+  [data-slot="drawer-overlay"],
+  [data-slot="combobox-content"],
+  [data-slot="select-content"],
+  [data-slot="popover-content"],
+  [data-slot="dropdown-menu-content"],
+  [data-slot="dropdown-menu-sub-content"],
+  [data-slot="context-menu-content"],
+  [data-slot="context-menu-sub-content"],
+  [data-slot="menubar-content"],
+  [data-slot="menubar-sub-content"],
+  [data-slot="hover-card-content"],
+  .bg-popover:has(> div > [data-slot="navigation-menu-content"]),
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"],
+  [data-slot="sheet-content"],
+  [data-slot="drawer-popup"],
+  [data-slot="floating-toolbar"],
+  [data-slot="floating-notice"],
+  .recharts-tooltip-wrapper > div {
+    background-color: transparent;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+  }
+  [data-slot="dialog-footer"],
+  [data-slot="alert-dialog-footer"],
+  [data-slot="dialog-content"] [data-slot="command"] {
+    background-color: transparent;
+  }
+  [data-slot="drawer-popup"] {
+    --drawer-bleed-background: transparent;
+  }
+  [data-slot="corner-edge"] {
+    background: transparent;
+    -webkit-backdrop-filter: blur(12px);
+    backdrop-filter: blur(12px);
+    -webkit-mask-image: linear-gradient(
+      var(--edge-direction),
+      #000 35%,
+      transparent
+    );
+    mask-image: linear-gradient(var(--edge-direction), #000 35%, transparent);
+  }
+  [data-slot="corner-edge"][data-edge="top"] {
+    --edge-direction: to bottom;
+  }
+  [data-slot="corner-edge"][data-edge="bottom"] {
+    --edge-direction: to top;
   }
 }

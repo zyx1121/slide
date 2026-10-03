@@ -144,7 +144,7 @@ export function textBodyXml(
     const align = ALIGN[paragraph.align ?? defaults.align];
     const bu =
       bullet === "bullet"
-        ? '<a:buFont typeface="Arial"/><a:buChar char="•"/>'
+        ? `<a:buFont typeface="Arial"/><a:buChar char="${esc(paragraph.bulletChar ?? "•")}"/>`
         : bullet === "number"
           ? '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>'
           : "<a:buNone/>";

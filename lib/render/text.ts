@@ -328,7 +328,7 @@ export function layoutText(
       label = `${counters[level]}.`;
     } else {
       counters.length = level;
-      if (bulletKind === "bullet") label = "•";
+      if (bulletKind === "bullet") label = paragraph.bulletChar ?? "•";
     }
     const labelStyle = {
       size: paraSize,

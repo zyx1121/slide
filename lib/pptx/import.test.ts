@@ -510,6 +510,48 @@ describe("importPptx", () => {
     });
   });
 
+  it("keeps bullet characters, symbol fonts' as the shapes they draw", async () => {
+    const doc = richDeck();
+    doc.slides = [
+      {
+        id: "sl_bullets",
+        title: "",
+        shapes: [
+          {
+            id: "tx_dash",
+            kind: "text",
+            x: 0,
+            y: 0,
+            w: 600,
+            h: 300,
+            text: {
+              paragraphs: [
+                { bullet: "bullet", bulletChar: "–", runs: [{ text: "dash" }] },
+                { bullet: "bullet", runs: [{ text: "dot" }] },
+              ],
+            },
+          },
+        ],
+      },
+    ];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    // A box whose list style gives level 1 Wingdings' "n", a square.
+    const shape = `<p:sp><p:nvSpPr><p:cNvPr id="70" name="Box"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="3175000"/><a:ext cx="1270000" cy="635000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:buFont typeface="Wingdings"/><a:buChar char="n"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang="en-US"/><a:t>square</a:t></a:r></a:p></p:txBody></p:sp>`;
+    const name = "ppt/slides/slide1.xml";
+    parts[name] = strToU8(
+      strFromU8(parts[name]).replace("</p:spTree>", `${shape}</p:spTree>`)
+    );
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const texts = document.slides[0].shapes.flatMap((shape) =>
+      shape.kind === "text" ? shape.text.paragraphs : []
+    );
+    expect(texts.map((p) => [p.bullet, p.bulletChar])).toEqual([
+      ["bullet", "–"],
+      ["bullet", undefined],
+      ["bullet", "■"],
+    ]);
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

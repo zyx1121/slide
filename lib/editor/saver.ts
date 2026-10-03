@@ -67,7 +67,7 @@ export function createSaver(options: SaverOptions) {
     if (!disposed) options.onChange(state());
   };
 
-  async function reload(reason: keyof typeof MESSAGES) {
+  async function reload(reason: keyof typeof MESSAGES | "quiet") {
     clearTimeout(retryTimer);
     const loaded = await options.load().catch(() => null);
     if (disposed) return;
@@ -85,7 +85,10 @@ export function createSaver(options: SaverOptions) {
     const changed = options.onReload(loaded.document) !== false;
     phase = "ready";
     const said = reason === "blocked" ? "failed" : reason;
-    message = MESSAGES[said === "failed" && !changed ? "kept" : said];
+    message =
+      said === "quiet"
+        ? null
+        : MESSAGES[said === "failed" && !changed ? "kept" : said];
     notify();
   }
 
@@ -127,6 +130,18 @@ export function createSaver(options: SaverOptions) {
       queue.push(ops);
       notify();
       void pump();
+      return true;
+    },
+    /**
+     * Loads the deck again after a change made elsewhere on purpose (an
+     * accepted suggestion, a revert), without a message. Only when nothing
+     * is waiting to be saved.
+     */
+    async refresh(): Promise<boolean> {
+      if (phase !== "ready" || queue.length > 0 || sending) return false;
+      phase = "reloading";
+      notify();
+      await reload("quiet");
       return true;
     },
     /** Loads the deck again now, from the blocked state. */

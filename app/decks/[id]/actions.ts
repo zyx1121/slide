@@ -8,6 +8,16 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { DeckError, type DeckErrorCode } from "@/lib/deck/errors";
 import type { DeckDocument } from "@/lib/deck/schema";
+import {
+  acceptSuggestion,
+  listRevisions,
+  listSuggestions,
+  type Outcome,
+  rejectSuggestion,
+  revertRevision,
+  type Revision,
+  type Suggestion,
+} from "@/lib/deck/revisions";
 import { getDeck, mutateDeck, setPublished } from "@/lib/deck/store";
 
 export type EditResult =
@@ -65,4 +75,43 @@ export async function publishDeckAction(
     return null;
   }
   return setPublished(sql, user.sub, deckId, published);
+}
+
+/** The deck's pending suggestions and its recent history. */
+export async function reviewAction(
+  deckId: unknown
+): Promise<{ suggestions: Suggestion[]; revisions: Revision[] } | null> {
+  const user = await requireUser();
+  if (typeof deckId !== "string") return null;
+  const [suggestions, revisions] = await Promise.all([
+    listSuggestions(sql, user.sub, deckId),
+    listRevisions(sql, user.sub, deckId, 30),
+  ]);
+  return { suggestions, revisions };
+}
+
+const isId = (value: unknown): value is string =>
+  typeof value === "string" && /^[0-9]{1,18}$/.test(value);
+
+/** Accepts or rejects a suggestion, or reverts an applied revision. */
+export async function reviseAction(
+  deckId: unknown,
+  revisionId: unknown,
+  action: unknown
+): Promise<Outcome | { outcome: "rejected" }> {
+  const user = await requireUser();
+  if (typeof deckId !== "string" || !isId(revisionId))
+    return { outcome: "gone" };
+  if (action === "accept") {
+    return acceptSuggestion(sql, user.sub, deckId, revisionId);
+  }
+  if (action === "reject") {
+    return (await rejectSuggestion(sql, user.sub, deckId, revisionId))
+      ? { outcome: "rejected" }
+      : { outcome: "gone" };
+  }
+  if (action === "revert") {
+    return revertRevision(sql, user.sub, deckId, revisionId);
+  }
+  return { outcome: "gone" };
 }

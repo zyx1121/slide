@@ -52,6 +52,14 @@ describe("exportPptx", () => {
     expect(slide).toContain('prst="roundRect"');
     expect(slide).toContain('<a:latin typeface="Calibri"/>');
     expect(slide).toContain('<a:ea typeface="Microsoft JhengHei"/>');
+    // Runs are marked by their text, so PowerPoint picks the quotes' font
+    // as the renderer does: Chinese for 語音辨識, English for Audio capture.
+    const runOf = (text: string) => {
+      const at = slide.indexOf(`<a:t>${text}</a:t>`);
+      return slide.slice(slide.lastIndexOf("<a:rPr ", at), at);
+    };
+    expect(runOf("語音辨識")).toContain('lang="zh-TW" altLang="en-US"');
+    expect(runOf("Audio capture")).toContain('lang="en-US" altLang="zh-TW"');
   });
 
   it("glues connectors to the shapes' ids and sites", () => {

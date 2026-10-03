@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 
-import { charWidth, fontOf, isWide, LINE_HEIGHT, measure } from "./metrics";
+import {
+  charWidth,
+  fontOf,
+  isEastAsian,
+  isWide,
+  LINE_HEIGHT,
+  measure,
+} from "./metrics";
 
 const regular = { size: 48, bold: false, italic: false };
 
@@ -29,14 +36,13 @@ describe("metrics", () => {
     expect(measure("語音辨識", regular)).toBe(192);
   });
 
-  it("draws curly quotes one em wide in the CJK font, as PowerPoint does", () => {
+  it("measures curly quotes as Carlito's on their own", () => {
     for (const ch of ["‘", "’", "“", "”"]) {
-      expect(fontOf(ch.codePointAt(0)!)).toBe("cjk");
-      expect(charWidth(ch.codePointAt(0)!, regular)).toBe(48);
+      expect(fontOf(ch.codePointAt(0)!)).toBe("latin");
+      expect(charWidth(ch.codePointAt(0)!, regular)).toBeLessThan(48);
     }
-    // Straight quotes stay Carlito's.
-    expect(fontOf(0x22)).toBe("latin");
-    expect(measure("他說“你好”", regular)).toBe(48 * 6);
+    expect(isEastAsian("他說 hi")).toBe(true);
+    expect(isEastAsian("the user’s context")).toBe(false);
   });
 
   it("measures symbols with the font that draws them", () => {

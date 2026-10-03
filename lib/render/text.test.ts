@@ -304,21 +304,28 @@ describe("layoutText", () => {
     expect(lineTexts(layout)).toEqual(["line one", "line two", "line three"]);
   });
 
-  it("draws curly quotes in the CJK font but breaks around them as punctuation", () => {
-    const layout = layoutText(
-      { paragraphs: [{ runs: [{ text: "don’t say “hi”" }] }] },
-      { w: 2000, h: 500 },
-      defaults
-    );
-    expect(layout.lines[0].segments.map((s) => [s.text, s.script])).toEqual([
-      ["don", "latin"],
-      ["’", "cjk"],
-      ["t say ", "latin"],
-      ["“", "cjk"],
-      ["hi", "latin"],
+  it("draws curly quotes one em wide in Chinese runs only, as PowerPoint does", () => {
+    const scripts = (text: string) =>
+      layoutText(
+        { paragraphs: [{ runs: [{ text }] }] },
+        { w: 2000, h: 500 },
+        defaults
+      ).lines[0].segments.map((s) => [s.text, s.script, s.width]);
+    // English: Carlito's quotes, as wide as they are there.
+    expect(scripts("the user’s “hi”").map(([, script]) => script)).toEqual([
+      "latin",
+    ]);
+    // Chinese: the CJK font's, one em each.
+    expect(scripts("他說“你好”")).toEqual([["他說“你好”", "cjk", 40 * 6]]);
+    // Mixed in one run: Chinese, so the quotes around English are wide too.
+    expect(
+      scripts("中文“English”").map(([text, script]) => [text, script])
+    ).toEqual([
+      ["中文“", "cjk"],
+      ["English", "latin"],
       ["”", "cjk"],
     ]);
-    // Too narrow for the whole word: it breaks by character, not after ’.
+    // Quotes never open a break inside a word.
     const narrow = layoutText(
       { paragraphs: [{ runs: [{ text: "don’t stop" }] }] },
       { w: measure("don’t s", style), h: 500 },

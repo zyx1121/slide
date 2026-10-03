@@ -8,6 +8,7 @@ import {
   charWidth,
   fontOf,
   isCurlyQuote,
+  isEastAsian,
   isWide,
   LINE_HEIGHT,
   measure,
@@ -94,6 +95,8 @@ type Char = {
   at: number;
   width: number;
   style: RunStyle;
+  /** The font, when it is not the one fontOf names: quotes in Chinese. */
+  script?: Segment["script"];
 };
 
 const NO_BREAK_SPACE = "\u00a0";
@@ -119,9 +122,7 @@ function styleKey(style: RunStyle): string {
   return `${style.size}|${style.color}|${style.bold}|${style.italic}|${style.underline}|${style.strike}`;
 }
 
-// Curly quotes are drawn as CJK but break as punctuation: "don’t" stays whole.
-const breaksLikeCjk = (cp: number) =>
-  isWide(cp) || (fontOf(cp) === "cjk" && !isCurlyQuote(cp));
+const breaksLikeCjk = (cp: number) => isWide(cp) || fontOf(cp) === "cjk";
 
 function canBreakAfter(chars: Char[], i: number): boolean {
   const here = chars[i];
@@ -202,7 +203,7 @@ function segmentsOf(chars: Char[], x0: number, extra?: number[]): Segment[] {
         ? last.script
         : isSpace(c.ch)
           ? "latin"
-          : fontOf(c.cp);
+          : (c.script ?? fontOf(c.cp));
     const text = c.ch === "\t" ? "    " : c.ch;
     if (
       last &&
@@ -276,10 +277,23 @@ export function layoutText(
         underline: run.underline ?? false,
         strike: run.strike ?? false,
       };
+      // Curly quotes in a Chinese run are the CJK font's, one em wide.
+      const chinese = isEastAsian(run.text);
       for (const ch of run.text) {
         const cp = ch.codePointAt(0)!;
         if (invisible(ch, cp)) {
           at++;
+          continue;
+        }
+        if (chinese && isCurlyQuote(cp)) {
+          chars.push({
+            ch,
+            cp,
+            at: at++,
+            width: style.size,
+            style,
+            script: "cjk",
+          });
           continue;
         }
         const width = LINE_BREAKS.has(ch)

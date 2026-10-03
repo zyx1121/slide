@@ -286,5 +286,6 @@ describe("importPptx", () => {
     expect(failed).toBe("too-large");
     // Slide trees are let go as the import goes: far below the 2 GB heap.
     expect(process.memoryUsage().heapUsed - before).toBeLessThan(1_000_000_000);
-  });
+    // Parsing the 2 million elements first takes a few seconds on CI.
+  }, 30_000);
 });

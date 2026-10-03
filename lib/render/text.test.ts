@@ -243,6 +243,29 @@ describe("layoutText", () => {
     ]);
   });
 
+  it("labels no empty paragraph and numbers on past it, as PowerPoint does", () => {
+    const layout = layoutText(
+      {
+        paragraphs: [
+          { bullet: "number", runs: [{ text: "one" }] },
+          { bullet: "number", runs: [{ text: "" }] },
+          { bullet: "number", runs: [{ text: "two" }] },
+          { bullet: "bullet", runs: [] },
+          { bullet: "bullet", runs: [{ text: "dot" }] },
+        ],
+      },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(layout.lines.map((l) => l.bullet?.text)).toEqual([
+      "1.",
+      undefined,
+      "2.",
+      undefined,
+      "•",
+    ]);
+  });
+
   it("pushes the first line past a number wider than its hanging indent", () => {
     const size = 120;
     const layout = layoutText(

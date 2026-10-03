@@ -287,7 +287,7 @@ describe("importPptx", () => {
     expect(top.color).not.toBe("#FF0000");
   });
 
-  it("leaves out crops that pad a picture or keep almost none of it", async () => {
+  it("keeps padding but leaves out crops past the picture or keeping almost none", async () => {
     const shas = [SHA];
     const exported = unzipSync(
       exportPptx(
@@ -309,9 +309,15 @@ describe("importPptx", () => {
         .find((shape) => shape.kind === "image");
       return { picture, skipped: report.skipped };
     };
+    // Padding (negative sides) is kept; padding past the picture is not.
     const padded = await pictureOf('<a:srcRect l="-5000" r="10000"/>');
-    expect(padded.picture).not.toHaveProperty("crop");
-    expect(padded.skipped).toEqual({ "picture crop": 1 });
+    expect(padded.picture).toMatchObject({
+      crop: { left: -0.05, top: 0, right: 0.1, bottom: 0 },
+    });
+    expect(padded.skipped).toEqual({});
+    const overPadded = await pictureOf('<a:srcRect l="-150000"/>');
+    expect(overPadded.picture).not.toHaveProperty("crop");
+    expect(overPadded.skipped).toEqual({ "picture crop": 1 });
     const sliver = await pictureOf('<a:srcRect l="60000" r="39500"/>');
     expect(sliver.picture).not.toHaveProperty("crop");
     const kept = await pictureOf('<a:srcRect t="12345"/>');

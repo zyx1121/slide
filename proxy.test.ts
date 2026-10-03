@@ -79,6 +79,7 @@ describe("proxy", () => {
       "/auth/callback",
       "/api/health",
       "/s/abc",
+      "/template/winlab-background.png",
       "/_next/static/chunk.js",
       "/favicon.ico",
     ]) {

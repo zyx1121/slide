@@ -54,6 +54,10 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 4. One renderer: the document renders to SVG for the editor, the public page, and MCP snapshots (rasterized to PNG on the server). Text is laid out by our own line breaker with bundled font files, so the browser and the server wrap lines the same way.
 5. A connector stores which shape and site each end attaches to. Its geometry is recomputed whenever either end moves, and export writes the routed geometry, because PowerPoint draws the stored geometry until a shape moves.
 
+### Rendering
+
+One renderer turns a slide into SVG (`lib/render`), and the server rasterizes the same SVG with resvg. The WinLab master's background (gradient, logo, title rule, footer bar) is a 3840 x 2160 image rendered once from `template/winlab.pptx`; the title and the slide number are drawn as text in the master's placeholder boxes. Text is laid out by our own engine: Carlito's advance widths (Calibri's metrics) for Latin, one em for CJK, kinsoku for CJK punctuation, PowerPoint's default insets, bullets and single line spacing (1.2207). Every run is placed with `textLength`, and runs split where the script changes so each is drawn in one font, so the browser and resvg draw the same lines. Elbow connectors leave and enter perpendicular to the shape's side with the fewest bends the ends allow.
+
 ### MCP tools
 
 | Tool                                           | Does                                                                 |

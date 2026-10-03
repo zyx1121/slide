@@ -5,6 +5,7 @@ import {
   BULLET_HANG,
   layoutText,
   LEVEL_INDENT,
+  NUMBER_HANG,
   type TextDefaults,
 } from "./text";
 
@@ -141,7 +142,7 @@ describe("layoutText", () => {
       "•",
       "3.",
     ]);
-    expect(layout.lines[0].segments[0].x).toBe(BULLET_HANG);
+    expect(layout.lines[0].segments[0].x).toBe(NUMBER_HANG);
     expect(layout.lines[2].segments[0].x).toBe(LEVEL_INDENT + BULLET_HANG);
     expect(layout.lines[2].bullet?.x).toBe(LEVEL_INDENT);
   });
@@ -173,5 +174,118 @@ describe("layoutText", () => {
       { ...defaults, wrap: false }
     );
     expect(layout.lines).toHaveLength(1);
+  });
+
+  it("does not break a Latin word in the middle", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "Automatic speech recognition" }] }] },
+      { w: measure("Automatic speech re", style), h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)).toEqual(["Automatic speech", "recognition"]);
+  });
+
+  it("lets spaces at a break hang, so the next line starts with the word", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "aaa    bbb" }] }] },
+      { w: measure("aaa ", style), h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)).toEqual(["aaa", "bbb"]);
+    expect(layout.lines[1].segments[0].x).toBe(0);
+  });
+
+  it("breaks after a hyphen inside a word", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "end-to-end pipeline" }] }] },
+      { w: measure("end-to-", style) + 1, h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)[0]).toBe("end-to-");
+  });
+
+  it("keeps a full-width comma off the start of a line", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "語音，辨識" }] }] },
+      { w: 40 * 2, h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)).toEqual(["語", "音，", "辨識"]);
+  });
+
+  it("restarts numbering after a paragraph without a number", () => {
+    const layout = layoutText(
+      {
+        paragraphs: [
+          { bullet: "number", runs: [{ text: "a" }] },
+          { bullet: "number", runs: [{ text: "b" }] },
+          { runs: [{ text: "break" }] },
+          { bullet: "number", runs: [{ text: "c" }] },
+        ],
+      },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(layout.lines.map((l) => l.bullet?.text)).toEqual([
+      "1.",
+      "2.",
+      undefined,
+      "1.",
+    ]);
+  });
+
+  it("pushes the first line past a number wider than its hanging indent", () => {
+    const size = 120;
+    const layout = layoutText(
+      {
+        paragraphs: [
+          {
+            bullet: "number",
+            runs: [{ text: "Long numbered item that wraps", size }],
+          },
+        ],
+      },
+      { w: 900, h: 2000 },
+      defaults
+    );
+    const [first, second] = layout.lines;
+    const labelEnd =
+      first.bullet!.x + measure("1.", { size, bold: false, italic: false });
+    expect(first.segments[0].x).toBeGreaterThan(labelEnd);
+    expect(second.segments[0].x).toBe(NUMBER_HANG);
+  });
+
+  it("treats vertical tabs as line breaks and drops other control characters", () => {
+    const layout = layoutText(
+      {
+        paragraphs: [
+          { runs: [{ text: "line\u0001 one\u000bline two\u0007" }] },
+        ],
+      },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(lineTexts(layout)).toEqual(["line one", "line two"]);
+  });
+
+  it("splits symbols by the font that draws them", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "①※★✅" }] }] },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(layout.lines[0].segments.map((s) => [s.text, s.script])).toEqual([
+      ["①", "latin"],
+      ["※★✅", "cjk"],
+    ]);
+  });
+
+  it("lays out a very long line without running out of stack", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "a".repeat(200_000) }] }] },
+      { w: 400, h: 500 },
+      defaults
+    );
+    expect(layout.lines.length).toBeGreaterThan(100);
   });
 });

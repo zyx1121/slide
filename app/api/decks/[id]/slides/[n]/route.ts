@@ -15,12 +15,10 @@ export async function GET(
   const user = await getSession();
   if (!user) return Response.json({ error: "sign in first" }, { status: 401 });
   const { id, n } = await params;
-  const deck = await getDeck(sql, user.sub, id);
-  const index = Number(n) - 1;
-  const slide =
-    Number.isInteger(index) && index >= 0
-      ? deck?.document.slides[index]
-      : undefined;
+  // Slide numbers are written plainly: 1, 2, 3, not 01 or 0x1.
+  const index = /^[1-9][0-9]{0,3}$/.test(n) ? Number(n) - 1 : -1;
+  const deck = index >= 0 ? await getDeck(sql, user.sub, id) : null;
+  const slide = deck?.document.slides[index];
   if (!deck || !slide) {
     return Response.json({ error: "no such slide" }, { status: 404 });
   }

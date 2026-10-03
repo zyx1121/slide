@@ -1,9 +1,16 @@
-// Lays out a text body in a box: line breaking (spaces for Latin, any
-// character boundary for CJK, with kinsoku so closing punctuation never starts
-// a line), bullets and numbering, alignment and vertical anchoring. The output
-// positions every run, so drawing never re-wraps.
+// Lays out a text body in a box: line breaking (spaces and hyphens for Latin,
+// any character boundary for CJK, with kinsoku so closing punctuation never
+// starts a line), bullets and numbering, alignment and vertical anchoring.
+// The output positions every run, so drawing never re-wraps.
 import type { TextBody } from "../deck/schema";
-import { ASCENT, charWidth, isWide, LINE_HEIGHT } from "./metrics";
+import {
+  ASCENT,
+  charWidth,
+  fontOf,
+  isWide,
+  LINE_HEIGHT,
+  measure,
+} from "./metrics";
 
 export type Align = "left" | "center" | "right" | "justify";
 export type Anchor = "top" | "middle" | "bottom";
@@ -22,7 +29,7 @@ export type TextDefaults = {
 
 export type Segment = {
   text: string;
-  /** Latin runs are drawn in Carlito, CJK runs in Noto Sans TC. */
+  /** Drawn in Carlito ("latin") or in the CJK font ("cjk"); see fontOf. */
   script: "latin" | "cjk";
   x: number;
   width: number;
@@ -52,51 +59,83 @@ export type TextLayout = {
 
 /** PowerPoint's default text insets: 0.1 in left and right, 0.05 in top and bottom. */
 export const DEFAULT_INSET = { x: 14.4, y: 7.2 };
-/** Indent per paragraph level (0.5 in), and the bullet's hanging indent (0.25 in). */
+/** Indent per paragraph level: 0.5 in. */
 export const LEVEL_INDENT = 72;
-export const BULLET_HANG = 36;
+/** Hanging indents PowerPoint gives a bullet (0.375 in) and a number (0.5 in). */
+export const BULLET_HANG = 54;
+export const NUMBER_HANG = 72;
 
 // Kinsoku: characters that may not start a line, and that may not end one.
 const NO_START = new Set([
   ..."、。，．：；？！）」』】〕〉》｝〞’”%‰°℃,.:;?!)]}…‥ゝゞヽヾ々ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶー・",
 ]);
 const NO_END = new Set([..."（「『【〔〈《｛〝‘“([{"]);
+const HYPHENS = new Set(["-", "‐", "–", "—"]);
+const LINE_BREAKS = new Set(["\n", "\u000b", " "]);
 
 type RunStyle = Omit<Segment, "text" | "x" | "width" | "script">;
 type Char = { ch: string; cp: number; width: number; style: RunStyle };
 
 const isSpace = (ch: string) => ch === " " || ch === " " || ch === "\t";
 
+/**
+ * Characters that are neither drawn nor allowed in XML: C0 and C1 controls
+ * other than tab and line breaks, U+FFFE, U+FFFF and lone surrogates.
+ */
+function invisible(ch: string, cp: number): boolean {
+  if (ch === "\t" || LINE_BREAKS.has(ch)) return false;
+  return (
+    cp < 0x20 ||
+    (cp >= 0x7f && cp <= 0x9f) ||
+    cp === 0xfffe ||
+    cp === 0xffff ||
+    (cp >= 0xd800 && cp <= 0xdfff)
+  );
+}
+
 function styleKey(style: RunStyle): string {
   return `${style.size}|${style.color}|${style.bold}|${style.italic}|${style.underline}|${style.strike}`;
 }
 
+const breaksLikeCjk = (cp: number) => isWide(cp) || fontOf(cp) === "cjk";
+
 function canBreakAfter(chars: Char[], i: number): boolean {
+  const here = chars[i];
   const next = chars[i + 1];
   if (!next) return true;
-  if (NO_START.has(next.ch) || NO_END.has(chars[i].ch)) return false;
-  if (isSpace(chars[i].ch)) return !isSpace(next.ch);
+  if (NO_START.has(next.ch) || NO_END.has(here.ch)) return false;
+  if (isSpace(here.ch)) return !isSpace(next.ch);
   if (isSpace(next.ch)) return false;
-  return isWide(chars[i].cp) || isWide(next.cp);
+  // After a hyphen inside a word: "end-to-end" may break as "end-" / "to-end".
+  if (HYPHENS.has(here.ch) && i > 0 && !isSpace(chars[i - 1].ch)) return true;
+  return breaksLikeCjk(here.cp) || breaksLikeCjk(next.cp);
 }
 
-/** Splits characters into lines no wider than `limit`; spaces hang past it. */
-function breakLines(chars: Char[], limit: number, wrap: boolean): Char[][] {
+/**
+ * Splits characters into lines, line `n` no wider than `limit(n)`; spaces
+ * hang past the limit.
+ */
+function breakLines(
+  chars: Char[],
+  limit: (line: number) => number,
+  wrap: boolean
+): Char[][] {
   const lines: Char[][] = [];
   let start = 0;
   while (start <= chars.length) {
+    const max = limit(lines.length);
     let width = 0;
     let lastBreak = -1;
     let end = chars.length;
     let forced = false;
     for (let i = start; i < chars.length; i++) {
       const c = chars[i];
-      if (c.ch === "\n") {
+      if (LINE_BREAKS.has(c.ch)) {
         end = i;
         forced = true;
         break;
       }
-      if (wrap && !isSpace(c.ch) && width + c.width > limit && i > start) {
+      if (wrap && !isSpace(c.ch) && width + c.width > max && i > start) {
         end = lastBreak >= start ? lastBreak + 1 : i;
         break;
       }
@@ -117,28 +156,25 @@ function trimTrailingSpaces(chars: Char[]): Char[] {
   return chars.slice(0, end);
 }
 
-// Segments split where the style or the script changes, so every drawn run
-// is in one font: renderers that fall back per glyph (resvg) would otherwise
-// draw the rest of a mixed run in the fallback font and ignore its weight.
+// Segments split where the style or the font changes, so every drawn run is
+// in one font: renderers that fall back per glyph (resvg) would otherwise draw
+// the rest of a mixed run in the fallback font and ignore its weight.
 function segmentsOf(chars: Char[], x0: number): Segment[] {
   const segments: Segment[] = [];
   let x = x0;
   for (const c of chars) {
     const last = segments[segments.length - 1];
-    const script = isWide(c.cp)
-      ? "cjk"
-      : isSpace(c.ch) && last
-        ? last.script
-        : "latin";
+    const script = isSpace(c.ch) && last ? last.script : fontOf(c.cp);
+    const text = c.ch === "\t" ? "    " : c.ch;
     if (
       last &&
       last.script === script &&
       styleKey(last) === styleKey(c.style)
     ) {
-      last.text += c.ch;
+      last.text += text;
       last.width += c.width;
     } else {
-      segments.push({ ...c.style, script, text: c.ch, x, width: c.width });
+      segments.push({ ...c.style, script, text, x, width: c.width });
     }
     x += c.width;
   }
@@ -159,9 +195,13 @@ export function layoutText(
   for (const paragraph of body.paragraphs) {
     const level = paragraph.level ?? 0;
     const bulletKind = paragraph.bullet ?? "none";
-    const marL =
-      level * LEVEL_INDENT + (bulletKind === "none" ? 0 : BULLET_HANG);
-    const limit = Math.max(1, inner - marL);
+    const hang =
+      bulletKind === "number"
+        ? NUMBER_HANG
+        : bulletKind === "bullet"
+          ? BULLET_HANG
+          : 0;
+    const marL = level * LEVEL_INDENT + hang;
     const align = paragraph.align ?? defaults.align;
 
     const chars: Char[] = [];
@@ -176,12 +216,13 @@ export function layoutText(
       };
       for (const ch of run.text) {
         const cp = ch.codePointAt(0)!;
-        chars.push({
-          ch,
-          cp,
-          width: ch === "\n" ? 0 : charWidth(cp, style),
-          style,
-        });
+        if (invisible(ch, cp)) continue;
+        const width = LINE_BREAKS.has(ch)
+          ? 0
+          : ch === "\t"
+            ? 4 * charWidth(0x20, style)
+            : charWidth(cp, style);
+        chars.push({ ch, cp, width, style });
       }
     }
     const first = paragraph.runs[0];
@@ -196,39 +237,48 @@ export function layoutText(
       counters.length = level;
       if (bulletKind === "bullet") label = "•";
     }
+    const labelStyle = {
+      size: paraSize,
+      color: first?.color ?? defaults.color,
+      bold: first?.bold ?? defaults.bold,
+      italic: false,
+    };
+    // A label wider than its hanging indent pushes the first line's text
+    // along, as PowerPoint does, instead of drawing over it.
+    const labelX = marL - hang;
+    const firstIndent = label
+      ? Math.max(marL, labelX + measure(label, labelStyle) + paraSize / 4)
+      : marL;
+    const limitFor = (line: number) =>
+      Math.max(1, inner - (line === 0 ? firstIndent : marL));
 
-    breakLines(chars, limit, defaults.wrap).forEach((lineChars, index) => {
+    breakLines(chars, limitFor, defaults.wrap).forEach((lineChars, index) => {
       const visible = trimTrailingSpaces(lineChars);
-      const size =
-        Math.max(
-          0,
-          ...lineChars.filter((c) => c.ch !== "\n").map((c) => c.style.size)
-        ) || paraSize;
+      let size = 0;
+      for (const c of lineChars) size = Math.max(size, c.style.size);
+      size ||= paraSize;
       const height = size * LINE_HEIGHT;
-      const width = visible.reduce((sum, c) => sum + c.width, 0);
+      let width = 0;
+      for (const c of visible) width += c.width;
+      const indent = index === 0 ? firstIndent : marL;
+      const room = limitFor(index);
       const offset =
         align === "center"
-          ? (limit - width) / 2
+          ? (room - width) / 2
           : align === "right"
-            ? limit - width
+            ? room - width
             : 0;
       const line: Line = {
         baseline: y + size * ASCENT,
         height,
-        segments: segmentsOf(visible, defaults.inset.x + marL + offset),
+        segments: segmentsOf(visible, defaults.inset.x + indent + offset),
       };
       if (label && index === 0) {
-        const style = {
-          size: paraSize,
-          color: first?.color ?? defaults.color,
-          bold: first?.bold ?? defaults.bold,
-          italic: false,
-        };
         line.bullet = {
-          ...style,
+          ...labelStyle,
           text: label,
-          x: defaults.inset.x + marL - BULLET_HANG,
-          width: BULLET_HANG,
+          x: defaults.inset.x + labelX,
+          width: 0,
         };
       }
       lines.push(line);

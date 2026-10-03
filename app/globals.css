@@ -1,11 +1,6 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
-/* Carlito, Calibri's metric twin, for slide text (lib/render). */
-@import "@fontsource/carlito/400.css";
-@import "@fontsource/carlito/700.css";
-@import "@fontsource/carlito/400-italic.css";
-@import "@fontsource/carlito/700-italic.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -280,13 +275,16 @@
 
 /*
  * Inline slides (components/slide-view.tsx) fill their frame. The renderer
- * names "Noto Sans TC" on CJK runs for the server; in the page they use the
- * Noto Sans TC the layout already loads.
+ * names Carlito and "Noto Sans TC" for the server; in the page, text uses the
+ * same Carlito files (lib/fonts.ts) and the Noto Sans TC the layout loads.
  */
 [data-slot="slide-view"] svg {
   display: block;
   width: 100%;
   height: auto;
+}
+[data-slot="slide-view"] text {
+  font-family: var(--font-carlito), sans-serif;
 }
 [data-slot="slide-view"] text.cjk {
   font-family: var(--font-noto-sans-tc), sans-serif;

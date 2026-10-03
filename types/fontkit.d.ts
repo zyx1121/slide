@@ -8,6 +8,7 @@ declare module "fontkit" {
     ascent: number;
     descent: number;
     lineGap: number;
+    characterSet: number[];
     hasGlyphForCodePoint(codePoint: number): boolean;
     glyphForCodePoint(codePoint: number): Glyph;
   }

@@ -73,4 +73,75 @@ describe("renderSlideSvg", () => {
     expect(svg).not.toContain("/assets/");
     expect(svg).toContain('fill="#e5e5e5"');
   });
+
+  it("drops characters XML forbids and breaks lines at vertical tabs", () => {
+    const slide: Slide = {
+      id: "sl_ctrl",
+      title: "",
+      shapes: [
+        {
+          id: "tx_ctrl",
+          kind: "text",
+          x: 100,
+          y: 100,
+          w: 800,
+          h: 300,
+          text: {
+            paragraphs: [
+              { runs: [{ text: "line one\u000bline two\u0001\ufffe" }] },
+            ],
+          },
+        },
+      ],
+    };
+    const svg = renderSlideSvg(slide, { ...options, background: null });
+    // eslint-disable-next-line no-control-regex
+    expect(svg).not.toMatch(
+      /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/
+    );
+    expect(svg).toContain(">line one</text>");
+    expect(svg).toContain(">line two</text>");
+  });
+
+  it("escapes asset hrefs and draws arrowheads at both ends", () => {
+    const doc = sampleDocument();
+    const line = doc.slides[0].shapes.find((s) => s.id === "ln_capture_asr");
+    if (!line || line.kind !== "line") throw new Error("fixture");
+    line.startArrow = "oval";
+    const svg = renderSlideSvg(doc.slides[0], {
+      ...options,
+      assetHref: () => 'x" onload="alert(1)',
+    });
+    expect(svg).toContain('href="x&quot; onload=&quot;alert(1)"');
+    expect(svg).not.toContain('onload="alert');
+    // The oval sits on the start site (640, 420) of ln_capture_asr.
+    expect(svg).toMatch(
+      /<ellipse cx="640" cy="420" rx="6" ry="6" fill="#4f81bd"\/>/
+    );
+  });
+
+  it("never slants CJK text", () => {
+    const slide: Slide = {
+      id: "sl_italic",
+      title: "",
+      shapes: [
+        {
+          id: "tx_italic",
+          kind: "text",
+          x: 0,
+          y: 0,
+          w: 1000,
+          h: 200,
+          text: {
+            paragraphs: [{ runs: [{ text: "語音 speech", italic: true }] }],
+          },
+        },
+      ],
+    };
+    const svg = renderSlideSvg(slide, { ...options, background: null });
+    expect(svg).toMatch(
+      /<text[^>]*class="cjk"(?![^>]*font-style)[^>]*>語音 <\/text>/
+    );
+    expect(svg).toMatch(/<text[^>]*font-style="italic"[^>]*>speech<\/text>/);
+  });
 });

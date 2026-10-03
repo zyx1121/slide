@@ -122,3 +122,147 @@ describe("routes", () => {
     expect(c2.x).toBeLessThan(b.x);
   });
 });
+
+describe("elbow routes between two boxes", () => {
+  // Every pair of sites, for boxes beside, above, below, diagonal, nearly
+  // aligned and 30 px apart, with the start box turned by quarter turns.
+  const W = 200;
+  const H = 120;
+  const placements: [string, number, number][] = [
+    ["right", 500, 0],
+    ["left", -500, 0],
+    ["below", 0, 350],
+    ["above", 0, -350],
+    ["right-below", 500, 350],
+    ["right-above", 500, -350],
+    ["left-below", -500, 350],
+    ["left-above", -500, -350],
+    ["right-slightly-below", 400, 60],
+    ["left-slightly-below", -400, 60],
+    ["below-slightly-right", 60, 250],
+    ["above-slightly-left", -60, -250],
+    ["near-right", 230, 20],
+    ["near-below", 20, 150],
+  ];
+  const DIRS = {
+    up: { x: 0, y: -1 },
+    down: { x: 0, y: 1 },
+    left: { x: -1, y: 0 },
+    right: { x: 1, y: 0 },
+  };
+  type P = { x: number; y: number };
+  const unit = (a: P, b: P) => {
+    const l = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    return { x: (b.x - a.x) / l, y: (b.y - a.y) / l };
+  };
+  const inside = (p: P, r: { x: number; y: number; w: number; h: number }) =>
+    p.x > r.x + 1 &&
+    p.x < r.x + r.w - 1 &&
+    p.y > r.y + 1 &&
+    p.y < r.y + r.h - 1;
+
+  it("leave and enter outward, stay orthogonal, and never cut through either box", () => {
+    const failures: string[] = [];
+    for (const rotation of [0, 90, 180, 270]) {
+      for (const [name, dx, dy] of placements) {
+        for (let s0 = 0; s0 < 4; s0++) {
+          for (let s1 = 0; s1 < 4; s1++) {
+            const a = {
+              id: "sh_a1",
+              kind: "rect" as const,
+              x: 800,
+              y: 400,
+              w: W,
+              h: H,
+              rotation,
+            };
+            const b = {
+              id: "sh_b1",
+              kind: "rect" as const,
+              x: 800 + dx,
+              y: 400 + dy,
+              w: W,
+              h: H,
+              rotation: 0,
+            };
+            const shapes = new Map<string, Shape>([
+              [a.id, a],
+              [b.id, b],
+            ]);
+            const boxes = [a, b].map((r) =>
+              r.rotation % 180 === 0
+                ? r
+                : {
+                    x: r.x + (r.w - r.h) / 2,
+                    y: r.y + (r.h - r.w) / 2,
+                    w: r.h,
+                    h: r.w,
+                  }
+            );
+            const [ra, rb] = boxes;
+            // Overlapping boxes cannot be joined without crossing one.
+            if (
+              ra.x < rb.x + rb.w &&
+              rb.x < ra.x + ra.w &&
+              ra.y < rb.y + rb.h &&
+              rb.y < ra.y + ra.h
+            ) {
+              continue;
+            }
+            const route = routeConnector(
+              {
+                id: "ln_x1",
+                kind: "line",
+                route: "elbow",
+                start: { shape: a.id, site: s0 },
+                end: { shape: b.id, site: s1 },
+                stroke: { color: "#000000", width: 2 },
+              },
+              shapes
+            );
+            const pts = route.points as P[];
+            const sa = sitePoint(a, s0);
+            const sb = sitePoint(b, s1);
+            const label = `rot ${rotation} ${name} ${s0}->${s1}`;
+            const near = (p: P, q: P) =>
+              Math.abs(p.x - q.x) < 1e-6 && Math.abs(p.y - q.y) < 1e-6;
+            if (!near(pts[0], sa.point) || !near(pts[pts.length - 1], sb.point))
+              failures.push(`${label}: ends`);
+            for (let i = 1; i < pts.length; i++) {
+              if (
+                Math.abs(pts[i].x - pts[i - 1].x) > 1e-6 &&
+                Math.abs(pts[i].y - pts[i - 1].y) > 1e-6
+              )
+                failures.push(`${label}: diagonal`);
+            }
+            const out = unit(pts[0], pts[1]);
+            if (out.x * DIRS[sa.dir].x + out.y * DIRS[sa.dir].y < 0.99)
+              failures.push(`${label}: exits inward`);
+            const into = unit(pts[pts.length - 2], pts[pts.length - 1]);
+            if (-(into.x * DIRS[sb.dir].x + into.y * DIRS[sb.dir].y) < 0.99)
+              failures.push(`${label}: enters from inside`);
+            for (let i = 2; i < pts.length; i++) {
+              const u = unit(pts[i - 2], pts[i - 1]);
+              const v = unit(pts[i - 1], pts[i]);
+              if (u.x * v.x + u.y * v.y < -0.99)
+                failures.push(`${label}: doubles back`);
+            }
+            for (let i = 1; i < pts.length; i++) {
+              for (let t = 0.02; t < 1; t += 0.02) {
+                const p = {
+                  x: pts[i - 1].x + (pts[i].x - pts[i - 1].x) * t,
+                  y: pts[i - 1].y + (pts[i].y - pts[i - 1].y) * t,
+                };
+                if (boxes.some((r) => inside(p, r))) {
+                  failures.push(`${label}: through a box`);
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    expect([...new Set(failures)]).toEqual([]);
+  });
+});

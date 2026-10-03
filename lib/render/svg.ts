@@ -39,8 +39,15 @@ type StrokeSpec = NonNullable<Extract<Shape, { kind: "rect" }>["stroke"]>;
 
 const num = (value: number) => String(Math.round(value * 100) / 100);
 
+// Characters XML forbids (C0 controls but tab and newlines, U+FFFE, U+FFFF,
+// lone surrogates): resvg refuses a document that contains one.
+const NOT_XML =
+  // eslint-disable-next-line no-control-regex
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]|[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/g;
+
 function esc(value: string): string {
   return value
+    .replace(NOT_XML, "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -86,7 +93,10 @@ function runSvg(segment: Segment, x0: number, y: number): string {
     attrs.push(`font-family="${CJK_FONT}"`);
   }
   if (segment.bold) attrs.push('font-weight="700"');
-  if (segment.italic) attrs.push('font-style="italic"');
+  // CJK is never slanted: browsers would fake an oblique, resvg would not.
+  if (segment.italic && segment.script === "latin") {
+    attrs.push('font-style="italic"');
+  }
   const decoration = [
     segment.underline && "underline",
     segment.strike && "line-through",

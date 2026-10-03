@@ -67,4 +67,27 @@ describe("renderPng", () => {
     );
     expect(ink).toBeGreaterThan(1500);
   });
+
+  it("draws bold CJK with Noto Sans TC Bold, heavier than regular", () => {
+    const ink = (bold: boolean) => {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 120" width="400" height="120"><text x="10" y="90" font-size="80" font-family="Noto Sans TC"${bold ? ' font-weight="700"' : ""}>第二點</text></svg>`;
+      return count(
+        render(svg, 400),
+        { x: 0, y: 0, w: 400, h: 120 },
+        (r, g, b) => r < 100 && g < 100 && b < 100
+      );
+    };
+    expect(ink(true)).toBeGreaterThan(ink(false) * 1.3);
+  });
+
+  it("renders text that carried control characters", () => {
+    const slide = {
+      id: "sl_ctrl",
+      title: "Title\u000bwith a break\u0001",
+      shapes: [],
+    };
+    expect(() =>
+      renderPng(renderSlideSvg(slide, { slideNumber: 3, background: null }))
+    ).not.toThrow();
+  });
 });

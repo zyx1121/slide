@@ -1,7 +1,9 @@
 // The slide as it looks in the middle of a gesture, before the gesture is
 // written as a patch. Mirrors ops.ts: what a drag shows is what its patch
 // stores (ops.test.ts checks the two agree).
-import type { Shape, Slide } from "../deck/schema";
+import { compare } from "fast-json-patch";
+
+import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { type Box, tidy } from "./geometry";
 
@@ -76,4 +78,24 @@ export function newShape(kind: NewShapeKind, slide: Slide): Shape {
   };
   if (kind === "roundRect") return { ...base, kind, corner: 0.16 };
   return { ...base, kind };
+}
+
+/**
+ * The new document with every slide that did not change kept as the same
+ * object, so the canvases of untouched slides skip drawing them again.
+ */
+export function shareSlides(
+  before: DeckDocument,
+  after: DeckDocument
+): DeckDocument {
+  let shared = false;
+  const slides = after.slides.map((slide, i) => {
+    const old = before.slides[i];
+    if (old && old.id === slide.id && compare(old, slide).length === 0) {
+      shared = true;
+      return old;
+    }
+    return slide;
+  });
+  return shared ? { ...after, slides } : after;
 }

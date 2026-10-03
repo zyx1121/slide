@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   CircleHelpIcon,
   CopyPlusIcon,
+  DownloadIcon,
   ImageIcon,
   LayoutGridIcon,
   TypeIcon,
@@ -1014,6 +1015,11 @@ export function Editor({
             className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border p-1"
           >
             <DockLink href="/" tip="所有簡報" icon={LayoutGridIcon} />
+            <DockDownload
+              href={`/api/decks/${deckId}/export`}
+              tip="下載 PowerPoint"
+              icon={DownloadIcon}
+            />
             <Separator orientation="vertical" className="mx-1 my-2" />
             <Tool
               tip="復原"
@@ -1260,6 +1266,35 @@ function DockLink({
         render={
           <Link
             href={href}
+            aria-label={tip}
+            className={buttonVariants({ variant: "ghost", size: "icon" })}
+          />
+        }
+      >
+        <Icon />
+      </TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** A dock button that downloads a file, such as the deck as .pptx. */
+function DockDownload({
+  href,
+  tip,
+  icon: Icon,
+}: {
+  href: string;
+  tip: string;
+  icon: ComponentType;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <a
+            href={href}
+            download
             aria-label={tip}
             className={buttonVariants({ variant: "ghost", size: "icon" })}
           />

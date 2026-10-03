@@ -4,6 +4,7 @@ import { Editor } from "@/components/editor/editor";
 import { StageShell } from "@/components/stage-shell";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
+import { storedDocumentProblem } from "@/lib/deck/schema";
 import { getDeck } from "@/lib/deck/store";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,7 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
         initialVersion={deck.version}
         initialPublished={deck.published}
         initialPublicId={deck.publicId}
+        invalid={storedDocumentProblem(deck.document)}
       />
     </StageShell>
   );

@@ -203,12 +203,18 @@ export function Editor({
   initialVersion,
   initialPublished,
   initialPublicId,
+  invalid = null,
 }: {
   deckId: string;
   initialDocument: DeckDocument;
   initialVersion: number;
   initialPublished: boolean;
   initialPublicId: string | null;
+  /**
+   * Why the stored deck cannot be edited, when it breaks the schema: every
+   * edit would be refused, so none is offered.
+   */
+  invalid?: string | null;
 }) {
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
@@ -283,6 +289,7 @@ export function Editor({
   const commit = useCallback(
     (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
+      if (invalid !== null) return "paused";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -313,7 +320,7 @@ export function Editor({
       saver.save(result.operations);
       return "applied";
     },
-    [saver]
+    [saver, invalid]
   );
 
   /**
@@ -436,6 +443,7 @@ export function Editor({
    * word there (an empty text gets a caret), from the keyboard all of it.
    */
   const startEdit = (at: number, target: string, point: Point | null) => {
+    if (invalid !== null) return;
     endEdit();
     flushNudge();
     const slideNow = docRef.current.slides[at];
@@ -919,10 +927,10 @@ export function Editor({
   };
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
-  const paused = !saving.accepting;
+  const paused = !saving.accepting || invalid !== null;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
-  const problem = refusal ?? saving.message;
+  const problem = invalid ?? refusal ?? saving.message;
   const status =
     saving.phase === "reloading"
       ? "載入最新版本…"

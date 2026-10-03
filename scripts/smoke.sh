@@ -1,7 +1,7 @@
 #!/bin/sh
 # Smoke test for a stack started with `docker compose up -d`: the migrate job
 # exits 0, the web service turns healthy, /api/health reaches Postgres, the
-# schema_migrations table exists, and the home page renders.
+# first migration is applied, and the home page renders.
 #
 #   sh scripts/smoke.sh
 set -eu
@@ -25,9 +25,11 @@ done
 health=$(curl -fsS "$web/api/health")
 echo "$health" | grep -q '"db":"ok"' || fail "unexpected health: $health"
 
+applied=$(docker compose exec -T postgres psql -U slide -d slide -tAc \
+	"select count(*) from schema_migrations where name = '0001_init.sql'")
+[ "$applied" = 1 ] || fail "0001_init.sql was not applied"
 docker compose exec -T postgres psql -U slide -d slide -tAc \
-	"select count(*) from schema_migrations" >/dev/null ||
-	fail "schema_migrations is missing"
+	"select count(*) from decks" >/dev/null || fail "the decks table is missing"
 
 curl -fsS "$web/" | grep -q "<title>slide</title>" ||
 	fail "the home page did not render"

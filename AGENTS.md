@@ -13,5 +13,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Design and decisions live in [PLAN.md](PLAN.md). Work items are GitHub issues; one PR closes one issue.
 - Stack: Next.js 16 (App Router, no `src/`), Tailwind v4, shadcn (base-nova), Postgres through `postgres` (postgres.js), bun.
 - Schema changes are SQL files in `migrations/` named `NNNN_name.sql`, applied in name order by `scripts/migrate.ts`. Never edit a migration that has been applied; add a new one. The runner wraps each file in a transaction, so a file must not contain its own `BEGIN` or `COMMIT`.
+- Decks: `lib/deck/schema.ts` defines the document, and `lib/deck/store.ts` (`mutateDeck`) is the only write path. Every query takes the member's `sub`; agents write suggestions.
+- Tests that need Postgres use `lib/test-db.ts` and run only when `TEST_DATABASE_URL` is set (each gets its own schema, dropped afterwards). CI sets it.
 - Checks: `bun run typecheck`, `bun run lint`, `bun run format:check`, `bun run test`. CI also builds the image and smoke-tests `docker compose up` with `scripts/smoke.sh`.
 - GitHub text (issues, PRs, comments, docs) is English. UI copy is Traditional Chinese (zh-Hant).

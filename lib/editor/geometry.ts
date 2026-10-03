@@ -97,11 +97,24 @@ function distanceToSegment(p: Point, a: Point, b: Point): number {
   return Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy));
 }
 
+/** A shape with neither fill nor words: a frame drawn around others. */
+function isHollow(shape: BoxShape): boolean {
+  if (shape.kind === "text" || shape.kind === "image" || shape.fill) {
+    return false;
+  }
+  return !shape.text?.paragraphs.some((p) =>
+    p.runs.some((run) => run.text.trim() !== "")
+  );
+}
+
 /**
  * The topmost shape under a point, or null. A connector counts within
- * `tolerance` px of its line; a box counts anywhere inside it, filled or not,
- * so text boxes and outlines are easy to pick, and within half the tolerance
- * of its edge, so a box with no width or height can be picked too.
+ * `tolerance` px of its line; a box counts anywhere inside it, so text boxes
+ * and outlines are easy to pick, and within half the tolerance of its edge,
+ * so a box with no width or height can be picked too. A hollow shape (no
+ * fill, no text) counts inside only when nothing else is under the point, as
+ * a frame drawn around a diagram must not hide the shapes in it; on its edge
+ * it counts as any other.
  */
 export function hitTest(
   slide: Slide,
@@ -109,6 +122,7 @@ export function hitTest(
   tolerance: number
 ): string | null {
   const shapes = new Map(slide.shapes.map((shape) => [shape.id, shape]));
+  let inFrame: string | null = null;
   for (let i = slide.shapes.length - 1; i >= 0; i--) {
     const shape = slide.shapes[i];
     if (shape.kind === "line") {
@@ -120,10 +134,17 @@ export function hitTest(
         }
       }
     } else if (containsPoint(shape, p, tolerance / 2)) {
-      return shape.id;
+      if (!isHollow(shape)) return shape.id;
+      const local = toLocal(shape, p);
+      const reach = tolerance + (shape.stroke?.width ?? 0) / 2;
+      const onEdge =
+        Math.abs(local.x) >= shape.w / 2 - reach ||
+        Math.abs(local.y) >= shape.h / 2 - reach;
+      if (onEdge) return shape.id;
+      inFrame ??= shape.id;
     }
   }
-  return null;
+  return inFrame;
 }
 
 /** The axis-aligned box around points. */

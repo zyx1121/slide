@@ -266,6 +266,31 @@ describe("layoutText", () => {
     ]);
   });
 
+  it("spaces lines and paragraphs as PowerPoint does", () => {
+    const layout = layoutText(
+      {
+        paragraphs: [
+          { runs: [{ text: "one" }], spaceBefore: 30 },
+          { runs: [{ text: "two" }], lineSpacing: 2, spaceAfter: 20 },
+          { runs: [{ text: "three" }] },
+        ],
+      },
+      { w: 2000, h: 1000 },
+      defaults
+    );
+    const [one, two, three] = layout.lines;
+    // No space before the first paragraph; 2x lines are 2.4 em tall, the
+    // baseline 0.875 em lower than single; then 20 px after.
+    expect(one.top).toBe(0);
+    expect(two.top).toBeCloseTo(40 * 1.2, 6);
+    expect(two.height).toBeCloseTo(40 * 2.4, 6);
+    expect(two.baseline - two.top).toBeCloseTo(
+      one.baseline - one.top + 40 * 0.875,
+      6
+    );
+    expect(three.top).toBeCloseTo(40 * 1.2 + 40 * 2.4 + 20, 6);
+  });
+
   it("pushes the first line past a number wider than its hanging indent", () => {
     const size = 120;
     const layout = layoutText(

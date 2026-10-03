@@ -88,6 +88,13 @@ const HYPHENS = new Set(["-", "‐", "–", "—"]);
 const LINE_BREAKS = new Set(["\n", "\u000b", " "]);
 
 type RunStyle = Omit<Segment, "text" | "x" | "width" | "script">;
+/**
+ * How far PowerPoint moves a line's baseline down per em for each step of
+ * line spacing past single: measured from its PDFs at 0.9, 1.5, 2 and 3
+ * times (the lines themselves are that many times 1.2 em apart).
+ */
+const PITCH_ABOVE = 0.875;
+
 type Char = {
   ch: string;
   cp: number;
@@ -338,13 +345,15 @@ export function layoutText(
     const limitFor = (line: number) =>
       Math.max(1, inner - (line === 0 ? firstIndent : marL));
 
+    const pitch = paragraph.lineSpacing ?? 1;
+    if (paragraphIndex > 0) y += paragraph.spaceBefore ?? 0;
     breakLines(chars, limitFor, wrap).forEach((range, index) => {
       const lineChars = chars.slice(range.start, range.end);
       const visible = trimTrailingSpaces(lineChars);
       let size = 0;
       for (const c of lineChars) size = Math.max(size, c.style.size);
       size ||= paraSize;
-      const height = size * LINE_HEIGHT;
+      const height = size * LINE_HEIGHT * pitch;
       let width = 0;
       for (const c of visible) width += c.width;
       const indent = index === 0 ? firstIndent : marL;
@@ -373,7 +382,7 @@ export function layoutText(
         start: offsetAt(range.start),
         end: offsetAt(range.end),
         top: y,
-        baseline: y + size * ASCENT,
+        baseline: y + size * (ASCENT + (pitch - 1) * PITCH_ABOVE),
         height,
         carets,
         segments: segmentsOf(visible, x0, extra),
@@ -389,6 +398,7 @@ export function layoutText(
       lines.push(line);
       y += height;
     });
+    y += paragraph.spaceAfter ?? 0;
   });
 
   const room = box.h - 2 * defaults.inset.y;

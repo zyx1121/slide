@@ -15,6 +15,7 @@ import {
 } from "../deck/schema";
 import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "../deck/limits";
 import { formatPath, type PathCommand, PATH_UNITS } from "../deck/path";
+import { DEFAULT_TEXT } from "../render/template";
 import { readColor, readColorMap, readTheme, type Theme } from "./color";
 import {
   child,
@@ -119,7 +120,46 @@ type LevelStyle = {
   bullet?: "bullet" | "number" | "none";
   color?: string;
   align?: Paragraph["align"];
+  spacing?: Spacing;
 };
+
+/**
+ * A paragraph's spacing as DrawingML states it: points, or a share of the
+ * line. Shares resolve against the paragraph's size once it is known.
+ */
+type Spacing = {
+  line?: { pct: number } | { px: number };
+  before?: { pct: number } | { px: number };
+  after?: { pct: number } | { px: number };
+};
+
+function readSpacing(pPr: El | undefined, k: number): Spacing | undefined {
+  const one = (tag: string) => {
+    const holder = child(pPr, tag);
+    const pct = num(child(holder, "a:spcPct"), "val");
+    if (pct !== undefined) return { pct: pct / 100000 };
+    const pts = num(child(holder, "a:spcPts"), "val");
+    // Hundredths of a point; a canvas px is half a point.
+    if (pts !== undefined) return { px: (pts / 50) * k };
+    return undefined;
+  };
+  const spacing: Spacing = {
+    line: one("a:lnSpc"),
+    before: one("a:spcBef"),
+    after: one("a:spcAft"),
+  };
+  return spacing.line || spacing.before || spacing.after ? spacing : undefined;
+}
+
+/** Spacing laid over another: the later one wins where it says something. */
+const overSpacing = (a?: Spacing, b?: Spacing): Spacing | undefined =>
+  a || b
+    ? {
+        line: b?.line ?? a?.line,
+        before: b?.before ?? a?.before,
+        after: b?.after ?? a?.after,
+      }
+    : undefined;
 
 /** A paragraph's alignment from its algn attribute. */
 function alignOf(algn: string | undefined): Paragraph["align"] | undefined {
@@ -191,6 +231,7 @@ function readLevels(
             : undefined,
       color: readColor(child(rPr, "a:solidFill"), ctx.theme, ctx.colorMap),
       align: alignOf(pPr?.attrs.algn),
+      spacing: readSpacing(pPr, ctx.k),
     });
   }
   return levels;
@@ -205,6 +246,7 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
       if (level.bullet !== undefined) out[i].bullet = level.bullet;
       if (level.color !== undefined) out[i].color = level.color;
       if (level.align !== undefined) out[i].align = level.align;
+      out[i].spacing = overSpacing(out[i].spacing, level.spacing);
     });
   }
   return out;
@@ -212,7 +254,7 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
 
 /** Sizes and bullets only: a shape's own style gives its text color. */
 const withoutColor = (levels: LevelStyle[]): LevelStyle[] =>
-  levels.map(({ size, bullet }) => ({ size, bullet }));
+  levels.map(({ size, bullet, spacing }) => ({ size, bullet, spacing }));
 
 /** A shape's box from its <a:xfrm>, on the canvas. */
 function boxOf(xfrm: El | undefined, ctx: Context, place: Place): Box | null {
@@ -317,6 +359,28 @@ function readText(
       if (Object.keys(end).length > 0) runs.push({ ...end, text: "" });
     }
     const paragraph: Paragraph = { runs: runs.slice(0, 500) };
+    // Spacing as a multiple of single lines and px of space, a share of the
+    // line taken at the paragraph's size.
+    const spacing = overSpacing(style?.spacing, readSpacing(pPr, ctx.k));
+    if (spacing) {
+      const size =
+        runs.find((r) => r.size)?.size ?? style?.size ?? DEFAULT_TEXT.size;
+      const line = size * 1.2;
+      const px = (v: { pct: number } | { px: number }) =>
+        "pct" in v ? v.pct * line : v.px;
+      if (spacing.line) {
+        const m =
+          "pct" in spacing.line ? spacing.line.pct : spacing.line.px / line;
+        if (Math.abs(m - 1) > 0.001)
+          paragraph.lineSpacing = Math.round(clamp(m, 0.1, 10) * 1000) / 1000;
+      }
+      if (spacing.before && px(spacing.before) > 0)
+        paragraph.spaceBefore =
+          Math.round(clamp(px(spacing.before), 0, 2000) * 100) / 100;
+      if (spacing.after && px(spacing.after) > 0)
+        paragraph.spaceAfter =
+          Math.round(clamp(px(spacing.after), 0, 2000) * 100) / 100;
+    }
     // The paragraph's own, then its level's in the list styles, then the
     // shape's default.
     const align = alignOf(pPr?.attrs.algn) ?? style?.align ?? defaults.align;

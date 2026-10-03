@@ -148,7 +148,19 @@ export function textBodyXml(
         : bullet === "number"
           ? '<a:buFont typeface="+mj-lt"/><a:buAutoNum type="arabicPeriod"/>'
           : "<a:buNone/>";
-    const pPr = `<a:pPr marL="${marL}" indent="${-hang}" algn="${align}"${level ? ` lvl="${Math.min(level, 8)}"` : ""}>${bu}</a:pPr>`;
+    // Spacing: line pitch in thousandths of a percent, space in hundredths
+    // of a point (a canvas px is half a point).
+    const spacing =
+      (paragraph.lineSpacing !== undefined
+        ? `<a:lnSpc><a:spcPct val="${Math.round(paragraph.lineSpacing * 100000)}"/></a:lnSpc>`
+        : "") +
+      (paragraph.spaceBefore !== undefined
+        ? `<a:spcBef><a:spcPts val="${Math.round(paragraph.spaceBefore * 50)}"/></a:spcBef>`
+        : "") +
+      (paragraph.spaceAfter !== undefined
+        ? `<a:spcAft><a:spcPts val="${Math.round(paragraph.spaceAfter * 50)}"/></a:spcAft>`
+        : "");
+    const pPr = `<a:pPr marL="${marL}" indent="${-hang}" algn="${align}"${level ? ` lvl="${Math.min(level, 8)}"` : ""}>${spacing}${bu}</a:pPr>`;
     const runs = paragraph.runs.map(runsXml).join("");
     const last = paragraph.runs[paragraph.runs.length - 1] ?? {};
     return `<a:p>${pPr}${runs}${runProps(last, "a:endParaRPr")}</a:p>`;

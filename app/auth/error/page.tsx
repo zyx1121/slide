@@ -20,7 +20,7 @@ export default async function SignInError({
   const { reason } = await searchParams;
   const { title, body } =
     REASONS[
-      (typeof reason === "string" && reason in REASONS
+      (typeof reason === "string" && Object.hasOwn(REASONS, reason)
         ? reason
         : "failed") as keyof typeof REASONS
     ];

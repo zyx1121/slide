@@ -1,11 +1,13 @@
 import { NextRequest } from "next/server";
 import { beforeAll, describe, expect, it } from "vitest";
 
-import { sealSession, SESSION_COOKIE } from "@/lib/auth/session";
+import { sealSession } from "@/lib/auth/session";
 
 import { config, proxy } from "./proxy";
 
 const secret = "s".repeat(32);
+// APP_URL is https here, so the session cookie carries the __Host- prefix.
+const SESSION = "__Host-slide_session";
 
 beforeAll(() => {
   Object.assign(process.env, {
@@ -35,7 +37,7 @@ describe("proxy", () => {
     );
     const response = await proxy(
       new NextRequest("http://internal:3000/", {
-        headers: { cookie: `${SESSION_COOKIE}=${token}` },
+        headers: { cookie: `${SESSION}=${token}` },
       })
     );
     expect(response.headers.get("x-middleware-next")).toBe("1");
@@ -48,7 +50,7 @@ describe("proxy", () => {
     );
     const response = await proxy(
       new NextRequest("http://internal:3000/", {
-        headers: { cookie: `${SESSION_COOKIE}=${forged}` },
+        headers: { cookie: `${SESSION}=${forged}` },
       })
     );
     expect(response.status).toBe(307);
@@ -56,7 +58,7 @@ describe("proxy", () => {
 
   it("leaves sign-in, the health check, public decks and static files alone", () => {
     const pattern = new RegExp(`^${config.matcher[0]}$`);
-    for (const path of ["/", "/decks/dk_2345", "/settings"]) {
+    for (const path of ["/", "/decks/dk_2345", "/settings", "/api/healthz"]) {
       expect(pattern.test(path)).toBe(true);
     }
     for (const path of [

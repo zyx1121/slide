@@ -19,6 +19,7 @@ describe("safeNext", () => {
       "https://evil.example",
       "/\u0009/evil.example",
       "/ok\r\nSet-Cookie: x=1",
+      "/" + "a".repeat(1024),
     ]) {
       expect(safeNext(next)).toBe("/");
     }

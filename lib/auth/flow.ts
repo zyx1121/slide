@@ -8,16 +8,19 @@ import { callbackUrl, oidc, type AuthEnv } from "./config";
 import { safeNext } from "./redirect";
 import { seal, unseal } from "./seal";
 import {
+  cookieName,
   cookieOptions,
   readSession,
-  SESSION_COOKIE,
   SESSION_SECONDS,
   sealSession,
+  sessionCookie,
   type SessionUser,
 } from "./session";
 
 /** Holds the PKCE verifier, state and nonce between login and callback. */
-export const SIGN_IN_COOKIE = "slide_sign_in";
+export function signInCookie(env: AuthEnv): string {
+  return cookieName(env, "slide_sign_in");
+}
 const SIGN_IN_SECONDS = 10 * 60;
 
 type SignIn = { v: string; s: string; n: string; next: string };
@@ -58,13 +61,13 @@ export async function startSignIn(
   });
   const response = NextResponse.redirect(target);
   response.cookies.set(
-    SIGN_IN_COOKIE,
+    signInCookie(env),
     await seal(
       { v: verifier, s: state, n: nonce, next } satisfies SignIn,
       env.secret,
       SIGN_IN_SECONDS
     ),
-    cookieOptions(env, "/auth", SIGN_IN_SECONDS)
+    cookieOptions(env, SIGN_IN_SECONDS)
   );
   return response;
 }
@@ -78,7 +81,7 @@ export async function finishSignIn(
   env: AuthEnv,
   onSignIn: (user: SessionUser) => Promise<void>
 ): Promise<NextResponse> {
-  const sealed = request.cookies.get(SIGN_IN_COOKIE)?.value;
+  const sealed = request.cookies.get(signInCookie(env))?.value;
   const signIn = sealed ? await unseal<SignIn>(sealed, env.secret) : null;
   if (!signIn) {
     return failure(env, "expired");
@@ -113,23 +116,33 @@ export async function finishSignIn(
   await onSignIn(user);
   const response = NextResponse.redirect(new URL(signIn.next, env.appUrl));
   response.cookies.set(
-    SESSION_COOKIE,
+    sessionCookie(env),
     await sealSession({ ...user, idToken }, env.secret),
-    cookieOptions(env, "/", SESSION_SECONDS)
+    cookieOptions(env, SESSION_SECONDS)
   );
-  response.cookies.set(SIGN_IN_COOKIE, "", cookieOptions(env, "/auth", 0));
+  response.cookies.set(signInCookie(env), "", cookieOptions(env, 0));
   return response;
 }
 
 /**
  * POST /auth/logout: clears the session and ends the Keycloak session too,
- * then Keycloak sends the member back to APP_URL.
+ * then Keycloak sends the member back to APP_URL. A cross-site form cannot
+ * sign a member out: it is refused, and a request without a session clears
+ * nothing.
  */
 export async function signOut(
   request: NextRequest,
   env: AuthEnv
 ): Promise<NextResponse> {
+  const origin = request.headers.get("origin");
+  if (
+    request.headers.get("sec-fetch-site") === "cross-site" ||
+    (origin !== null && origin !== env.appUrl.origin)
+  ) {
+    return new NextResponse("Forbidden", { status: 403 });
+  }
   const session = await readSession(request, env);
+  if (!session) return NextResponse.redirect(env.appUrl, 303);
   let target: URL = env.appUrl;
   try {
     target = client.buildEndSessionUrl(await oidc(env), {
@@ -142,6 +155,6 @@ export async function signOut(
     console.error("auth: no end-session endpoint", error);
   }
   const response = NextResponse.redirect(target, 303);
-  response.cookies.set(SESSION_COOKIE, "", cookieOptions(env, "/", 0));
+  response.cookies.set(sessionCookie(env), "", cookieOptions(env, 0));
   return response;
 }

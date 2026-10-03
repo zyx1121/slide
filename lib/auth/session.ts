@@ -5,8 +5,24 @@ import type { NextRequest } from "next/server";
 import { authEnv, type AuthEnv } from "./config";
 import { seal, unseal } from "./seal";
 
-export const SESSION_COOKIE = "slide_session";
 export const SESSION_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * A cookie's name for this deployment. Over https it takes the __Host-
+ * prefix: the browser then refuses a Domain attribute on it, so a page on a
+ * sibling *.winlab.tw host cannot plant one (cookie tossing) to swap a
+ * member's session or sign-in. Plain-http development cannot use the prefix.
+ */
+export function cookieName(
+  env: AuthEnv,
+  base: "slide_session" | "slide_sign_in"
+): string {
+  return env.appUrl.protocol === "https:" ? `__Host-${base}` : base;
+}
+
+export function sessionCookie(env: AuthEnv): string {
+  return cookieName(env, "slide_session");
+}
 
 export type SessionUser = {
   /** Keycloak subject; every deck query is scoped to it. */
@@ -62,25 +78,27 @@ export async function unsealSession(
 
 /** The session carried by a request, for proxy.ts and route handlers. */
 export function readSession(request: NextRequest, env: AuthEnv) {
-  const token = request.cookies.get(SESSION_COOKIE)?.value;
+  const token = request.cookies.get(sessionCookie(env))?.value;
   return token ? unsealSession(token, env.secret) : Promise.resolve(null);
 }
 
-export function cookieOptions(env: AuthEnv, path: string, maxAge: number) {
+/** Host-only (no Domain), Path=/ and, over https, Secure: what __Host- requires. */
+export function cookieOptions(env: AuthEnv, maxAge: number) {
   return {
     httpOnly: true,
     secure: env.appUrl.protocol === "https:",
     sameSite: "lax" as const,
-    path,
+    path: "/",
     maxAge,
   };
 }
 
 /** The signed-in member in a Server Component or Server Function, or null. */
 export async function getSession(): Promise<SessionUser | null> {
-  const token = (await cookies()).get(SESSION_COOKIE)?.value;
+  const env = authEnv();
+  const token = (await cookies()).get(sessionCookie(env))?.value;
   if (!token) return null;
-  const session = await unsealSession(token, authEnv().secret);
+  const session = await unsealSession(token, env.secret);
   return session
     ? { sub: session.sub, name: session.name, email: session.email }
     : null;

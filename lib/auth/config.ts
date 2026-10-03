@@ -42,24 +42,33 @@ export function callbackUrl(env: AuthEnv): URL {
 
 const discovered = new Map<string, Promise<client.Configuration>>();
 
+const LOOPBACK = new Set(["127.0.0.1", "localhost", "[::1]"]);
+
 /**
  * The issuer's OIDC configuration, fetched once per process. A failed fetch
- * is forgotten, so the next sign-in tries again. A plain-http issuer is only
- * accepted because tests run a local one.
+ * is forgotten, so the next sign-in tries again. Plain http is accepted only
+ * for an issuer on this machine, which is what the tests run; anywhere else
+ * openid-client refuses it. ID token signatures are verified against the
+ * issuer's keys, on top of the TLS-protected token response.
  */
 export function oidc(env: AuthEnv): Promise<client.Configuration> {
   const key = `${env.issuer.href} ${env.clientId}`;
   let configuration = discovered.get(key);
   if (!configuration) {
-    configuration = client.discovery(
-      env.issuer,
-      env.clientId,
-      env.clientSecret,
-      undefined,
-      env.issuer.protocol === "http:"
-        ? { execute: [client.allowInsecureRequests] }
-        : undefined
-    );
+    const local =
+      env.issuer.protocol === "http:" && LOOPBACK.has(env.issuer.hostname);
+    configuration = client
+      .discovery(
+        env.issuer,
+        env.clientId,
+        env.clientSecret,
+        undefined,
+        local ? { execute: [client.allowInsecureRequests] } : undefined
+      )
+      .then((found) => {
+        client.enableNonRepudiationChecks(found);
+        return found;
+      });
     configuration.catch(() => discovered.delete(key));
     discovered.set(key, configuration);
   }

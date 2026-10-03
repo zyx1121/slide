@@ -20,6 +20,6 @@ export const config = {
   // Everything except sign-in itself, the health check, public decks (/s/),
   // and static files.
   matcher: [
-    "/((?!auth/|api/health|s/|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!auth/|api/health$|s/|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };

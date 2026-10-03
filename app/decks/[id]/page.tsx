@@ -1,6 +1,7 @@
-import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { AccountActions } from "@/components/account-actions";
+import { TaskShell } from "@/components/task-shell";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getDeck } from "@/lib/deck/store";
@@ -15,14 +16,13 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
   if (!deck) notFound();
 
   return (
-    <main className="mx-auto flex w-full max-w-3xl flex-1 flex-col gap-4 p-8">
-      <Link href="/" className="text-muted-foreground hover:underline">
-        所有簡報
-      </Link>
-      <h1 className="text-2xl font-semibold">{deck.title}</h1>
-      <p className="text-muted-foreground">
-        {deck.document.slides.length} 頁 · 版本 {deck.version}
-      </p>
-    </main>
+    <TaskShell
+      title={deck.title}
+      description={`${deck.document.slides.length} 頁，版本 ${deck.version}`}
+      lang="zh-TW"
+      actions={<AccountActions user={user} />}
+    >
+      <p className="text-muted-foreground">編輯器準備中。</p>
+    </TaskShell>
   );
 }

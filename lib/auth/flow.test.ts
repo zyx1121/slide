@@ -120,7 +120,10 @@ describe("sign-in flow", () => {
       url.searchParams.set("state", "forged")
     );
     const response = await finishSignIn(request, env, onSignIn);
-    expect(response.status).toBe(400);
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://app.test/auth/error?reason=failed"
+    );
     expect(onSignIn).not.toHaveBeenCalled();
     expect(response.headers.getSetCookie().join()).not.toContain(
       `${SESSION_COOKIE}=ey`
@@ -131,7 +134,9 @@ describe("sign-in flow", () => {
     const { request } = await signInUpTo("/");
     const bare = new NextRequest(request.url);
     const response = await finishSignIn(bare, env, async () => {});
-    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBe(
+      "http://app.test/auth/error?reason=expired"
+    );
   });
 
   it("refuses a code replayed from another browser's sign-in", async () => {
@@ -141,7 +146,21 @@ describe("sign-in flow", () => {
       headers: { cookie: second.request.headers.get("cookie")! },
     });
     const response = await finishSignIn(mixed, env, async () => {});
-    expect(response.status).toBe(400);
+    expect(response.headers.get("location")).toBe(
+      "http://app.test/auth/error?reason=failed"
+    );
+  });
+
+  it("sends the member to the error page when the provider is down", async () => {
+    const down = { ...env, issuer: new URL("http://127.0.0.1:9/realms/none") };
+    const response = await startSignIn(
+      new NextRequest("http://app.test/auth/login"),
+      down
+    );
+    expect(response.status).toBe(303);
+    expect(response.headers.get("location")).toBe(
+      "http://app.test/auth/error?reason=unavailable"
+    );
   });
 
   it("signs out of the app and of the provider", async () => {

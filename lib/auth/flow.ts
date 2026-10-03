@@ -22,12 +22,13 @@ const SIGN_IN_SECONDS = 10 * 60;
 
 type SignIn = { v: string; s: string; n: string; next: string };
 
-function page(status: number, title: string, body: string): NextResponse {
-  const html = `<!doctype html><html lang="zh-Hant"><meta charset="utf-8"><title>${title}</title><body style="font-family:system-ui;margin:4rem auto;max-width:32rem;padding:0 1rem"><h1 style="font-size:1.5rem">${title}</h1><p>${body}</p><p><a href="/auth/login">重新登入</a></p></body></html>`;
-  return new NextResponse(html, {
-    status,
-    headers: { "content-type": "text/html; charset=utf-8" },
-  });
+type Failure = "expired" | "failed" | "unavailable";
+
+/** Sends the member to the sign-in error page (app/auth/error), inside the shell. */
+function failure(env: AuthEnv, reason: Failure): NextResponse {
+  const target = new URL("/auth/error", env.appUrl);
+  target.searchParams.set("reason", reason);
+  return NextResponse.redirect(target, 303);
 }
 
 /** GET /auth/login?next=/path: sends the member to Keycloak. */
@@ -40,7 +41,7 @@ export async function startSignIn(
     configuration = await oidc(env);
   } catch (error) {
     console.error("auth: discovery failed", error);
-    return page(503, "暫時無法登入", "登入服務沒有回應，請稍後再試。");
+    return failure(env, "unavailable");
   }
   const verifier = client.randomPKCECodeVerifier();
   const state = client.randomState();
@@ -80,7 +81,7 @@ export async function finishSignIn(
   const sealed = request.cookies.get(SIGN_IN_COOKIE)?.value;
   const signIn = sealed ? await unseal<SignIn>(sealed, env.secret) : null;
   if (!signIn) {
-    return page(400, "登入逾時", "這次登入已經過期，或瀏覽器擋掉了 cookie。");
+    return failure(env, "expired");
   }
 
   let user: SessionUser;
@@ -106,7 +107,7 @@ export async function finishSignIn(
     idToken = tokens.id_token;
   } catch (error) {
     console.error("auth: callback refused", error);
-    return page(400, "登入失敗", "登入沒有完成，請再試一次。");
+    return failure(env, "failed");
   }
 
   await onSignIn(user);

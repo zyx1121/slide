@@ -6,6 +6,7 @@
     "dev": "next dev",
     "build": "next build",
     "build:migrate": "bun build scripts/migrate.ts --target=node --outfile=dist/migrate.mjs",
+    "build:worker": "bun build scripts/import-worker.ts --target=node --outfile=dist/import-worker.mjs",
     "start": "next start",
     "migrate": "bun scripts/migrate.ts",
     "lint": "eslint",

@@ -1,16 +1,10 @@
-import {
-  AssetError,
-  inspectAsset,
-  saveAsset,
-  slideAssets,
-} from "@/lib/assets/store";
+import { saveAsset } from "@/lib/assets/store";
 import { getSession } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { IMPORT_MAX_BYTES } from "@/lib/deck/limits";
 import { createDeck } from "@/lib/deck/store";
 import { readCapped, sameSite } from "@/lib/http/request";
-import { importPptx } from "@/lib/pptx/import";
-import { PptxError } from "@/lib/pptx/read";
+import { ImportBusyError, importInWorker } from "@/lib/pptx/pool";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -41,42 +35,34 @@ export async function POST(request: Request) {
   }
   const fallback = name.replace(/\.pptx$/i, "").trim() || undefined;
 
-  // Pictures are checked as the file is read but stored only once all of it
-  // has been, so a file that fails part way leaves none behind.
-  const pictures = new Map<string, Uint8Array>();
-  let imported: Awaited<ReturnType<typeof importPptx>>;
+  // The file is read in a worker of its own. Pictures are checked there but
+  // stored only once all of it has been, so a file that fails part way
+  // leaves none behind.
+  let outcome: Awaited<ReturnType<typeof importInWorker>>;
   try {
-    imported = await importPptx(
-      bytes,
-      async (image) => {
-        try {
-          const { sha256 } = inspectAsset(image);
-          pictures.set(sha256, image);
-          return { sha256 };
-        } catch (error) {
-          if (error instanceof AssetError) return null;
-          throw error;
-        }
-      },
-      fallback
-    );
+    outcome = await importInWorker({ bytes, fallbackTitle: fallback });
   } catch (error) {
+    if (!(error instanceof ImportBusyError)) throw error;
+    // An import that runs out of time is too much file; a full queue is not.
+    return error.reason === "busy"
+      ? Response.json({ error: "busy" }, { status: 503 })
+      : Response.json({ error: "too-large" }, { status: 413 });
+  }
+  if (!outcome.ok) {
     // Anything the importer trips over is the file's fault, not the server's.
-    const code = error instanceof PptxError ? error.code : "malformed";
-    if (!(error instanceof PptxError)) {
+    if (outcome.bug) {
       // Logged as an error: it may be a bug in the importer, not the file.
-      console.error("import: the importer failed on a file", error);
+      console.error("import: the importer failed on a file", outcome.bug);
     }
     return Response.json(
-      { error: code },
-      { status: code === "too-large" ? 413 : 422 }
+      { error: outcome.code },
+      { status: outcome.code === "too-large" ? 413 : 422 }
     );
   }
-  // Only the pictures the deck draws: shapes over the limits were dropped.
-  const drawn = new Set(imported.document.slides.flatMap(slideAssets));
-  for (const [sha256, image] of pictures) {
-    if (drawn.has(sha256)) await saveAsset(sql, user.sub, image);
+  for (const [, image] of outcome.pictures) {
+    await saveAsset(sql, user.sub, image);
   }
+  const imported = outcome.result;
   const deck = await createDeck(sql, user.sub, imported.document);
   return Response.json(
     { id: deck.id, report: imported.report },

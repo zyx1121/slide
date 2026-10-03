@@ -36,6 +36,15 @@ docker compose exec -T postgres psql -U slide -d slide -tAc \
 docker compose exec -T web sh -c 'touch "$ASSETS_DIR/.smoke" && rm "$ASSETS_DIR/.smoke"' ||
 	fail "the web service cannot write to ASSETS_DIR"
 
+# The import worker is in the image and loads: a file that is not a .pptx
+# comes back as such, read in a worker thread.
+docker compose exec -T web node --input-type=module -e '
+import { Worker } from "node:worker_threads";
+const worker = new Worker("./dist/import-worker.mjs", { workerData: { bytes: new Uint8Array([1, 2, 3]) } });
+worker.once("message", (outcome) => { console.log(outcome.code); process.exit(0); });
+worker.once("error", (error) => { console.error(error); process.exit(1); });
+' | grep -qx not-pptx || fail "the import worker did not read a file"
+
 # Signed out, a page sends the visitor to sign-in on APP_URL, keeping the path.
 app=${APP_URL:-http://localhost:3000}
 location=$(curl -sS -o /dev/null -w '%{redirect_url}' "$web/decks/x?y=1")

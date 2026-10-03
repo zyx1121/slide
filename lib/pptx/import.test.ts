@@ -207,6 +207,59 @@ describe("importPptx", () => {
     ).toBe("too-large");
   });
 
+  it("sizes shape text from the presentation and master defaults", async () => {
+    const doc = richDeck();
+    const run = (text: string) => ({ runs: [{ text }] });
+    doc.slides = [
+      {
+        id: "sl_defaults",
+        title: "",
+        shapes: [
+          {
+            id: "tx_plain",
+            kind: "text",
+            x: 0,
+            y: 0,
+            w: 400,
+            h: 100,
+            text: { paragraphs: [run("top"), { ...run("under"), level: 1 }] },
+          },
+        ],
+      },
+    ];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const level = (n: number, sz: number) =>
+      `<a:lvl${n}pPr><a:defRPr sz="${sz}"><a:solidFill><a:srgbClr val="FF0000"/></a:solidFill></a:defRPr></a:lvl${n}pPr>`;
+    // The presentation sizes both levels; the master sizes only the first.
+    const presentation = strFromU8(parts["ppt/presentation.xml"])
+      .replace(/<p:defaultTextStyle>[\s\S]*?<\/p:defaultTextStyle>/, "")
+      .replace(
+        "</p:presentation>",
+        `<p:defaultTextStyle>${level(1, 2400)}${level(2, 2000)}</p:defaultTextStyle></p:presentation>`
+      );
+    parts["ppt/presentation.xml"] = strToU8(presentation);
+    const master = strFromU8(parts["ppt/slideMasters/slideMaster1.xml"]);
+    expect(master).toContain("<p:otherStyle>");
+    parts["ppt/slideMasters/slideMaster1.xml"] = strToU8(
+      master.replace(
+        /<p:otherStyle>[\s\S]*?<\/p:otherStyle>/,
+        `<p:otherStyle>${level(1, 3000)}</p:otherStyle>`
+      )
+    );
+    // Export sizes every run; these runs leave it to the defaults.
+    parts["ppt/slides/slide1.xml"] = strToU8(
+      strFromU8(parts["ppt/slides/slide1.xml"]).replace(/ sz="\d+"/g, "")
+    );
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const shape = document.slides[0].shapes[0];
+    if (shape.kind !== "text") throw new Error("expected a text box");
+    const [top, under] = shape.text.paragraphs.map((p) => p.runs[0]);
+    expect(top.size).toBe(60);
+    expect(under.size).toBe(40);
+    // Colors in those defaults do not reach shapes, which have their own.
+    expect(top.color).not.toBe("#FF0000");
+  });
+
   it("reads a slide listed twice once, and holds text to the limits", async () => {
     const doc = richDeck();
     doc.slides = [

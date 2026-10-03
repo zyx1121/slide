@@ -6,6 +6,7 @@ describe("safeNext", () => {
   it("keeps same-site paths with their query", () => {
     expect(safeNext("/decks/dk_2345?tab=1")).toBe("/decks/dk_2345?tab=1");
     expect(safeNext("/")).toBe("/");
+    expect(safeNext("/" + "簡".repeat(300))).toBe("/" + "簡".repeat(300));
   });
 
   it("falls back to / for anything that could leave the site", () => {
@@ -20,6 +21,7 @@ describe("safeNext", () => {
       "/\u0009/evil.example",
       "/ok\r\nSet-Cookie: x=1",
       "/" + "a".repeat(1024),
+      "/" + "簡".repeat(400),
     ]) {
       expect(safeNext(next)).toBe("/");
     }

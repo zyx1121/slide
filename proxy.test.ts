@@ -43,6 +43,19 @@ describe("proxy", () => {
     expect(response.headers.get("x-middleware-next")).toBe("1");
   });
 
+  it("ignores a valid session under the plain name over https", async () => {
+    const token = await sealSession(
+      { sub: "alice-sub", name: "Alice", email: "" },
+      secret
+    );
+    const response = await proxy(
+      new NextRequest("http://internal:3000/", {
+        headers: { cookie: `slide_session=${token}` },
+      })
+    );
+    expect(response.status).toBe(307);
+  });
+
   it("treats a forged session as no session", async () => {
     const forged = await sealSession(
       { sub: "alice-sub", name: "", email: "" },

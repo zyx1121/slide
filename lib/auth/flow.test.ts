@@ -4,7 +4,7 @@ import { NextRequest } from "next/server";
 import { OAuth2Server } from "oauth2-mock-server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
-import type { AuthEnv } from "./config";
+import { oidc, type AuthEnv } from "./config";
 import { finishSignIn, signInCookie, signOut, startSignIn } from "./flow";
 import { unseal } from "./seal";
 import { sessionCookie, unsealSession } from "./session";
@@ -248,10 +248,9 @@ describe("sign-in flow", () => {
   });
 
   it("refuses a plain-http issuer that is not on this machine", async () => {
-    const remote = {
-      ...env,
-      issuer: new URL("http://auth.example/realms/winlab"),
-    };
+    // example.com resolves, so a refusal here is the HTTPS rule, not DNS.
+    const remote = { ...env, issuer: new URL("http://example.com/realms/x") };
+    await expect(oidc(remote)).rejects.toThrow(/HTTPS/);
     const response = await startSignIn(
       new NextRequest("http://app.test/auth/login"),
       remote

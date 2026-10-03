@@ -44,6 +44,7 @@ One Next.js app and one Postgres database, run with Docker Compose. Every edit, 
 
 ```sh
 bun install
+sh scripts/fetch-fonts.sh   # Carlito and Noto Sans TC, for slide rendering
 cp .env.example .env   # set DATABASE_URL to a Postgres you can reach
 bun run migrate
 bun dev

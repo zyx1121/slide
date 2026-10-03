@@ -49,9 +49,38 @@ export const geistMono = Geist_Mono({
   variable: "--font-geist-mono",
 });
 
+// Carlito for slide text, the same files the server renders with
+// (scripts/fetch-fonts.sh), so browser and PNG draw the same glyphs. Not
+// preloaded: only pages with slides use it.
+export const carlito = localFont({
+  src: [
+    {
+      path: "../fonts/slide/Carlito-Regular.ttf",
+      weight: "400",
+      style: "normal",
+    },
+    { path: "../fonts/slide/Carlito-Bold.ttf", weight: "700", style: "normal" },
+    {
+      path: "../fonts/slide/Carlito-Italic.ttf",
+      weight: "400",
+      style: "italic",
+    },
+    {
+      path: "../fonts/slide/Carlito-BoldItalic.ttf",
+      weight: "700",
+      style: "italic",
+    },
+  ],
+  display: "swap",
+  preload: false,
+  adjustFontFallback: false,
+  variable: "--font-carlito",
+});
+
 export const fontVariables = [
   inter.variable,
   notoSansJp.variable,
   notoSansTc.variable,
   geistMono.variable,
+  carlito.variable,
 ].join(" ");

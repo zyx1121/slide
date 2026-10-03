@@ -1,0 +1,4 @@
+# Downloaded by scripts/fetch-fonts.sh (pinned, sha256-checked).
+*.ttf
+*.otf
+*.part

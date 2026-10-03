@@ -5,6 +5,7 @@
 import type { Shape, Slide, TextBody } from "../deck/schema";
 import { type Point, routeConnector } from "../render/connector";
 import { shapeTextDefaults, type TextShape, titleScale } from "../render/svg";
+import { isEastAsian } from "../render/metrics";
 import { DEFAULT_TEXT } from "../render/template";
 import { parsePath, PATH_UNITS } from "../deck/path";
 import { connectorGeometry } from "./connector";
@@ -93,9 +94,13 @@ type Run = TextBody["paragraphs"][number]["runs"][number];
 
 function runProps(run: Partial<Run>, tag: "a:rPr" | "a:endParaRPr"): string {
   const size = run.size ?? DEFAULT_TEXT.size;
+  // English runs marked English, so PowerPoint draws their curly quotes
+  // narrow, as the renderer does (see isCurlyQuote).
+  const english =
+    run.text !== undefined && run.text.trim() !== "" && !isEastAsian(run.text);
   const attrs = [
-    'lang="zh-TW"',
-    'altLang="en-US"',
+    english ? 'lang="en-US"' : 'lang="zh-TW"',
+    english ? 'altLang="zh-TW"' : 'altLang="en-US"',
     `sz="${Math.round(size * 50)}"`,
     run.bold ? 'b="1"' : 'b="0"',
     run.italic ? 'i="1"' : "",

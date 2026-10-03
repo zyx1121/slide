@@ -1,6 +1,13 @@
 "use client";
 
-import { BringToFrontIcon, SendToBackIcon, Trash2Icon } from "lucide-react";
+import {
+  BringToFrontIcon,
+  CopyPlusIcon,
+  Redo2Icon,
+  SendToBackIcon,
+  Trash2Icon,
+  Undo2Icon,
+} from "lucide-react";
 import {
   type ComponentType,
   type KeyboardEvent,
@@ -19,11 +26,28 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { compare } from "fast-json-patch";
+
 import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
+import {
+  type Clip,
+  CLIP_TYPE,
+  copyShapes,
+  parseClip,
+  pasteOffset,
+  pasteShapes,
+} from "@/lib/editor/clipboard";
 import type { Box } from "@/lib/editor/geometry";
 import { guard } from "@/lib/editor/guard";
+import {
+  EMPTY_HISTORY,
+  type History,
+  record,
+  redo,
+  undo,
+} from "@/lib/editor/history";
 import {
   boxOps,
   deleteOps,
@@ -34,6 +58,9 @@ import {
 import { movedSlide, newShape, type NewShapeKind } from "@/lib/editor/preview";
 import { createSaver, type SaverState } from "@/lib/editor/saver";
 import { cn } from "@/lib/utils";
+
+/** What became of an edit: applied, a no-op, paused while saving is, or refused. */
+type Commit = "applied" | "unchanged" | "paused" | "refused";
 
 /** Canvas px an arrow key moves the selection; Shift moves ten times as far. */
 const NUDGE = 2;
@@ -87,6 +114,12 @@ export function Editor({
 }) {
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
+  const [history, setHistoryState] = useState<History>(EMPTY_HISTORY);
+  const historyRef = useRef(history);
+  const setHistory = (next: History) => {
+    historyRef.current = next;
+    setHistoryState(next);
+  };
   const [slideIndex, setSlideIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
@@ -97,6 +130,13 @@ export function Editor({
   const [refusal, setRefusal] = useState<string | null>(null);
 
   const reload = useCallback((fresh: DeckDocument) => {
+    // Undo steps were made against the local document. When the server's
+    // differs (an edit was lost, or another tab changed it), they no longer
+    // apply; when it is the same, nothing was lost and they still do.
+    if (compare(docRef.current, fresh).length > 0) {
+      historyRef.current = EMPTY_HISTORY;
+      setHistoryState(EMPTY_HISTORY);
+    }
     docRef.current = fresh;
     setDoc(fresh);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
@@ -113,29 +153,44 @@ export function Editor({
   /**
    * Applies an edit here and queues it for saving. Each patch is guarded by
    * the ids of what it touches, so it can never land on other shapes. While
-   * the saver is reloading or offline, edits are refused: they would be made
-   * on a document the server does not have.
+   * the saver is reloading or offline, edits are paused: they would be made
+   * on a document the server does not have. An edit is recorded for undo
+   * with its inverse; an undo or redo is not. History keeps patches
+   * unguarded; they are guarded again against the document they meet.
    */
   const commit = useCallback(
-    (ops: Operation[]): boolean => {
-      if (ops.length === 0 || !saver.state().accepting) return false;
+    (ops: Operation[], recordStep = true): Commit => {
+      if (ops.length === 0) return "unchanged";
+      if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
         result = applyOperations(docRef.current, guard(docRef.current, ops));
       } catch (error) {
-        const quiet =
+        if (
           error instanceof DeckError &&
-          error.message === "the patch changes nothing";
-        setRefusal(quiet ? null : "這個修改無法套用，沒有存到。");
-        return false;
+          error.message === "the patch changes nothing"
+        ) {
+          return "unchanged";
+        }
+        setRefusal("這個修改無法套用，沒有存到。");
+        return "refused";
       }
       docRef.current = result.document;
       setDoc(result.document);
       setRefusal(null);
+      if (recordStep) {
+        const next = record(historyRef.current, {
+          ops,
+          inverse: result.inverse,
+          slide: index,
+        });
+        historyRef.current = next;
+        setHistoryState(next);
+      }
       saver.save(result.operations);
-      return true;
+      return "applied";
     },
-    [saver]
+    [saver, index]
   );
 
   /** Saves gathered arrow-key nudges as one edit. */
@@ -172,7 +227,9 @@ export function Editor({
   const insert = (kind: NewShapeKind) => {
     flushNudge();
     const shape = newShape(kind, docRef.current.slides[index]);
-    if (commit(insertOps(index, shape))) setSelection([shape.id]);
+    if (commit(insertOps(index, shape)) === "applied") {
+      setSelection([shape.id]);
+    }
   };
 
   const reorder = (to: "front" | "back") => {
@@ -185,7 +242,78 @@ export function Editor({
   const remove = () => {
     flushNudge();
     const current = docRef.current.slides[index];
-    if (commit(deleteOps(current, index, new Set(selection)))) setSelection([]);
+    if (commit(deleteOps(current, index, new Set(selection))) === "applied") {
+      setSelection([]);
+    }
+  };
+
+  /** Undoes or redoes one edit, on the slide it was made on. */
+  const travel = (direction: "undo" | "redo") => {
+    flushNudge();
+    const move = (direction === "undo" ? undo : redo)(historyRef.current);
+    if (!move) return;
+    const outcome = commit(move.ops, false);
+    if (outcome === "paused") return;
+    if (outcome === "refused") {
+      // Steps before this one were made on top of it; none can be undone
+      // safely without it.
+      setHistory(EMPTY_HISTORY);
+      setRefusal("這一步無法復原，復原紀錄已清空。");
+      return;
+    }
+    // A step that changes nothing any more is passed over.
+    setHistory(move.history);
+    setSlideIndex(move.slide);
+    const kept = new Set(
+      docRef.current.slides[move.slide]?.shapes.map((shape) => shape.id)
+    );
+    setSelection((ids) => ids.filter((id) => kept.has(id)));
+  };
+
+  /** Adds a clip's shapes to the current slide and selects them. */
+  const place = (clip: Clip) => {
+    const target = docRef.current.slides[index];
+    const shapes = pasteShapes(clip, pasteOffset(target, clip));
+    const ops = shapes.flatMap((shape) => insertOps(index, shape));
+    if (commit(ops) === "applied") {
+      setSelection(shapes.map((shape) => shape.id));
+    }
+  };
+
+  const copy = (event: ClipboardEvent) => {
+    flushNudge();
+    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    if (!clip) return false;
+    if (!event.clipboardData) return false;
+    event.preventDefault();
+    const text = JSON.stringify(clip);
+    event.clipboardData.setData(CLIP_TYPE, text);
+    event.clipboardData.setData("text/plain", text);
+    return true;
+  };
+
+  const paste = (event: ClipboardEvent) => {
+    flushNudge();
+    const data = event.clipboardData;
+    // Anything but shapes copied here (text, an image) pastes nothing.
+    const clip = parseClip(
+      data?.getData(CLIP_TYPE) || data?.getData("text/plain")
+    );
+    if (!clip) return;
+    event.preventDefault();
+    place(clip);
+  };
+
+  const cut = (event: ClipboardEvent) => {
+    // While edits are paused a cut would copy without removing anything.
+    if (!saver.state().accepting) return;
+    if (copy(event)) remove();
+  };
+
+  const duplicate = () => {
+    flushNudge();
+    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    if (clip) place(clip);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -223,9 +351,21 @@ export function Editor({
       select([order[(last + step + order.length) % order.length]]);
     } else if (event.key === "Escape") {
       select([]);
-    } else if (event.key === "a" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      select(slide.shapes.map((shape) => shape.id));
+    } else if (event.metaKey || event.ctrlKey) {
+      const key = event.key.toLowerCase();
+      if (key === "a") {
+        event.preventDefault();
+        select(slide.shapes.map((shape) => shape.id));
+      } else if (key === "z") {
+        event.preventDefault();
+        travel(event.shiftKey ? "redo" : "undo");
+      } else if (key === "y") {
+        event.preventDefault();
+        travel("redo");
+      } else if (key === "d") {
+        event.preventDefault();
+        duplicate();
+      }
     }
   };
 
@@ -234,24 +374,43 @@ export function Editor({
       ? movedSlide(slide, new Set(selection), nudge.dx, nudge.dy)
       : slide;
   const none = selection.length === 0;
+  const paused = !saving.accepting;
+  const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
         <div className="flex">
           <Tool
+            tip="復原"
+            icon={Undo2Icon}
+            disabled={paused || (history.past.length === 0 && !nudging)}
+            onClick={() => travel("undo")}
+          />
+          <Tool
+            tip="重做"
+            icon={Redo2Icon}
+            disabled={paused || history.future.length === 0}
+            onClick={() => travel("redo")}
+          />
+        </div>
+        <div className="flex">
+          <Tool
             tip="插入矩形"
             icon={RectGlyph}
+            disabled={paused}
             onClick={() => insert("rect")}
           />
           <Tool
             tip="插入圓角矩形"
             icon={RoundRectGlyph}
+            disabled={paused}
             onClick={() => insert("roundRect")}
           />
           <Tool
             tip="插入橢圓"
             icon={EllipseGlyph}
+            disabled={paused}
             onClick={() => insert("ellipse")}
           />
         </div>
@@ -259,16 +418,27 @@ export function Editor({
           <Tool
             tip="移到最上層"
             icon={BringToFrontIcon}
-            disabled={none}
+            disabled={paused || none}
             onClick={() => reorder("front")}
           />
           <Tool
             tip="移到最下層"
             icon={SendToBackIcon}
-            disabled={none}
+            disabled={paused || none}
             onClick={() => reorder("back")}
           />
-          <Tool tip="刪除" icon={Trash2Icon} disabled={none} onClick={remove} />
+          <Tool
+            tip="再製"
+            icon={CopyPlusIcon}
+            disabled={paused || none}
+            onClick={duplicate}
+          />
+          <Tool
+            tip="刪除"
+            icon={Trash2Icon}
+            disabled={paused || none}
+            onClick={remove}
+          />
         </div>
         <SaveStatus
           refusal={refusal}
@@ -313,11 +483,15 @@ export function Editor({
             }
             onGestureStart={flushNudge}
             onKeyDown={onKeyDown}
+            onCopy={copy}
+            onCut={cut}
+            onPaste={paste}
           />
           <p id="canvas-help" className="text-xs text-muted-foreground">
             點選形狀來選取，Shift 加選，拖曳空白處框選，Tab
             換選下一個。方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift
-            鎖定方向，按 Alt 不對齊。
+            鎖定方向，按 Alt 不對齊。⌘Z 復原，⌘D 再製，⌘C、⌘V 複製貼上（Windows
+            用 Ctrl）。
           </p>
         </div>
       </div>

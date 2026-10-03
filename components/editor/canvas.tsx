@@ -101,6 +101,9 @@ export function Canvas({
   onResize,
   onGestureStart,
   onKeyDown,
+  onCopy,
+  onCut,
+  onPaste,
   className,
 }: {
   slide: Slide;
@@ -112,12 +115,45 @@ export function Canvas({
   /** Called as a pointer gesture begins, before it reads any shape. */
   onGestureStart: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  /** Clipboard events while the canvas has focus, wherever the browser sends them. */
+  onCopy: (event: ClipboardEvent) => void;
+  onCut: (event: ClipboardEvent) => void;
+  onPaste: (event: ClipboardEvent) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(SLIDE_WIDTH);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [cursor, setCursor] = useState("default");
+
+  // Browsers send clipboard events for a focused element that holds no text
+  // to <body> (Firefox) or to wherever a text selection was left (Chrome),
+  // so the canvas listens on the document and acts while it has focus.
+  const clipboard = useRef({ onCopy, onCut, onPaste });
+  useEffect(() => {
+    clipboard.current = { onCopy, onCut, onPaste };
+  }, [onCopy, onCut, onPaste]);
+  useEffect(() => {
+    const route =
+      (name: keyof typeof clipboard.current) => (event: ClipboardEvent) => {
+        if (document.activeElement === ref.current) {
+          clipboard.current[name](event);
+        }
+      };
+    const handlers = {
+      copy: route("onCopy"),
+      cut: route("onCut"),
+      paste: route("onPaste"),
+    };
+    for (const [type, handler] of Object.entries(handlers)) {
+      document.addEventListener(type, handler as EventListener);
+    }
+    return () => {
+      for (const [type, handler] of Object.entries(handlers)) {
+        document.removeEventListener(type, handler as EventListener);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const element = ref.current;
@@ -184,6 +220,8 @@ export function Canvas({
     // The press focuses the canvas by default (without a focus ring), so
     // the keyboard works right after a click.
     event.currentTarget.setPointerCapture(event.pointerId);
+    // A text selection left on the page would take over copy and paste.
+    window.getSelection()?.removeAllRanges();
     const p = toCanvas(event);
 
     const handle = handleAt(p);

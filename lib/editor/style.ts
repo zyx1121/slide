@@ -10,6 +10,9 @@ export type Dash = "solid" | "dash" | "dot" | "dashDot";
 export type Align = "left" | "center" | "right";
 export type Anchor = "top" | "middle" | "bottom";
 export type Route = "straight" | "elbow" | "curved";
+export type Bullet = "none" | "bullet" | "number";
+/** The deepest paragraph level PowerPoint offers. */
+export const MAX_LEVEL = 8;
 export type ArrowHead =
   "none" | "triangle" | "arrow" | "stealth" | "oval" | "diamond";
 
@@ -27,6 +30,8 @@ export type StyleChange =
     }
   | { kind: "align"; align: Align }
   | { kind: "anchor"; anchor: Anchor }
+  | { kind: "bullet"; bullet: Bullet }
+  | { kind: "level"; delta: 1 | -1 }
   | { kind: "route"; route: Route }
   | { kind: "arrow"; end: "start" | "end"; head: ArrowHead };
 
@@ -106,6 +111,24 @@ export function styleOps(
         if (text)
           set("/text/anchor", change.anchor, text.anchor ?? anchorOf(shape));
         break;
+      case "bullet":
+        text?.paragraphs.forEach((paragraph, p) =>
+          set(
+            `/text/paragraphs/${p}/bullet`,
+            change.bullet,
+            paragraph.bullet ?? "none"
+          )
+        );
+        break;
+      case "level":
+        text?.paragraphs.forEach((paragraph, p) =>
+          set(
+            `/text/paragraphs/${p}/level`,
+            shiftLevel(paragraph.level, change.delta),
+            paragraph.level ?? 0
+          )
+        );
+        break;
       case "route":
         if (shape.kind === "line") set("/route", change.route, shape.route);
         break;
@@ -119,6 +142,10 @@ export function styleOps(
   });
   return ops;
 }
+
+/** A paragraph level moved one step, within PowerPoint's nine levels. */
+export const shiftLevel = (level: number | undefined, delta: 1 | -1) =>
+  Math.max(0, Math.min(MAX_LEVEL, (level ?? 0) + delta));
 
 /** One value shared by every shape it applies to, or "mixed". */
 export type Shared<T> = T | "mixed";
@@ -150,6 +177,7 @@ export type SelectionStyle = {
     underline: Shared<boolean>;
     align: Shared<Align>;
     anchor: Shared<Anchor>;
+    bullet: Shared<Bullet>;
   };
   line?: {
     route: Shared<Route>;
@@ -157,6 +185,38 @@ export type SelectionStyle = {
     end: Shared<ArrowHead>;
   };
 };
+
+type TextParagraph = Text["paragraphs"][number];
+type RunLike = Omit<TextParagraph["runs"][number], "text">;
+
+/**
+ * What the dock shows for text: the styles of the given runs and
+ * paragraphs. Text without runs yet shows the defaults it would get.
+ */
+export function textStyle(
+  runs: RunLike[],
+  paragraphs: Omit<TextParagraph, "runs">[],
+  aligns: Align[],
+  anchors: Anchor[],
+  defaults: { size: number; color: string; bold: boolean } = {
+    ...DEFAULT_TEXT,
+    bold: false,
+  }
+): NonNullable<SelectionStyle["text"]> {
+  return {
+    size: shared(runs.map((run) => run.size ?? defaults.size)) ?? defaults.size,
+    color:
+      shared(runs.map((run) => run.color ?? defaults.color)) ?? defaults.color,
+    bold: shared(runs.map((run) => run.bold ?? defaults.bold)) ?? defaults.bold,
+    italic: shared(runs.map((run) => run.italic ?? false)) ?? false,
+    underline: shared(runs.map((run) => run.underline ?? false)) ?? false,
+    align: shared(aligns) ?? "left",
+    anchor: shared(anchors) ?? "top",
+    bullet:
+      shared(paragraphs.map((paragraph) => paragraph.bullet ?? "none")) ??
+      "none",
+  };
+}
 
 export function selectionStyle(
   slide: Slide,
@@ -179,6 +239,7 @@ export function selectionStyle(
   };
 
   const runs: Text["paragraphs"][number]["runs"] = [];
+  const paragraphs: TextParagraph[] = [];
   const aligns: Align[] = [];
   const anchors: Anchor[] = [];
   for (const shape of picked) {
@@ -188,23 +249,11 @@ export function selectionStyle(
     for (const paragraph of text.paragraphs) {
       aligns.push((paragraph.align as Align | undefined) ?? alignOf(shape));
       runs.push(...paragraph.runs);
+      paragraphs.push(paragraph);
     }
   }
   if (anchors.length > 0) {
-    // Text without runs yet shows the defaults it would get.
-    style.text = {
-      size:
-        shared(runs.map((run) => run.size ?? DEFAULT_TEXT.size)) ??
-        DEFAULT_TEXT.size,
-      color:
-        shared(runs.map((run) => run.color ?? DEFAULT_TEXT.color)) ??
-        DEFAULT_TEXT.color,
-      bold: shared(runs.map((run) => run.bold ?? false)) ?? false,
-      italic: shared(runs.map((run) => run.italic ?? false)) ?? false,
-      underline: shared(runs.map((run) => run.underline ?? false)) ?? false,
-      align: shared(aligns) ?? "left",
-      anchor: shared(anchors)!,
-    };
+    style.text = textStyle(runs, paragraphs, aligns, anchors);
   }
 
   if (picked.every((shape) => shape.kind === "line")) {

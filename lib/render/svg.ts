@@ -12,7 +12,6 @@ import {
 import { type Point, routeConnector } from "./connector";
 import { DEFAULT_TEXT, SLIDE_NUMBER, TITLE } from "./template";
 import {
-  type Anchor,
   DEFAULT_INSET,
   layoutText,
   type Segment,
@@ -140,21 +139,50 @@ function textSvg(body: TextBody, box: Box, defaults: TextDefaults): string {
   return parts.join("");
 }
 
-function shapeText(
-  body: TextBody | undefined,
-  box: Box,
-  align: TextDefaults["align"],
-  anchor: Anchor
-): string {
-  if (!body) return "";
-  return textSvg(body, box, {
+/** Shapes that hold text: everything but connectors and pictures. */
+export type TextShape = Extract<
+  Shape,
+  { kind: "rect" | "roundRect" | "ellipse" | "text" }
+>;
+
+export const holdsText = (shape: Shape): shape is TextShape =>
+  shape.kind !== "line" && shape.kind !== "image";
+
+/**
+ * How a shape's text is laid out: text boxes start at the top left, text in
+ * a shape sits in its middle. The editor lays text out with the same values.
+ */
+export function shapeTextDefaults(kind: TextShape["kind"]): TextDefaults {
+  const box = kind === "text";
+  return {
     ...DEFAULT_TEXT,
     bold: false,
-    align,
-    anchor,
+    align: box ? "left" : "center",
+    anchor: box ? "top" : "middle",
     inset: DEFAULT_INSET,
     wrap: true,
-  });
+  };
+}
+
+/** How the title placeholder lays out the slide's title. */
+export const TITLE_TEXT: TextDefaults = {
+  size: TITLE.size,
+  color: TITLE.color,
+  bold: TITLE.bold,
+  align: "center",
+  anchor: "middle",
+  inset: TITLE.inset,
+  wrap: true,
+};
+
+/** A slide title as the text body the title placeholder draws. */
+export const titleBody = (title: string): TextBody => ({
+  paragraphs: [{ runs: [{ text: title }] }],
+});
+
+function shapeText(shape: TextShape, box: Box): string {
+  if (!shape.text) return "";
+  return textSvg(shape.text, box, shapeTextDefaults(shape.kind));
 }
 
 function arrowSvg(
@@ -254,14 +282,14 @@ function shapeSvg(
       const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
       body =
         `<rect ${frame}${radius} ${fill} ${strokeAttrs(shape.stroke)}/>` +
-        shapeText(shape.text, box, "center", "middle");
+        shapeText(shape, box);
       break;
     }
     case "ellipse": {
       const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
       body =
         `<ellipse cx="${num(box.x + box.w / 2)}" cy="${num(box.y + box.h / 2)}" rx="${num(box.w / 2)}" ry="${num(box.h / 2)}" ${fill} ${strokeAttrs(shape.stroke)}/>` +
-        shapeText(shape.text, box, "center", "middle");
+        shapeText(shape, box);
       break;
     }
     case "text": {
@@ -269,7 +297,7 @@ function shapeSvg(
         shape.fill || shape.stroke
           ? `<rect ${frame} ${shape.fill ? paint("fill", shape.fill) : 'fill="none"'} ${strokeAttrs(shape.stroke)}/>`
           : "";
-      body = frameSvg + shapeText(shape.text, box, "left", "top");
+      body = frameSvg + shapeText(shape, box);
       break;
     }
     case "image": {
@@ -307,17 +335,7 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
     );
   }
   if (slide.title) {
-    parts.push(
-      textSvg({ paragraphs: [{ runs: [{ text: slide.title }] }] }, TITLE.box, {
-        size: TITLE.size,
-        color: TITLE.color,
-        bold: TITLE.bold,
-        align: "center",
-        anchor: "middle",
-        inset: TITLE.inset,
-        wrap: true,
-      })
-    );
+    parts.push(textSvg(titleBody(slide.title), TITLE.box, TITLE_TEXT));
   }
   for (const shape of slide.shapes)
     parts.push(shapeSvg(shape, shapes, options));

@@ -316,3 +316,18 @@ html:has([data-stage]) {
   --canvas-handle: oklch(1 0 0);
   --canvas-guide: oklch(0.55 0 0);
 }
+
+/* The caret of the text being edited: black on the white slide, blinking. */
+:root {
+  --canvas-caret: oklch(0 0 0);
+}
+
+@keyframes caret-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0;
+  }
+}

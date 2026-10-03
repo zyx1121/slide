@@ -158,3 +158,32 @@ describe("selectionStyle", () => {
     expect(selectionStyle(slide, ids())).toEqual({});
   });
 });
+
+describe("bullets and levels", () => {
+  it("sets a bullet on every paragraph of the selected text", () => {
+    const ops = styleOps(slide, 0, ids("tx_note"), {
+      kind: "bullet",
+      bullet: "number",
+    });
+    const note = find(apply(ops).shapes, "tx_note");
+    expect(
+      note.kind === "text" && note.text.paragraphs.map((p) => p.bullet)
+    ).toEqual(
+      (
+        find(slide.shapes, "tx_note") as Extract<Shape, { kind: "text" }>
+      ).text.paragraphs.map(() => "number")
+    );
+    expect(selectionStyle(apply(ops), ids("tx_note")).text?.bullet).toBe(
+      "number"
+    );
+  });
+
+  it("moves levels one step and stops at the outermost", () => {
+    const up = styleOps(slide, 0, ids("tx_note"), { kind: "level", delta: 1 });
+    const note = find(apply(up).shapes, "tx_note");
+    expect(note.kind === "text" && note.text.paragraphs[0].level).toBe(1);
+    expect(
+      styleOps(slide, 0, ids("tx_note"), { kind: "level", delta: -1 })
+    ).toEqual([]);
+  });
+});

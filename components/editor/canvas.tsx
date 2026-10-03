@@ -2,7 +2,9 @@
 
 import {
   type KeyboardEvent,
+  type MouseEvent,
   type PointerEvent,
+  type RefObject,
   useEffect,
   useMemo,
   useRef,
@@ -27,15 +29,28 @@ import {
   shapesInRect,
   unionRects,
 } from "@/lib/editor/geometry";
+import { TextEditor, type TextKeys } from "@/components/editor/text-editor";
 import { movedSlide, resizedSlide } from "@/lib/editor/preview";
 import { ALL_EDGES, type Edges, type Guide, snapRect } from "@/lib/editor/snap";
-import { renderSlideSvg } from "@/lib/render/svg";
-import { BACKGROUND_PATH } from "@/lib/render/template";
+import { caretAt, paragraphAt, type Pos, wordAt } from "@/lib/editor/text-edit";
+import {
+  draftLayout,
+  draftSlide,
+  frameOf,
+  pointInFrame,
+  shownBody,
+  type TextDraft,
+  TITLE_ID,
+} from "@/lib/editor/text-session";
+import { holdsText, renderSlideSvg } from "@/lib/render/svg";
+import { BACKGROUND_PATH, TITLE } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
 /** Screen px within which a click picks a connector or a handle, and snaps. */
 const PICK = 6;
 const HANDLE = 10;
+/** Presses closer together than this, in ms, count as a double click. */
+const MULTI_CLICK_MS = 500;
 const SNAP = 6;
 
 const CURSORS: Record<Handle, string> = {
@@ -75,7 +90,19 @@ type Drag =
       origin: Point;
       current: Point;
       base: string[];
+    }
+  | {
+      /** Selecting text by dragging across it. */
+      kind: "text";
+      anchor: Pos;
     };
+
+/** The text being edited on this slide, and what its keys do. */
+export type CanvasText = {
+  draft: TextDraft;
+  textarea: RefObject<HTMLTextAreaElement | null>;
+  keys: TextKeys;
+};
 
 const boxOf = (shape: Box): Box => ({
   x: shape.x,
@@ -104,6 +131,8 @@ export function Canvas({
   onCopy,
   onCut,
   onPaste,
+  text,
+  onEditText,
   className,
 }: {
   slide: Slide;
@@ -119,12 +148,19 @@ export function Canvas({
   onCopy: (event: ClipboardEvent) => void;
   onCut: (event: ClipboardEvent) => void;
   onPaste: (event: ClipboardEvent) => void;
+  /** The text being edited on this slide, if any. */
+  text: CanvasText | null;
+  /** A double click on a shape's text or the title, at a canvas point. */
+  onEditText: (target: string, at: Point) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(SLIDE_WIDTH);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [cursor, setCursor] = useState("default");
+  // Pointer events report no click count (detail is 0 in Chromium), so
+  // presses on text are counted here: two select a word, three a paragraph.
+  const presses = useRef({ count: 0, time: 0, x: 0, y: 0 });
 
   // Browsers send clipboard events for a focused element that holds no text
   // to <body> (Firefox) or to wherever a text selection was left (Chrome),
@@ -172,12 +208,17 @@ export function Canvas({
     [slide]
   );
 
+  // The text being edited shows as typed, before it is saved.
+  const base = text ? draftSlide(slide, text.draft) : slide;
   const preview =
     drag?.kind === "move"
-      ? movedSlide(slide, drag.ids, drag.dx, drag.dy)
+      ? movedSlide(base, drag.ids, drag.dx, drag.dy)
       : drag?.kind === "resize"
-        ? resizedSlide(slide, drag.id, drag.box)
-        : slide;
+        ? resizedSlide(base, drag.id, drag.box)
+        : base;
+  const frame = text ? frameOf(base, text.draft.target) : null;
+  const shown = text ? shownBody(text.draft) : null;
+  const layout = frame && shown ? draftLayout(frame, shown.body) : null;
   const svg = useMemo(
     () =>
       renderSlideSvg(preview, {
@@ -189,10 +230,13 @@ export function Canvas({
     [preview, number]
   );
 
-  const single = selection.length === 1 ? shapes.get(selection[0]) : undefined;
+  const single =
+    selection.length === 1
+      ? base.shapes.find((shape) => shape.id === selection[0])
+      : undefined;
   const box = single && single.kind !== "line" ? single : undefined;
 
-  const toCanvas = (event: PointerEvent): Point => {
+  const toCanvas = (event: { clientX: number; clientY: number }): Point => {
     const rect = ref.current!.getBoundingClientRect();
     return {
       x: ((event.clientX - rect.left) * SLIDE_WIDTH) / rect.width,
@@ -217,6 +261,43 @@ export function Canvas({
 
   function onPointerDown(event: PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) return;
+    if (text && frame && layout) {
+      const p = toCanvas(event);
+      const at = pointInFrame(frame, layout, p);
+      if (at.inside) {
+        // Keeps the focus, and the IME, in the text's field.
+        event.preventDefault();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const { draft } = text;
+        const last = presses.current;
+        const again =
+          event.timeStamp - last.time < MULTI_CLICK_MS &&
+          Math.hypot(event.clientX - last.x, event.clientY - last.y) < PICK;
+        const count = again ? last.count + 1 : 1;
+        presses.current = {
+          count,
+          time: event.timeStamp,
+          x: event.clientX,
+          y: event.clientY,
+        };
+        const selection =
+          count >= 3
+            ? paragraphAt(draft.body, at.pos)
+            : count === 2
+              ? wordAt(draft.body, at.pos)
+              : event.shiftKey
+                ? { anchor: draft.selection.anchor, focus: at.pos }
+                : caretAt(at.pos);
+        text.keys.onChange(
+          { ...draft, selection, typing: null, goal: null },
+          "select"
+        );
+        text.textarea.current?.focus({ preventScroll: true });
+        setDrag({ kind: "text", anchor: selection.anchor });
+        return;
+      }
+      text.keys.onExit();
+    }
     onGestureStart();
     // The press focuses the canvas by default (without a focus ring), so
     // the keyboard works right after a click.
@@ -284,7 +365,25 @@ export function Canvas({
 
   function onPointerMove(event: PointerEvent<HTMLDivElement>) {
     const p = toCanvas(event);
+    if (drag?.kind === "text") {
+      if (!text || !frame || !layout) return;
+      const at = pointInFrame(frame, layout, p);
+      text.keys.onChange(
+        {
+          ...text.draft,
+          selection: { anchor: drag.anchor, focus: at.pos },
+          typing: null,
+          goal: null,
+        },
+        "select"
+      );
+      return;
+    }
     if (!drag) {
+      if (text && frame && layout && pointInFrame(frame, layout, p).inside) {
+        setCursor("text");
+        return;
+      }
       const handle = handleAt(p);
       setCursor(
         handle
@@ -359,6 +458,7 @@ export function Canvas({
   function onPointerUp(event: PointerEvent<HTMLDivElement>) {
     if (!drag) return;
     setDrag(null);
+    if (drag.kind === "text") return;
     if (drag.kind === "move") {
       if (drag.dx || drag.dy) onMove(drag.ids, drag.dx, drag.dy);
       else if (!event.shiftKey && drag.ids.size > 1) onSelect([drag.hit]);
@@ -372,7 +472,7 @@ export function Canvas({
       ) {
         onResize(drag.id, end);
       }
-    } else {
+    } else if (drag.kind === "marquee") {
       const rect = rectBetween(drag.origin, drag.current);
       if (rect.w < 2 * scale && rect.h < 2 * scale) return;
       const inside = shapesInRect(slide, rect);
@@ -380,9 +480,29 @@ export function Canvas({
     }
   }
 
+  /** A double click edits the text of the shape under it, or the title. */
+  function onDoubleClick(event: MouseEvent<HTMLDivElement>) {
+    if (text) return;
+    const p = toCanvas(event);
+    const hit = hitTest(slide, p, PICK * scale);
+    const shape = hit ? shapes.get(hit) : undefined;
+    if (shape && holdsText(shape)) {
+      onEditText(shape.id, p);
+    } else if (
+      !hit &&
+      p.x >= TITLE.box.x &&
+      p.x <= TITLE.box.x + TITLE.box.w &&
+      p.y >= TITLE.box.y &&
+      p.y <= TITLE.box.y + TITLE.box.h
+    ) {
+      onEditText(TITLE_ID, p);
+    }
+  }
+
   const stroke = 1.5;
   const handleSize = HANDLE * scale;
-  const guides = drag && drag.kind !== "marquee" ? drag.guides : [];
+  const guides =
+    drag && (drag.kind === "move" || drag.kind === "resize") ? drag.guides : [];
   const previewShapes = new Map(
     preview.shapes.map((shape) => [shape.id, shape])
   );
@@ -410,6 +530,7 @@ export function Canvas({
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}
       onPointerCancel={() => setDrag(null)}
+      onDoubleClick={onDoubleClick}
       onKeyDown={onKeyDown}
     >
       <div
@@ -514,6 +635,17 @@ export function Canvas({
             );
           })()}
       </svg>
+      {text && frame && layout && shown && (
+        <TextEditor
+          draft={text.draft}
+          frame={frame}
+          layout={layout}
+          selection={shown.selection}
+          scale={scale}
+          textarea={text.textarea}
+          keys={text.keys}
+        />
+      )}
     </div>
   );
 }

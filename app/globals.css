@@ -299,12 +299,12 @@ html:has([data-stage]) {
 }
 
 /*
- * Floating surfaces that open over a slide. The theme's are transparent with
- * a blur, which over a white slide leaves white text on white; these keep
- * the popover color under the blur.
+ * Floating surfaces that open over a slide keep the theme's glass, with the
+ * popover color laid under the blur at 90%. Plain glass over a white slide
+ * leaves white text on white; at 90% even muted 14 px text keeps 4.5:1.
  */
-[data-surface="solid"] {
-  background-color: var(--popover);
+[data-surface="tinted"] {
+  background-color: color-mix(in oklch, var(--popover) 90%, transparent);
 }
 
 /*

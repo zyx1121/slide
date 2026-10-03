@@ -447,7 +447,7 @@ export function Editor({
           <div
             role="alert"
             data-slot="floating-notice"
-            data-surface="solid"
+            data-surface="tinted"
             className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
           >
             <p className="text-xs text-destructive">{problem}</p>
@@ -462,7 +462,7 @@ export function Editor({
           role="group"
           aria-label="編輯工具"
           data-slot="floating-toolbar"
-          data-surface="solid"
+          data-surface="tinted"
           className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border p-1"
         >
           <Tool
@@ -565,7 +565,7 @@ export function Editor({
             <PopoverContent
               side="top"
               sideOffset={12}
-              data-surface="solid"
+              data-surface="tinted"
               className="w-80"
             >
               <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
@@ -618,7 +618,7 @@ function PageList({
       <PopoverContent
         side="top"
         sideOffset={12}
-        data-surface="solid"
+        data-surface="tinted"
         className="p-3"
         // Up to four 8 rem thumbnails a row, no wider than the slides need.
         style={{

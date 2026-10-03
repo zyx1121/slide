@@ -151,6 +151,45 @@ export async function getDeck(
 }
 
 /**
+ * Publishes or unpublishes a member's deck. The public id is made on the
+ * first publish and kept, so publishing again brings the same link back.
+ * Publishing changes no part of the document, so it writes no revision.
+ * Null when the deck is missing or not the member's.
+ */
+export async function setPublished(
+  db: Db,
+  owner: string,
+  id: string,
+  published: boolean
+): Promise<{ published: boolean; publicId: string | null } | null> {
+  const [row] = await db<Pick<DeckRow, "published" | "public_id">[]>`
+    update decks
+    set published = ${published},
+        public_id = coalesce(public_id, ${newPublicId()})
+    where id = ${id} and owner_sub = ${owner}
+    returning published, public_id
+  `;
+  return row ? { published: row.published, publicId: row.public_id } : null;
+}
+
+/** A public id: 16 characters, about 79 bits, so links cannot be guessed. */
+function newPublicId(): string {
+  return newId("p", 16).slice(2);
+}
+
+/** A published deck by its public id, for anyone with the link. */
+export async function getPublishedDeck(
+  db: Db,
+  publicId: string
+): Promise<Deck | null> {
+  if (!/^[0-9a-z]{16}$/.test(publicId)) return null;
+  const [row] = await db<DeckRow[]>`
+    select * from decks where public_id = ${publicId} and published
+  `;
+  return row ? toDeck(row) : null;
+}
+
+/**
  * Applies a JSON Patch written against `baseVersion`. A member's patch is
  * applied and bumps the version; an agent's patch is checked the same way and
  * stored as a suggestion, leaving the deck unchanged. Throws DeckError when

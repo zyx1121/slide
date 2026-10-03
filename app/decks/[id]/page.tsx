@@ -21,6 +21,8 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
         deckId={deck.id}
         initialDocument={deck.document}
         initialVersion={deck.version}
+        initialPublished={deck.published}
+        initialPublicId={deck.publicId}
       />
     </StageShell>
   );

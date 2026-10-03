@@ -7,6 +7,7 @@ import {
   CircleHelpIcon,
   CopyPlusIcon,
   DownloadIcon,
+  GlobeIcon,
   ImageIcon,
   LayoutGridIcon,
   TypeIcon,
@@ -24,7 +25,11 @@ import {
   useState,
 } from "react";
 
-import { editDeckAction, loadDeckAction } from "@/app/decks/[id]/actions";
+import {
+  editDeckAction,
+  loadDeckAction,
+  publishDeckAction,
+} from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import {
   FillTool,
@@ -195,10 +200,14 @@ export function Editor({
   deckId,
   initialDocument,
   initialVersion,
+  initialPublished,
+  initialPublicId,
 }: {
   deckId: string;
   initialDocument: DeckDocument;
   initialVersion: number;
+  initialPublished: boolean;
+  initialPublicId: string | null;
 }) {
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
@@ -1137,6 +1146,11 @@ export function Editor({
             <p className="min-w-16 px-2 text-center text-xs text-muted-foreground">
               {status}
             </p>
+            <PublishTool
+              deckId={deckId}
+              initialPublished={initialPublished}
+              initialPublicId={initialPublicId}
+            />
             <Popover>
               <Tooltip>
                 <TooltipTrigger
@@ -1275,6 +1289,121 @@ function DockLink({
       </TooltipTrigger>
       <TooltipContent>{tip}</TooltipContent>
     </Tooltip>
+  );
+}
+
+/**
+ * Publishing, from the dock: a published deck is readable by anyone with its
+ * link, which the popover shows with a copy button.
+ */
+function PublishTool({
+  deckId,
+  initialPublished,
+  initialPublicId,
+}: {
+  deckId: string;
+  initialPublished: boolean;
+  initialPublicId: string | null;
+}) {
+  const [state, setState] = useState({
+    published: initialPublished,
+    publicId: initialPublicId,
+  });
+  const [busy, setBusy] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const url =
+    state.published && state.publicId && typeof window !== "undefined"
+      ? `${window.location.origin}/s/${state.publicId}`
+      : null;
+  const toggle = async (published: boolean) => {
+    setBusy(true);
+    setNote(null);
+    try {
+      const result = await publishDeckAction(deckId, published);
+      if (result) setState(result);
+      else setNote("沒有改成功，請重新整理後再試。");
+    } catch {
+      setNote("沒有改成功，請檢查網路。");
+    } finally {
+      setBusy(false);
+    }
+  };
+  const copy = async () => {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      setNote("已複製連結。");
+    } catch {
+      setNote("無法複製，請手動選取連結。");
+    }
+  };
+  const label = state.published ? "已發布" : "發布";
+  return (
+    <Popover>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <PopoverTrigger
+              render={
+                <Button
+                  variant={state.published ? "secondary" : "ghost"}
+                  size="icon"
+                  aria-label={label}
+                />
+              }
+            />
+          }
+        >
+          <GlobeIcon />
+        </TooltipTrigger>
+        <TooltipContent>{label}</TooltipContent>
+      </Tooltip>
+      <PopoverContent
+        side="top"
+        sideOffset={12}
+        data-surface="tinted"
+        className="w-80"
+      >
+        {url ? (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              任何拿到連結的人都能看和下載這份簡報，不用登入。
+            </p>
+            <input
+              readOnly
+              value={url}
+              aria-label="公開連結"
+              onFocus={(event) => event.currentTarget.select()}
+              className="h-8 rounded-md border bg-transparent px-2 text-xs"
+            />
+            <div className="flex gap-2">
+              <Button onClick={copy}>複製連結</Button>
+              <Button
+                variant="ghost"
+                disabled={busy}
+                onClick={() => toggle(false)}
+              >
+                停止發布
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="flex flex-col gap-3">
+            <p className="text-xs text-muted-foreground">
+              發布後，任何拿到連結的人都能看和下載這份簡報，不用登入。之後可以隨時停止。
+            </p>
+            <Button disabled={busy} onClick={() => toggle(true)}>
+              發布
+            </Button>
+          </div>
+        )}
+        {note && (
+          <p role="status" className="mt-2 text-xs text-muted-foreground">
+            {note}
+          </p>
+        )}
+      </PopoverContent>
+    </Popover>
   );
 }
 

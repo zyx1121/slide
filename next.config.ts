@@ -3,6 +3,21 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // The Docker image runs the standalone server (see Dockerfile).
   output: "standalone",
+  // No framework banner in responses.
+  poweredByHeader: false,
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          // Browsers keep to https for a year once they have seen the site
+          // over https (they ignore the header over plain http). Not for
+          // subdomains: the parent domain's other sites are not this app's.
+          { key: "Strict-Transport-Security", value: "max-age=31536000" },
+        ],
+      },
+    ];
+  },
   // resvg is a native module; load it from node_modules at run time.
   serverExternalPackages: ["@resvg/resvg-js"],
   // lib/render/png.ts reads fonts/slide and public/ through paths built at

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 
+import { ConsentButton } from "@/components/consent-button";
 import { TaskShell } from "@/components/task-shell";
 import { Button } from "@/components/ui/button";
 import { FLOW_SECONDS, mcpEnv, readAuthorize, sign } from "@/lib/mcp/oauth";
@@ -64,9 +65,7 @@ export default async function Authorize({
         )}
         <form method="post" action="/oauth/approve" className="flex gap-2">
           <input type="hidden" name="tx" value={tx} />
-          <Button type="submit" name="decision" value="allow">
-            允許
-          </Button>
+          <ConsentButton />
           <Button type="submit" name="decision" value="deny" variant="ghost">
             拒絕
           </Button>

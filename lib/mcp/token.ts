@@ -51,8 +51,10 @@ export async function verifyAccessToken(
       clockTolerance: 10,
     });
     // Issued to the MCP client, not to the web app or another client of the
-    // realm that happens to share the audience.
+    // realm that happens to share the audience; and an access token, not
+    // the ID token Keycloak issues alongside it.
     if (payload.azp !== env.clientId) return null;
+    if (payload.typ !== undefined && payload.typ !== "Bearer") return null;
     const claim = (name: string) =>
       typeof payload[name] === "string" ? (payload[name] as string) : "";
     return {
@@ -62,8 +64,13 @@ export async function verifyAccessToken(
       expiresAt: payload.exp!,
     };
   } catch (error) {
+    // The realm's keys could not be had (a timeout, a network error, or a
+    // key set endpoint that answers other than 200): not the token's fault.
     if (
       error instanceof errors.JWKSTimeout ||
+      (error instanceof errors.JOSEError &&
+        /JSON Web Key Set/.test(error.message) &&
+        !(error instanceof errors.JWKSNoMatchingKey)) ||
       (error instanceof Error &&
         /fetch|network|ECONN|ENOTFOUND/i.test(error.message) &&
         !(error instanceof errors.JOSEError))

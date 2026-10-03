@@ -95,12 +95,21 @@ describe("approve", () => {
   it("refuses an expired or forged consent", async () => {
     const response = await approve(
       env,
-      post("https://slide.example.org/oauth/approve", {
-        tx: "x.y",
-        decision: "allow",
-      })
+      post(
+        "https://slide.example.org/oauth/approve",
+        { tx: "x.y", decision: "allow" },
+        { origin: "https://slide.example.org" }
+      )
     );
     expect(response.status).toBe(400);
+  });
+
+  it("refuses a form that says nothing of where it came from", async () => {
+    const response = await approve(
+      env,
+      post("https://slide.example.org/oauth/approve", { tx, decision: "allow" })
+    );
+    expect(response.status).toBe(403);
   });
 });
 
@@ -118,6 +127,8 @@ describe("callback", () => {
   it("needs the browser that approved", () => {
     expect(back("__Host-slide_mcp_flow=other").status).toBe(400);
     expect(back("").status).toBe(400);
+    // A look-alike name, as a sibling site could set, does not count.
+    expect(back("\u00a0__Host-slide_mcp_flow=nonce-1").status).toBe(400);
   });
 
   it("sends the client a wrapped code, its state and our issuer", () => {

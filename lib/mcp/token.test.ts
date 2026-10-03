@@ -69,6 +69,15 @@ describe("verifyAccessToken", () => {
     expect(await verifyAccessToken(env, "not.a.token", keys)).toBeNull();
   });
 
+  it("refuses the ID token Keycloak issues alongside", async () => {
+    expect(
+      await verifyAccessToken(env, await tokenWith({ typ: "ID" }), keys)
+    ).toBeNull();
+    expect(
+      await verifyAccessToken(env, await tokenWith({ typ: "Bearer" }), keys)
+    ).not.toBeNull();
+  });
+
   it("reads only a well-formed bearer header", () => {
     const at = (value: string) =>
       new Request("https://x/", { headers: { authorization: value } });

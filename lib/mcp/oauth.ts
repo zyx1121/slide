@@ -100,12 +100,10 @@ export function unsign<T>(
   const [body, mac, extra] = token.split(".");
   if (!body || !mac || extra !== undefined) return null;
   const want = createHmac("sha256", key(env, purpose)).update(body).digest();
-  let got: Buffer;
-  try {
-    got = Buffer.from(mac, "base64url");
-  } catch {
+  if (!/^[A-Za-z0-9_-]+$/.test(body) || !/^[A-Za-z0-9_-]+$/.test(mac)) {
     return null;
   }
+  const got = Buffer.from(mac, "base64url");
   if (got.length !== want.length || !timingSafeEqual(got, want)) return null;
   try {
     const value = JSON.parse(Buffer.from(body, "base64url").toString()) as {

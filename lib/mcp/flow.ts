@@ -21,9 +21,11 @@ export function flowCookie(env: McpEnv): string {
 }
 
 function cookieValue(request: Request, name: string): string | null {
+  // Only spaces and tabs separate cookies; a name must match exactly.
   for (const part of (request.headers.get("cookie") ?? "").split(";")) {
-    const [key, ...rest] = part.trim().split("=");
-    if (key === name) return rest.join("=");
+    const pair = part.replace(/^[ \t]+|[ \t]+$/g, "");
+    const at = pair.indexOf("=");
+    if (at > 0 && pair.slice(0, at) === name) return pair.slice(at + 1);
   }
   return null;
 }
@@ -80,7 +82,10 @@ export async function approve(
 ): Promise<Response> {
   const origin = request.headers.get("origin");
   const site = request.headers.get("sec-fetch-site");
+  // A browser names where a form came from; without either header, nothing
+  // says it was this site's page.
   if (
+    (!origin && !site) ||
     (origin && origin !== env.appUrl.origin) ||
     (site && site !== "same-origin")
   ) {

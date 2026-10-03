@@ -28,6 +28,7 @@ import {
   updateShapes,
   WriteError,
 } from "./write";
+import { inSpan } from "../otel/span";
 
 export type ToolContext = { db: postgres.Sql; sub: string };
 
@@ -60,6 +61,21 @@ export function createServer(context: ToolContext): McpServer {
     }
   );
   const { db, sub } = context;
+  // Every tool call is a span: its name and whether it failed, never its
+  // arguments or results.
+  const registerTool = server.registerTool.bind(server);
+  type Handler = (...args: unknown[]) => Promise<{ isError?: boolean }>;
+  server.registerTool = ((name: string, config: unknown, handler: Handler) =>
+    registerTool(
+      name,
+      config as never,
+      ((...args: unknown[]) =>
+        inSpan(`mcp ${name}`, { "mcp.tool": name }, async (set) => {
+          const result = await handler(...args);
+          set({ "mcp.is_error": Boolean(result?.isError) });
+          return result;
+        })) as never
+    )) as typeof server.registerTool;
 
   server.registerTool(
     "list_decks",

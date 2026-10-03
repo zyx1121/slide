@@ -9,7 +9,6 @@ import {
   Undo2Icon,
 } from "lucide-react";
 import {
-  type ClipboardEvent,
   type ComponentType,
   type KeyboardEvent,
   useCallback,
@@ -27,6 +26,8 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { compare } from "fast-json-patch";
+
 import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
@@ -57,6 +58,9 @@ import {
 import { movedSlide, newShape, type NewShapeKind } from "@/lib/editor/preview";
 import { createSaver, type SaverState } from "@/lib/editor/saver";
 import { cn } from "@/lib/utils";
+
+/** What became of an edit: applied, a no-op, paused while saving is, or refused. */
+type Commit = "applied" | "unchanged" | "paused" | "refused";
 
 /** Canvas px an arrow key moves the selection; Shift moves ten times as far. */
 const NUDGE = 2;
@@ -116,8 +120,6 @@ export function Editor({
     historyRef.current = next;
     setHistoryState(next);
   };
-  // The last clip copied here, for a paste whose clipboard event carries none.
-  const lastClip = useRef<Clip | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
@@ -128,11 +130,15 @@ export function Editor({
   const [refusal, setRefusal] = useState<string | null>(null);
 
   const reload = useCallback((fresh: DeckDocument) => {
+    // Undo steps were made against the local document. When the server's
+    // differs (an edit was lost, or another tab changed it), they no longer
+    // apply; when it is the same, nothing was lost and they still do.
+    if (compare(docRef.current, fresh).length > 0) {
+      historyRef.current = EMPTY_HISTORY;
+      setHistoryState(EMPTY_HISTORY);
+    }
     docRef.current = fresh;
     setDoc(fresh);
-    // Undo steps were made against the old document; they no longer apply.
-    historyRef.current = EMPTY_HISTORY;
-    setHistoryState(EMPTY_HISTORY);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
     setSelection([]);
     clearTimeout(nudgeTimer.current);
@@ -145,26 +151,29 @@ export function Editor({
   const slide = doc.slides[index];
 
   /**
-   * Applies an edit here, queues it for saving, and returns whether it
-   * applied. Each patch is guarded by the ids of what it touches, so it can
-   * never land on other shapes. While the saver is reloading or offline,
-   * edits are refused: they would be made on a document the server does not
-   * have. An edit is recorded for undo with its inverse; an undo or redo is
-   * not recorded. History keeps patches unguarded; they are guarded again
-   * against the document they meet when undone or redone.
+   * Applies an edit here and queues it for saving. Each patch is guarded by
+   * the ids of what it touches, so it can never land on other shapes. While
+   * the saver is reloading or offline, edits are paused: they would be made
+   * on a document the server does not have. An edit is recorded for undo
+   * with its inverse; an undo or redo is not. History keeps patches
+   * unguarded; they are guarded again against the document they meet.
    */
   const commit = useCallback(
-    (ops: Operation[], recordStep = true): boolean => {
-      if (ops.length === 0 || !saver.state().accepting) return false;
+    (ops: Operation[], recordStep = true): Commit => {
+      if (ops.length === 0) return "unchanged";
+      if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
         result = applyOperations(docRef.current, guard(docRef.current, ops));
       } catch (error) {
-        const quiet =
+        if (
           error instanceof DeckError &&
-          error.message === "the patch changes nothing";
-        setRefusal(quiet ? null : "這個修改無法套用，沒有存到。");
-        return false;
+          error.message === "the patch changes nothing"
+        ) {
+          return "unchanged";
+        }
+        setRefusal("這個修改無法套用，沒有存到。");
+        return "refused";
       }
       docRef.current = result.document;
       setDoc(result.document);
@@ -179,7 +188,7 @@ export function Editor({
         setHistoryState(next);
       }
       saver.save(result.operations);
-      return true;
+      return "applied";
     },
     [saver, index]
   );
@@ -218,7 +227,9 @@ export function Editor({
   const insert = (kind: NewShapeKind) => {
     flushNudge();
     const shape = newShape(kind, docRef.current.slides[index]);
-    if (commit(insertOps(index, shape))) setSelection([shape.id]);
+    if (commit(insertOps(index, shape)) === "applied") {
+      setSelection([shape.id]);
+    }
   };
 
   const reorder = (to: "front" | "back") => {
@@ -231,7 +242,9 @@ export function Editor({
   const remove = () => {
     flushNudge();
     const current = docRef.current.slides[index];
-    if (commit(deleteOps(current, index, new Set(selection)))) setSelection([]);
+    if (commit(deleteOps(current, index, new Set(selection))) === "applied") {
+      setSelection([]);
+    }
   };
 
   /** Undoes or redoes one edit, on the slide it was made on. */
@@ -239,7 +252,16 @@ export function Editor({
     flushNudge();
     const move = (direction === "undo" ? undo : redo)(historyRef.current);
     if (!move) return;
-    if (!commit(move.ops, false)) return;
+    const outcome = commit(move.ops, false);
+    if (outcome === "paused") return;
+    if (outcome === "refused") {
+      // Steps before this one were made on top of it; none can be undone
+      // safely without it.
+      setHistory(EMPTY_HISTORY);
+      setRefusal("這一步無法復原，復原紀錄已清空。");
+      return;
+    }
+    // A step that changes nothing any more is passed over.
     setHistory(move.history);
     setSlideIndex(move.slide);
     const kept = new Set(
@@ -252,32 +274,40 @@ export function Editor({
   const place = (clip: Clip) => {
     const target = docRef.current.slides[index];
     const shapes = pasteShapes(clip, pasteOffset(target, clip));
-    if (commit(shapes.flatMap((shape) => insertOps(index, shape)))) {
+    const ops = shapes.flatMap((shape) => insertOps(index, shape));
+    if (commit(ops) === "applied") {
       setSelection(shapes.map((shape) => shape.id));
     }
   };
 
-  const copy = (event: ClipboardEvent<HTMLDivElement>) => {
+  const copy = (event: ClipboardEvent) => {
     flushNudge();
     const clip = copyShapes(docRef.current.slides[index], new Set(selection));
     if (!clip) return false;
+    if (!event.clipboardData) return false;
     event.preventDefault();
     const text = JSON.stringify(clip);
     event.clipboardData.setData(CLIP_TYPE, text);
     event.clipboardData.setData("text/plain", text);
-    lastClip.current = clip;
     return true;
   };
 
-  const paste = (event: ClipboardEvent<HTMLDivElement>) => {
+  const paste = (event: ClipboardEvent) => {
     flushNudge();
     const data = event.clipboardData;
-    const text = data.getData(CLIP_TYPE) || data.getData("text/plain");
-    // Text from elsewhere is not shapes; only an empty clipboard falls back.
-    const clip = text ? parseClip(text) : lastClip.current;
+    // Anything but shapes copied here (text, an image) pastes nothing.
+    const clip = parseClip(
+      data?.getData(CLIP_TYPE) || data?.getData("text/plain")
+    );
     if (!clip) return;
     event.preventDefault();
     place(clip);
+  };
+
+  const cut = (event: ClipboardEvent) => {
+    // While edits are paused a cut would copy without removing anything.
+    if (!saver.state().accepting) return;
+    if (copy(event)) remove();
   };
 
   const duplicate = () => {
@@ -344,6 +374,8 @@ export function Editor({
       ? movedSlide(slide, new Set(selection), nudge.dx, nudge.dy)
       : slide;
   const none = selection.length === 0;
+  const paused = !saving.accepting;
+  const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   return (
     <div className="flex flex-col gap-5">
@@ -352,13 +384,13 @@ export function Editor({
           <Tool
             tip="復原"
             icon={Undo2Icon}
-            disabled={history.past.length === 0}
+            disabled={paused || (history.past.length === 0 && !nudging)}
             onClick={() => travel("undo")}
           />
           <Tool
             tip="重做"
             icon={Redo2Icon}
-            disabled={history.future.length === 0}
+            disabled={paused || history.future.length === 0}
             onClick={() => travel("redo")}
           />
         </div>
@@ -366,16 +398,19 @@ export function Editor({
           <Tool
             tip="插入矩形"
             icon={RectGlyph}
+            disabled={paused}
             onClick={() => insert("rect")}
           />
           <Tool
             tip="插入圓角矩形"
             icon={RoundRectGlyph}
+            disabled={paused}
             onClick={() => insert("roundRect")}
           />
           <Tool
             tip="插入橢圓"
             icon={EllipseGlyph}
+            disabled={paused}
             onClick={() => insert("ellipse")}
           />
         </div>
@@ -383,22 +418,27 @@ export function Editor({
           <Tool
             tip="移到最上層"
             icon={BringToFrontIcon}
-            disabled={none}
+            disabled={paused || none}
             onClick={() => reorder("front")}
           />
           <Tool
             tip="移到最下層"
             icon={SendToBackIcon}
-            disabled={none}
+            disabled={paused || none}
             onClick={() => reorder("back")}
           />
           <Tool
             tip="再製"
             icon={CopyPlusIcon}
-            disabled={none}
+            disabled={paused || none}
             onClick={duplicate}
           />
-          <Tool tip="刪除" icon={Trash2Icon} disabled={none} onClick={remove} />
+          <Tool
+            tip="刪除"
+            icon={Trash2Icon}
+            disabled={paused || none}
+            onClick={remove}
+          />
         </div>
         <SaveStatus
           refusal={refusal}
@@ -444,9 +484,7 @@ export function Editor({
             onGestureStart={flushNudge}
             onKeyDown={onKeyDown}
             onCopy={copy}
-            onCut={(event) => {
-              if (copy(event)) remove();
-            }}
+            onCut={cut}
             onPaste={paste}
           />
           <p id="canvas-help" className="text-xs text-muted-foreground">

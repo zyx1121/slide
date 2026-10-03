@@ -100,6 +100,13 @@ describe("pasteOffset", () => {
     expect(pasteOffset(once, clip)).toBe(40);
   });
 
+  it("steps a connector off the glued one it was copied from", () => {
+    // Both ends of ln_capture_asr are glued to shapes left out of the clip,
+    // so the copy holds free ends exactly where the original is drawn.
+    const line = copyShapes(slide, new Set(["ln_capture_asr"]))!;
+    expect(pasteOffset(slide, line)).toBe(20);
+  });
+
   it("leaves a paste where it was on a slide with room", () => {
     expect(pasteOffset({ id: "sl_empty", title: "", shapes: [] }, clip)).toBe(
       0

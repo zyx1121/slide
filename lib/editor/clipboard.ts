@@ -84,12 +84,19 @@ export function pasteShapes(clip: Clip, offset: number): Shape[] {
   });
 }
 
-/** Where a shape sits, for telling whether a paste would land on it. */
-function anchors(shape: Shape): Point[] {
+/**
+ * Where a shape sits, for telling whether a paste would land on it. A glued
+ * connector end sits where its shape's site is, when `shapes` can say.
+ */
+function anchors(shape: Shape, shapes?: ReadonlyMap<string, Shape>): Point[] {
   if (shape.kind !== "line") return [{ x: shape.x, y: shape.y }];
-  return [shape.start, shape.end].flatMap((end) =>
-    "x" in end ? [{ x: end.x, y: end.y }] : []
-  );
+  return [shape.start, shape.end].flatMap((end) => {
+    if ("x" in end) return [{ x: end.x, y: end.y }];
+    const target = shapes?.get(end.shape);
+    return target && target.kind !== "line"
+      ? [sitePoint(target, end.site).point]
+      : [];
+  });
 }
 
 const keyOf = (p: Point) => `${tidy(p.x)},${tidy(p.y)}`;
@@ -100,8 +107,11 @@ const keyOf = (p: Point) => `${tidy(p.x)},${tidy(p.y)}`;
  * right and down. Repeated pastes and duplicates fan out the same way.
  */
 export function pasteOffset(target: Slide, clip: Clip): number {
-  const taken = new Set(target.shapes.flatMap(anchors).map(keyOf));
-  const points = clip.shapes.flatMap(anchors);
+  const shapes = new Map(target.shapes.map((shape) => [shape.id, shape]));
+  const taken = new Set(
+    target.shapes.flatMap((shape) => anchors(shape, shapes)).map(keyOf)
+  );
+  const points = clip.shapes.flatMap((shape) => anchors(shape));
   for (let offset = 0; offset < 2000; offset += 20) {
     const lands = points.some((p) =>
       taken.has(keyOf({ x: p.x + offset, y: p.y + offset }))

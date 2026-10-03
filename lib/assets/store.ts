@@ -10,13 +10,14 @@ import type postgres from "postgres";
 
 import type { Slide } from "../deck/schema";
 import { ASSET_MAX_BYTES } from "../deck/limits";
-import { type ImageInfo, sniffImage } from "./image";
+import { type ImageInfo, sniffImage, withinPixels } from "./image";
 
 type Db = postgres.Sql;
 
 export type Asset = ImageInfo & { sha256: string; bytes: number };
 
-export type AssetErrorCode = "empty" | "too-large" | "unsupported";
+export type AssetErrorCode =
+  "empty" | "too-large" | "too-many-pixels" | "unsupported";
 
 export class AssetError extends Error {
   constructor(readonly code: AssetErrorCode) {
@@ -58,6 +59,7 @@ export async function saveAsset(
   if (bytes.length > ASSET_MAX_BYTES) throw new AssetError("too-large");
   const info = sniffImage(bytes);
   if (!info) throw new AssetError("unsupported");
+  if (!withinPixels(info)) throw new AssetError("too-many-pixels");
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   const path = pathOf(sha256);
   if (!(await exists(path))) {

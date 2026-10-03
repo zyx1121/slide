@@ -47,7 +47,11 @@ services:
   web:
     <<: *slide
     command: web
-    environment: *database
+    environment:
+      <<: *database
+      # Set here, so an empty ASSETS_DIR in .env cannot move uploads off
+      # the volume.
+      ASSETS_DIR: /data/assets
     volumes:
       # Uploaded images, once per sha256 (ASSETS_DIR in the image).
       - assets:/data/assets

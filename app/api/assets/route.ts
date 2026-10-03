@@ -6,7 +6,12 @@ import { ASSET_MAX_BYTES } from "@/lib/deck/limits";
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-const STATUS = { empty: 400, "too-large": 413, unsupported: 415 } as const;
+const STATUS = {
+  empty: 400,
+  "too-large": 413,
+  "too-many-pixels": 413,
+  unsupported: 415,
+} as const;
 
 /** The body, or null once it grows past `limit` bytes. */
 async function readCapped(
@@ -49,8 +54,8 @@ function sameSite(request: Request): boolean {
   if (origin === null) return true;
   try {
     const host =
-      request.headers.get("x-forwarded-host") ??
       request.headers.get("host") ??
+      request.headers.get("x-forwarded-host") ??
       new URL(request.url).host;
     return new URL(origin).host === host;
   } catch {

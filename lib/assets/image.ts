@@ -66,9 +66,20 @@ function jpeg(b: Uint8Array): ImageInfo | null {
   return null;
 }
 
+/**
+ * The most pixels an image may have: 50 million, about 200 MB once decoded.
+ * A small file can declare a huge picture, which would take the server's
+ * memory and time when it draws a slide.
+ */
+export const MAX_PIXELS = 50_000_000;
+
 /** The image a file holds, or null when it is not one we accept. */
 export function sniffImage(bytes: Uint8Array): ImageInfo | null {
   const info = png(bytes) ?? jpeg(bytes) ?? gif(bytes);
   if (!info || info.width <= 0 || info.height <= 0) return null;
   return info;
 }
+
+/** Whether an image is small enough to decode. */
+export const withinPixels = (info: ImageInfo) =>
+  info.width * info.height <= MAX_PIXELS;

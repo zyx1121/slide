@@ -76,5 +76,10 @@ describe.skipIf(!TEST_DATABASE_URL)("asset store", () => {
     expect(await code(new Uint8Array())).toBe("empty");
     expect(await code(new Uint8Array(ASSET_MAX_BYTES + 1))).toBe("too-large");
     expect(await code(new TextEncoder().encode("<svg/>"))).toBe("unsupported");
+    // A 1 x 1 PNG that declares 10000 x 10000 pixels.
+    const bomb = PNG_1X1.slice();
+    new DataView(bomb.buffer).setUint32(16, 10000);
+    new DataView(bomb.buffer).setUint32(20, 10000);
+    expect(await code(bomb)).toBe("too-many-pixels");
   });
 });

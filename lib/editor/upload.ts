@@ -9,6 +9,7 @@ export const assetUrl = (sha256: string) => `/api/assets/${sha256}`;
 
 const MESSAGES: Record<string, string> = {
   "too-large": "圖片超過 10 MB，沒有上傳。",
+  "too-many-pixels": "圖片超過 5,000 萬像素，沒有上傳。",
   unsupported: "只能放 PNG、JPEG 或 GIF 圖片。",
   empty: "這個檔案是空的。",
 };

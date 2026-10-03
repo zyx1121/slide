@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 
 import { AccountActions } from "@/components/account-actions";
 import { Editor } from "@/components/editor/editor";
-import { TaskShell } from "@/components/task-shell";
+import { StageShell } from "@/components/stage-shell";
 import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getDeck } from "@/lib/deck/store";
@@ -17,17 +17,12 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
   if (!deck) notFound();
 
   return (
-    <TaskShell
-      title={deck.title}
-      lang="zh-TW"
-      actions={<AccountActions user={user} />}
-      wide
-    >
+    <StageShell title={deck.title} actions={<AccountActions user={user} />}>
       <Editor
         deckId={deck.id}
         initialDocument={deck.document}
         initialVersion={deck.version}
       />
-    </TaskShell>
+    </StageShell>
   );
 }

@@ -59,6 +59,11 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
   it("publishes a deck under a public id it keeps", async () => {
     const deck = await createDeck(db, alice.sub, sampleDocument());
     expect(await getPublishedDeck(db, "x".repeat(16))).toBeNull();
+    // Unpublishing a deck never published makes no link.
+    expect(await setPublished(db, alice.sub, deck.id, false)).toEqual({
+      published: false,
+      publicId: null,
+    });
     expect(await setPublished(db, bob.sub, deck.id, true)).toBeNull();
 
     const first = await setPublished(db, alice.sub, deck.id, true);

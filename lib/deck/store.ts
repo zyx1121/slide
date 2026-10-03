@@ -165,7 +165,8 @@ export async function setPublished(
   const [row] = await db<Pick<DeckRow, "published" | "public_id">[]>`
     update decks
     set published = ${published},
-        public_id = coalesce(public_id, ${newPublicId()})
+        public_id = case when ${published}::boolean
+          then coalesce(public_id, ${newPublicId()}) else public_id end
     where id = ${id} and owner_sub = ${owner}
     returning published, public_id
   `;

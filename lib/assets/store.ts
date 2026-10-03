@@ -100,6 +100,19 @@ export async function readAsset(
   }
 }
 
+/** Which of the given assets the member owns. */
+export async function ownedAssets(
+  db: Db,
+  sub: string,
+  shas: string[]
+): Promise<Set<string>> {
+  if (shas.length === 0) return new Set();
+  const rows = await db<{ sha256: string }[]>`
+    select sha256 from asset_owners
+    where sub = ${sub} and sha256 in ${db(shas)}`;
+  return new Set(rows.map((row) => row.sha256));
+}
+
 /** The assets a slide draws. */
 export function slideAssets(slide: Slide): string[] {
   return [

@@ -1367,7 +1367,7 @@ function PublishTool({
         {url ? (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">
-              任何拿到連結的人都能看和下載這份簡報，不用登入。
+              任何拿到連結的人都能看和下載這份簡報，不用登入。之後的修改也會馬上公開。
             </p>
             <input
               readOnly
@@ -1390,7 +1390,7 @@ function PublishTool({
         ) : (
           <div className="flex flex-col gap-3">
             <p className="text-xs text-muted-foreground">
-              發布後，任何拿到連結的人都能看和下載這份簡報，不用登入。之後可以隨時停止。
+              發布後，任何拿到連結的人都能看和下載這份簡報，不用登入；之後的修改也會馬上公開。可以隨時停止。
             </p>
             <Button disabled={busy} onClick={() => toggle(true)}>
               發布

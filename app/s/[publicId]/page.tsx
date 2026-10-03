@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { SlideView } from "@/components/slide-view";
 import { TaskShell } from "@/components/task-shell";
 import { cornerLink } from "@/components/corners";
+import { ownedAssets, slideAssets } from "@/lib/assets/store";
 import { sql } from "@/lib/db";
 import { getPublishedDeck } from "@/lib/deck/store";
 
@@ -28,7 +29,13 @@ export default async function PublicDeck({
   const { publicId } = await params;
   const deck = await getPublishedDeck(sql, publicId);
   if (!deck) notFound();
-  const assetHref = (sha256: string) => `/s/${publicId}/assets/${sha256}`;
+  // Only pictures the owner uploaded are served; others show a placeholder,
+  // without their id in the page.
+  const owned = await ownedAssets(sql, deck.ownerSub, [
+    ...new Set(deck.document.slides.flatMap(slideAssets)),
+  ]);
+  const assetHref = (sha256: string) =>
+    owned.has(sha256) ? `/s/${publicId}/assets/${sha256}` : null;
 
   return (
     <TaskShell

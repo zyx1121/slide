@@ -8,7 +8,7 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { DeckError, type DeckErrorCode } from "@/lib/deck/errors";
 import type { DeckDocument } from "@/lib/deck/schema";
-import { getDeck, mutateDeck } from "@/lib/deck/store";
+import { getDeck, mutateDeck, setPublished } from "@/lib/deck/store";
 
 export type EditResult =
   | { ok: true; version: number }
@@ -50,4 +50,19 @@ export async function loadDeckAction(
   if (typeof deckId !== "string") return null;
   const deck = await getDeck(sql, user.sub, deckId);
   return deck && { document: deck.document, version: deck.version };
+}
+
+/**
+ * Publishes or unpublishes the member's deck: a published deck is readable
+ * by anyone with its link at /s/<public id>.
+ */
+export async function publishDeckAction(
+  deckId: unknown,
+  published: unknown
+): Promise<{ published: boolean; publicId: string | null } | null> {
+  const user = await requireUser();
+  if (typeof deckId !== "string" || typeof published !== "boolean") {
+    return null;
+  }
+  return setPublished(sql, user.sub, deckId, published);
 }

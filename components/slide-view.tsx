@@ -12,18 +12,21 @@ export function SlideView({
   slide,
   number,
   decorative = false,
+  assetHref = assetUrl,
   className,
 }: {
   slide: Slide;
   number: number;
   /** Hidden from screen readers, as a thumbnail inside a labelled link. */
   decorative?: boolean;
+  /** Where pictures load from: the member's assets by default. */
+  assetHref?: (sha256: string) => string | null;
   className?: string;
 }) {
   const svg = renderSlideSvg(slide, {
     slideNumber: number,
     background: BACKGROUND_PATH,
-    assetHref: assetUrl,
+    assetHref,
   });
   return (
     <div

@@ -10,9 +10,11 @@ import {
   deleteDeck,
   ensureUser,
   getDeck,
+  getPublishedDeck,
   listDecks,
   mutateDeck,
   renameDeck,
+  setPublished,
 } from "./store";
 
 const alice: Actor = { kind: "member", sub: "alice-sub" };
@@ -52,6 +54,30 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
       deck.id
     );
     expect(await listDecks(db, bob.sub)).toEqual([]);
+  });
+
+  it("publishes a deck under a public id it keeps", async () => {
+    const deck = await createDeck(db, alice.sub, sampleDocument());
+    expect(await getPublishedDeck(db, "x".repeat(16))).toBeNull();
+    // Unpublishing a deck never published makes no link.
+    expect(await setPublished(db, alice.sub, deck.id, false)).toEqual({
+      published: false,
+      publicId: null,
+    });
+    expect(await setPublished(db, bob.sub, deck.id, true)).toBeNull();
+
+    const first = await setPublished(db, alice.sub, deck.id, true);
+    expect(first?.published).toBe(true);
+    expect(first?.publicId).toMatch(/^[0-9a-z]{16}$/);
+    expect((await getPublishedDeck(db, first!.publicId!))?.id).toBe(deck.id);
+
+    const off = await setPublished(db, alice.sub, deck.id, false);
+    expect(off).toEqual({ published: false, publicId: first!.publicId });
+    expect(await getPublishedDeck(db, first!.publicId!)).toBeNull();
+
+    // Publishing again brings the same link back.
+    expect(await setPublished(db, alice.sub, deck.id, true)).toEqual(first);
+    expect(await getPublishedDeck(db, "../" + first!.publicId)).toBeNull();
   });
 
   it("hides a deck from everyone but its owner", async () => {

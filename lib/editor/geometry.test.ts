@@ -60,6 +60,15 @@ describe("hitTest", () => {
     expect(hitTest(stacked, { x: 500, y: 500 }, 4)).toBeNull();
   });
 
+  it("picks a box with no height near where it is drawn", () => {
+    const flat: Slide = {
+      ...slide,
+      shapes: [rect({ id: "sh_flat", x: 100, y: 100, w: 300, h: 0 })],
+    };
+    expect(hitTest(flat, { x: 200, y: 101 }, 4)).toBe("sh_flat");
+    expect(hitTest(flat, { x: 200, y: 110 }, 4)).toBeNull();
+  });
+
   it("picks a connector near its line", () => {
     // ln_capture_asr runs straight at y = 420 from x = 640 to x = 1280.
     expect(hitTest(slide, { x: 960, y: 425 }, 4)).toBe("ln_capture_asr");

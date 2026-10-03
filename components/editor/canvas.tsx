@@ -12,6 +12,7 @@ import {
 import { SLIDE_HEIGHT, SLIDE_WIDTH, type Slide } from "@/lib/deck/schema";
 import {
   type Box,
+  containsPoint,
   cornersOf,
   type Handle,
   HANDLES,
@@ -161,12 +162,17 @@ export function Canvas({
       y: ((event.clientY - rect.top) * SLIDE_HEIGHT) / rect.height,
     };
   };
-  const handleAt = (p: Point): Handle | undefined =>
-    box &&
-    HANDLES.find((handle) => {
+  // A box too small for its handles moves when pressed inside; its handles
+  // still work from outside it.
+  const handleAt = (p: Point): Handle | undefined => {
+    if (!box) return undefined;
+    const small = Math.min(box.w, box.h) < 3 * HANDLE * scale;
+    if (small && containsPoint(box, p)) return undefined;
+    return HANDLES.find((handle) => {
       const q = handlePoint(box, handle);
       return Math.hypot(q.x - p.x, q.y - p.y) <= HANDLE * scale;
     });
+  };
   const targetsFor = (moving: (id: string) => boolean) =>
     slide.shapes
       .filter((shape) => shape.kind !== "line" && !moving(shape.id))
@@ -346,7 +352,9 @@ export function Canvas({
     <div
       ref={ref}
       tabIndex={0}
-      aria-label="投影片畫布"
+      role="application"
+      aria-roledescription="投影片畫布"
+      aria-label={`第 ${number} 頁`}
       aria-describedby="canvas-help"
       className={cn(
         "relative aspect-video w-full touch-none overflow-hidden rounded-lg border border-border bg-white outline-offset-4 select-none focus-visible:outline-2",

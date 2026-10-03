@@ -10,20 +10,17 @@ import { DeckDocument, describeIssues } from "./schema";
 
 export type { Operation };
 
-const MAX_OPERATIONS = 1000;
+// Room for an edit plus the test operations that guard it (lib/editor/guard.ts).
+const MAX_OPERATIONS = 5000;
 const MAX_DOCUMENT_BYTES = 5_000_000;
 
-// RFC 6902 operations only. fast-json-patch looks `op` up on a plain object,
-// so a name such as "toString" or its internal "_get" would otherwise slip
-// through and return no document instead of throwing.
-const OPERATIONS = new Set([
-  "add",
-  "remove",
-  "replace",
-  "move",
-  "copy",
-  "test",
-]);
+// RFC 6902 operations, without copy. fast-json-patch looks `op` up on a plain
+// object, so a name such as "toString" or its internal "_get" would otherwise
+// slip through and return no document instead of throwing. Copy is left out
+// because each copy can double the document before its size is checked: a
+// few dozen bytes of patch would exhaust the server's memory. Without it, a
+// patch can only grow the document by the values it carries.
+const OPERATIONS = new Set(["add", "remove", "replace", "move", "test"]);
 
 /**
  * Applies RFC 6902 operations to a copy of the document and validates the

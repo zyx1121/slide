@@ -100,7 +100,8 @@ function distanceToSegment(p: Point, a: Point, b: Point): number {
 /**
  * The topmost shape under a point, or null. A connector counts within
  * `tolerance` px of its line; a box counts anywhere inside it, filled or not,
- * so text boxes and outlines are easy to pick.
+ * so text boxes and outlines are easy to pick, and within half the tolerance
+ * of its edge, so a box with no width or height can be picked too.
  */
 export function hitTest(
   slide: Slide,
@@ -118,7 +119,7 @@ export function hitTest(
           return shape.id;
         }
       }
-    } else if (containsPoint(shape, p)) {
+    } else if (containsPoint(shape, p, tolerance / 2)) {
       return shape.id;
     }
   }

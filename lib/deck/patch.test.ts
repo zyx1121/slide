@@ -101,6 +101,19 @@ describe("applyOperations", () => {
     }
   });
 
+  it("refuses copy, which could double the document with every operation", () => {
+    const doubling = Array.from({ length: 25 }, () => ({
+      op: "copy",
+      from: "/slides",
+      path: "/slides/-",
+    }));
+    const refused = refusal(() =>
+      applyOperations(sampleDocument(), doubling as never)
+    );
+    expect(refused.code).toBe("invalid_patch");
+    expect(refused.message).toMatch(/^operation 0: op must be one of/);
+  });
+
   it("refuses a patch that changes nothing", () => {
     for (const ops of [
       [{ op: "test", path: "/title", value: "Agent Sense" }],

@@ -19,9 +19,11 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
 import type { Box } from "@/lib/editor/geometry";
+import { guard } from "@/lib/editor/guard";
 import {
   boxOps,
   deleteOps,
@@ -30,6 +32,7 @@ import {
   reorderOps,
 } from "@/lib/editor/ops";
 import { movedSlide, newShape, type NewShapeKind } from "@/lib/editor/preview";
+import { createSaver, type SaverState } from "@/lib/editor/saver";
 import { cn } from "@/lib/utils";
 
 /** Canvas px an arrow key moves the selection; Shift moves ten times as far. */
@@ -37,72 +40,35 @@ const NUDGE = 2;
 /** How long nudges gather before they are saved as one edit, in ms. */
 const NUDGE_SAVE_DELAY = 500;
 
-type Status = { saving: boolean; error: string | null };
-
 /**
- * Saves patches in order, each against the version the previous one left.
- * When the server refuses one (another tab or an agent's accepted change
- * moved the deck on), the editor reloads the deck and drops the edits still
- * waiting, which were made against the old version.
+ * The save queue for one editor (lib/editor/saver.ts) and its state. Leaving
+ * with edits still on their way asks first.
  */
 function useSaver(
   deckId: string,
   initialVersion: number,
   onReload: (document: DeckDocument) => void
 ) {
-  const version = useRef(initialVersion);
-  const chain = useRef<Promise<void>>(Promise.resolve());
-  const generation = useRef(0);
-  const [pending, setPending] = useState(0);
-  const [error, setError] = useState<string | null>(null);
-
-  const save = useCallback(
-    (ops: Operation[]) => {
-      const mine = generation.current;
-      setPending((n) => n + 1);
-      chain.current = chain.current
-        .then(async () => {
-          if (mine !== generation.current) return;
-          const result = await editDeckAction(
-            deckId,
-            version.current,
-            ops
-          ).catch(() => null);
-          if (mine !== generation.current) return;
-          if (result?.ok) {
-            version.current = result.version;
-            setError(null);
-            return;
-          }
-          generation.current++;
-          const fresh = await loadDeckAction(deckId).catch(() => null);
-          if (!fresh) {
-            setError("儲存失敗，請重新整理頁面。");
-            return;
-          }
-          version.current = fresh.version;
-          onReload(fresh.document);
-          setError(
-            result?.code === "conflict"
-              ? "簡報在別處改過了，已載入最新版本。"
-              : "這個修改沒有存到，已載入最新版本。"
-          );
-        })
-        .catch(() => setError("儲存失敗，請重新整理頁面。"))
-        .finally(() => setPending((n) => n - 1));
-    },
-    [deckId, onReload]
+  const [state, setState] = useState<SaverState>({
+    accepting: true,
+    pending: 0,
+    phase: "ready",
+    message: null,
+  });
+  const [saver] = useState(() =>
+    createSaver({
+      version: initialVersion,
+      send: (version, ops) => editDeckAction(deckId, version, ops),
+      load: () => loadDeckAction(deckId),
+      onReload,
+      onChange: setState,
+    })
   );
-
-  // Leaving with edits still on their way asks first.
   useEffect(() => {
-    if (pending === 0) return;
-    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
-    window.addEventListener("beforeunload", warn);
-    return () => window.removeEventListener("beforeunload", warn);
-  }, [pending]);
-
-  return { save, status: { saving: pending > 0, error } satisfies Status };
+    saver.attach();
+    return () => saver.dispose();
+  }, [saver]);
+  return { saver, state };
 }
 
 /**
@@ -127,32 +93,49 @@ export function Editor({
   const nudgeRef = useRef(nudge);
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
+  /** An edit that could not be applied here; it never reached the server. */
+  const [refusal, setRefusal] = useState<string | null>(null);
+
   const reload = useCallback((fresh: DeckDocument) => {
     docRef.current = fresh;
     setDoc(fresh);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
     setSelection([]);
+    clearTimeout(nudgeTimer.current);
     nudgeRef.current = { dx: 0, dy: 0 };
     setNudge(nudgeRef.current);
   }, []);
-  const { save, status } = useSaver(deckId, initialVersion, reload);
+  const { saver, state: saving } = useSaver(deckId, initialVersion, reload);
 
   const index = Math.min(slideIndex, doc.slides.length - 1);
   const slide = doc.slides[index];
 
+  /**
+   * Applies an edit here and queues it for saving. Each patch is guarded by
+   * the ids of what it touches, so it can never land on other shapes. While
+   * the saver is reloading or offline, edits are refused: they would be made
+   * on a document the server does not have.
+   */
   const commit = useCallback(
-    (ops: Operation[]) => {
-      if (ops.length === 0) return;
+    (ops: Operation[]): boolean => {
+      if (ops.length === 0 || !saver.state().accepting) return false;
+      let result: ReturnType<typeof applyOperations>;
       try {
-        const next = applyOperations(docRef.current, ops).document;
-        docRef.current = next;
-        setDoc(next);
-      } catch {
-        return;
+        result = applyOperations(docRef.current, guard(docRef.current, ops));
+      } catch (error) {
+        const quiet =
+          error instanceof DeckError &&
+          error.message === "the patch changes nothing";
+        setRefusal(quiet ? null : "這個修改無法套用，沒有存到。");
+        return false;
       }
-      save(ops);
+      docRef.current = result.document;
+      setDoc(result.document);
+      setRefusal(null);
+      saver.save(result.operations);
+      return true;
     },
-    [save]
+    [saver]
   );
 
   /** Saves gathered arrow-key nudges as one edit. */
@@ -166,6 +149,21 @@ export function Editor({
     commit(moveOps(current, index, new Set(selection), dx, dy));
   }, [commit, index, selection]);
 
+  // Nudges still gathering are saved when the editor closes, and leaving the
+  // page asks first while any edit is unsaved.
+  const flushRef = useRef(flushNudge);
+  useEffect(() => {
+    flushRef.current = flushNudge;
+  }, [flushNudge]);
+  useEffect(() => () => flushRef.current(), []);
+  const unsaved = saving.pending > 0 || nudge.dx !== 0 || nudge.dy !== 0;
+  useEffect(() => {
+    if (!unsaved) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsaved]);
+
   const select = (ids: string[]) => {
     flushNudge();
     setSelection(ids);
@@ -174,8 +172,7 @@ export function Editor({
   const insert = (kind: NewShapeKind) => {
     flushNudge();
     const shape = newShape(kind, docRef.current.slides[index]);
-    commit(insertOps(index, shape));
-    setSelection([shape.id]);
+    if (commit(insertOps(index, shape))) setSelection([shape.id]);
   };
 
   const reorder = (to: "front" | "back") => {
@@ -187,8 +184,8 @@ export function Editor({
 
   const remove = () => {
     flushNudge();
-    commit(deleteOps(docRef.current.slides[index], index, new Set(selection)));
-    setSelection([]);
+    const current = docRef.current.slides[index];
+    if (commit(deleteOps(current, index, new Set(selection)))) setSelection([]);
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
@@ -201,6 +198,7 @@ export function Editor({
     };
     if (event.key in arrows && selection.length > 0) {
       event.preventDefault();
+      if (!saver.state().accepting) return;
       const [dx, dy] = arrows[event.key];
       nudgeRef.current = {
         dx: nudgeRef.current.dx + dx,
@@ -215,6 +213,14 @@ export function Editor({
     ) {
       event.preventDefault();
       remove();
+    } else if (event.key === "Tab" && selection.length > 0) {
+      // With a selection, Tab picks the next shape, so the keyboard alone
+      // can reach every shape; without one, Tab leaves the canvas.
+      event.preventDefault();
+      const order = slide.shapes.map((shape) => shape.id);
+      const last = order.indexOf(selection[selection.length - 1]);
+      const step = event.shiftKey ? -1 : 1;
+      select([order[(last + step + order.length) % order.length]]);
     } else if (event.key === "Escape") {
       select([]);
     } else if (event.key === "a" && (event.metaKey || event.ctrlKey)) {
@@ -222,8 +228,6 @@ export function Editor({
       select(slide.shapes.map((shape) => shape.id));
     }
   };
-
-  useEffect(() => () => clearTimeout(nudgeTimer.current), []);
 
   const shown =
     nudge.dx || nudge.dy
@@ -266,15 +270,11 @@ export function Editor({
           />
           <Tool tip="刪除" icon={Trash2Icon} disabled={none} onClick={remove} />
         </div>
-        <p
-          aria-live="polite"
-          className={cn(
-            "ml-auto text-xs",
-            status.error ? "text-destructive" : "text-muted-foreground"
-          )}
-        >
-          {status.error ?? (status.saving ? "儲存中…" : "已儲存")}
-        </p>
+        <SaveStatus
+          refusal={refusal}
+          state={saving}
+          onRetry={() => saver.retry()}
+        />
       </div>
       <div className="grid gap-5 lg:grid-cols-[8rem_minmax(0,1fr)]">
         <ol className="order-2 flex gap-3 overflow-x-auto lg:order-1 lg:flex-col lg:overflow-visible">
@@ -315,11 +315,50 @@ export function Editor({
             onKeyDown={onKeyDown}
           />
           <p id="canvas-help" className="text-xs text-muted-foreground">
-            點選形狀來選取，Shift 加選，拖曳空白處框選。方向鍵移動，加 Shift
-            走得更遠。拖曳時按 Shift 鎖定方向，按 Alt 不對齊。
+            點選形狀來選取，Shift 加選，拖曳空白處框選，Tab
+            換選下一個。方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift
+            鎖定方向，按 Alt 不對齊。
           </p>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * Where saving stands. Problems are announced to screen readers; the routine
+ * "saving" and "saved" are not, so they do not speak after every edit.
+ */
+function SaveStatus({
+  refusal,
+  state,
+  onRetry,
+}: {
+  refusal: string | null;
+  state: SaverState;
+  onRetry: () => void;
+}) {
+  const problem = refusal ?? state.message;
+  return (
+    <div className="ml-auto flex items-center gap-3">
+      {problem ? (
+        <p role="alert" className="text-xs text-destructive">
+          {problem}
+        </p>
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          {state.phase === "reloading"
+            ? "載入最新版本…"
+            : state.pending > 0
+              ? "儲存中…"
+              : "已儲存"}
+        </p>
+      )}
+      {state.phase === "blocked" && (
+        <Button variant="ghost" onClick={onRetry}>
+          重新載入
+        </Button>
+      )}
     </div>
   );
 }

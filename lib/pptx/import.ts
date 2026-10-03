@@ -390,7 +390,21 @@ function readFill(
 const ARROWS = new Set(["triangle", "arrow", "stealth", "oval", "diamond"]);
 
 /** A connector end at a fixed point: where the preset's ends land, flipped and turned. */
-function freeEnds(box: Box, flipH: boolean, flipV: boolean) {
+type Fraction = { x: number; y: number };
+
+/**
+ * The free ends of a line in its box: corner to corner, or `along` two
+ * points given as fractions of the box (a freeform's one segment).
+ */
+function freeEnds(
+  box: Box,
+  flipH: boolean,
+  flipV: boolean,
+  along: [Fraction, Fraction] = [
+    { x: 0, y: 0 },
+    { x: 1, y: 1 },
+  ]
+) {
   const cx = box.x + box.w / 2;
   const cy = box.y + box.h / 2;
   const r = (box.rotation * Math.PI) / 180;
@@ -404,7 +418,34 @@ function freeEnds(box: Box, flipH: boolean, flipV: boolean) {
       y: coord(cy + x * Math.sin(r) + y * Math.cos(r)),
     };
   };
-  return { start: at(0, 0), end: at(box.w, box.h) };
+  const [from, to] = along;
+  return {
+    start: at(from.x * box.w, from.y * box.h),
+    end: at(to.x * box.w, to.y * box.h),
+  };
+}
+
+/**
+ * A freeform that is one straight segment (a moveTo and a lnTo), as two
+ * points in fractions of its box; null for any other freeform.
+ */
+function straightPath(spPr: El | undefined): [Fraction, Fraction] | null {
+  const paths = children(path(spPr, "a:custGeom", "a:pathLst"), "a:path");
+  if (paths.length !== 1) return null;
+  const [move, to, ...rest] = paths[0].children;
+  if (rest.length || move?.tag !== "a:moveTo" || to?.tag !== "a:lnTo") {
+    return null;
+  }
+  const w = num(paths[0], "w") ?? 0;
+  const h = num(paths[0], "h") ?? 0;
+  const at = (command: El): Fraction => {
+    const pt = child(command, "a:pt");
+    return {
+      x: w > 0 ? clamp((num(pt, "x") ?? 0) / w, 0, 1) : 0,
+      y: h > 0 ? clamp((num(pt, "y") ?? 0) / h, 0, 1) : 0,
+    };
+  };
+  return [at(move), at(to)];
 }
 
 type PendingLine = {
@@ -615,7 +656,8 @@ function readLine(
   ctx: Context,
   place: Place,
   lines: PendingLine[],
-  nv: string
+  nv: string,
+  along?: [Fraction, Fraction]
 ): void {
   const spPr = child(el, "p:spPr");
   const xfrm = child(spPr, "a:xfrm");
@@ -637,7 +679,8 @@ function readLine(
   const ends = freeEnds(
     box,
     xfrm?.attrs.flipH === "1",
-    xfrm?.attrs.flipV === "1"
+    xfrm?.attrs.flipV === "1",
+    along
   );
   const shape: Extract<Shape, { kind: "line" }> = {
     id: newId("ln"),
@@ -747,6 +790,12 @@ async function readSp(
 
   if (prst === "line" || prst === "straightConnector1") {
     readLine(el, ctx, place, lines, "p:nvSpPr");
+    return;
+  }
+  // A freeform drawn as one straight segment is a line, often with an arrow.
+  const segment = straightPath(spPr);
+  if (segment && !hasText(readText(child(el, "p:txBody"), ctx, {}))) {
+    readLine(el, ctx, place, lines, "p:nvSpPr", segment);
     return;
   }
 

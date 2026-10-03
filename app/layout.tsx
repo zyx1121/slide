@@ -1,30 +1,27 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+
+import { ThemeProvider } from "@/components/theme-provider";
+import { fontVariables } from "@/lib/fonts";
+
 import "./globals.css";
 
-// globals.css maps the Tailwind font-sans token to --font-sans.
-const geistSans = Geist({
-  variable: "--font-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
-
 export const metadata: Metadata = {
-  title: "slide",
+  title: { default: "slide", template: "%s · slide" },
   description: "在瀏覽器裡畫 WinLab 投影片，讓 agent 透過 MCP 幫你改。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
+    // Dark is rendered on the server, so the first paint and pages without
+    // JavaScript are dark too; next-themes takes over on the client.
     <html
-      lang="zh-Hant"
-      className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
+      lang="zh-TW"
+      className={`${fontVariables} dark antialiased`}
+      suppressHydrationWarning
     >
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body>
+        <ThemeProvider>{children}</ThemeProvider>
+      </body>
     </html>
   );
 }

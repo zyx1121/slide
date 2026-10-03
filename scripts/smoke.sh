@@ -1,7 +1,8 @@
 #!/bin/sh
 # Smoke test for a stack started with `docker compose up -d`: the migrate job
 # exits 0, the web service turns healthy, /api/health reaches Postgres, the
-# first migration is applied, and the home page renders.
+# first migration is applied, a signed-out visit goes to sign-in, and a page
+# renders dark first.
 #
 #   sh scripts/smoke.sh
 set -eu
@@ -31,7 +32,16 @@ applied=$(docker compose exec -T postgres psql -U slide -d slide -tAc \
 docker compose exec -T postgres psql -U slide -d slide -tAc \
 	"select count(*) from decks" >/dev/null || fail "the decks table is missing"
 
-curl -fsS "$web/" | grep -q "<title>slide</title>" ||
-	fail "the home page did not render"
+# Signed out, a page sends the visitor to sign-in on APP_URL, keeping the path.
+app=${APP_URL:-http://localhost:3000}
+location=$(curl -sS -o /dev/null -w '%{redirect_url}' "$web/decks/x?y=1")
+[ "$location" = "$app/auth/login?next=%2Fdecks%2Fx%3Fy%3D1" ] ||
+	fail "a signed-out visit was not sent to sign-in: $location"
+
+# A page renders in the shell, dark first.
+page=$(curl -fsS "$web/auth/error?reason=expired")
+echo "$page" | grep -q '登入逾時' || fail "the sign-in error page did not render"
+echo "$page" | grep -q '<html[^>]*class="[^"]*dark' ||
+	fail "the page is not dark first"
 
 echo "smoke: ok"

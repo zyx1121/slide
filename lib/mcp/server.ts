@@ -44,7 +44,7 @@ const SlideRef = z
   .describe("The slide: its number from 1, or its id");
 
 const SHAPES_HELP =
-  "Shapes follow the deck document (see get_deck): rect, roundRect (corner 0 to 0.5), ellipse and text have x, y, w, h (px on 1920 x 1080), optional rotation, fill (#rrggbb or null), stroke ({ color, width, dash }) and text ({ paragraphs: [{ runs: [{ text, size, color, bold, italic, underline }], align, bullet, level }], anchor }); text needs text. line has route (straight, elbow, curved), start and end ({ x, y } or { shape, site } with site 0 top, 1 left, 2 bottom, 3 right), stroke, startArrow and endArrow. Sizes are px: 18 pt is 36.";
+  "Shapes follow the deck document (see get_deck): rect, roundRect (corner 0 to 0.5), ellipse, preset (geometry: triangle, rtTriangle, diamond, parallelogram, trapezoid, homePlate, chevron, rightArrow, leftArrow, upArrow, downArrow, leftRightArrow, upDownArrow, leftBracket or rightBracket) and text have x, y, w, h (px on 1920 x 1080), optional rotation, fill (#rrggbb or null), stroke ({ color, width, dash }) and text ({ paragraphs: [{ runs: [{ text, size, color, bold, italic, underline }], align, bullet, level }], anchor }); text needs text. line has route (straight, elbow, curved), start and end ({ x, y } or { shape, site } with site 0 top, 1 left, 2 bottom, 3 right), stroke, startArrow and endArrow. Sizes are px: 18 pt is 36.";
 
 const DeckId = z
   .string()
@@ -56,7 +56,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide.winlab.tw", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in WinLab member. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. Use list_decks, then get_deck for the document, render_slide to see a slide, and check_deck for the lab's slide rules. Edits (add_shapes, update_shapes, delete_shapes, add_slide, delete_slide, move_slide) address shapes and slides by id and arrive as suggestions the member accepts or rejects in the editor; render_slide shows the deck as it is, without pending suggestions.",
+        "Slide decks of the signed-in WinLab member. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. Use list_decks, then get_deck for the document, render_slide to see a slide, and check_deck for the lab's slide rules. Edits (add_shapes, update_shapes, delete_shapes, add_slide, delete_slide, move_slide) address shapes and slides by id and arrive as suggestions the member accepts or rejects in the editor; render_slide shows the deck as it is, without pending suggestions.",
     }
   );
   const { db, sub } = context;

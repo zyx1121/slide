@@ -72,6 +72,18 @@ function richDeck(): DeckDocument {
             },
           },
           {
+            id: "sh_arrow",
+            kind: "preset",
+            geometry: "rightArrow",
+            x: 500,
+            y: 700,
+            w: 300,
+            h: 120,
+            fill: "#3297fc",
+            stroke: null,
+            text: { paragraphs: [{ runs: [{ text: "next", size: 36 }] }] },
+          },
+          {
             id: "im_pic",
             kind: "image",
             x: 100,

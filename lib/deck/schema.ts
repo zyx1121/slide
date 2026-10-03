@@ -99,6 +99,36 @@ export const Ellipse = z.strictObject({
   text: TextBody.optional(),
 });
 
+/** PowerPoint presets drawn at their default adjustments. */
+export const PresetGeometry = z.enum([
+  "triangle",
+  "rtTriangle",
+  "diamond",
+  "parallelogram",
+  "trapezoid",
+  "homePlate",
+  "chevron",
+  "rightArrow",
+  "leftArrow",
+  "upArrow",
+  "downArrow",
+  "leftRightArrow",
+  "upDownArrow",
+  "leftBracket",
+  "rightBracket",
+]);
+export type PresetGeometry = z.infer<typeof PresetGeometry>;
+
+/** Any other preset shape, by its DrawingML name. */
+export const Preset = z.strictObject({
+  id: Id,
+  kind: z.literal("preset"),
+  geometry: PresetGeometry,
+  ...box,
+  ...paint,
+  text: TextBody.optional(),
+});
+
 export const TextBox = z.strictObject({
   id: Id,
   kind: z.literal("text"),
@@ -171,6 +201,7 @@ export const Shape = z.discriminatedUnion("kind", [
   Rect,
   RoundRect,
   Ellipse,
+  Preset,
   TextBox,
   Image,
   Line,

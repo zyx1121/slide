@@ -10,6 +10,7 @@ import {
   type TextBody,
 } from "../deck/schema";
 import { type Point, routeConnector } from "./connector";
+import { presetPath } from "./preset";
 import { DEFAULT_TEXT, SLIDE_NUMBER, TITLE } from "./template";
 import {
   DEFAULT_INSET,
@@ -146,7 +147,7 @@ function textSvg(body: TextBody, box: Box, defaults: TextDefaults): string {
 /** Shapes that hold text: everything but connectors and pictures. */
 export type TextShape = Extract<
   Shape,
-  { kind: "rect" | "roundRect" | "ellipse" | "text" }
+  { kind: "rect" | "roundRect" | "ellipse" | "preset" | "text" }
 >;
 
 export const holdsText = (shape: Shape): shape is TextShape =>
@@ -320,6 +321,15 @@ function shapeSvg(
       body =
         `<ellipse cx="${num(box.x + box.w / 2)}" cy="${num(box.y + box.h / 2)}" rx="${num(box.w / 2)}" ry="${num(box.h / 2)}" ${fill} ${strokeAttrs(shape.stroke)}/>` +
         shapeText(shape, box);
+      break;
+    }
+    case "preset": {
+      const outline = presetPath(shape.geometry, box);
+      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
+      body = outline.stroke
+        ? `<path d="${outline.fill}" ${fill} stroke="none"/><path d="${outline.stroke}" fill="none" ${strokeAttrs(shape.stroke)}/>`
+        : `<path d="${outline.fill}" ${fill} ${strokeAttrs(shape.stroke)}/>`;
+      body += shapeText(shape, box);
       break;
     }
     case "text": {

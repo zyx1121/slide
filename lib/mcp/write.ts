@@ -28,6 +28,7 @@ const PREFIX: Record<Shape["kind"], string> = {
   rect: "sh",
   roundRect: "sh",
   ellipse: "sh",
+  preset: "sh",
   text: "tx",
   image: "im",
   line: "ln",

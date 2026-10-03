@@ -299,14 +299,6 @@ html:has([data-stage]) {
 }
 
 /*
- * Slides scroll under the top corners there. A plain blur over a white slide
- * would leave the corner links white on white, so the fade darkens too.
- */
-html:has([data-stage]) [data-slot="corner-edge"] {
-  background-color: color-mix(in oklch, var(--background) 90%, transparent);
-}
-
-/*
  * Floating surfaces that open over a slide keep the theme's glass, with the
  * popover color laid under the blur at 90%. Plain glass over a white slide
  * leaves white text on white; at 90% even muted 14 px text keeps 4.5:1.

@@ -182,7 +182,8 @@ export function Canvas({
     () =>
       renderSlideSvg(preview, {
         slideNumber: number,
-        background: BACKGROUND_PATH,
+        background: null,
+        bare: true,
         assetHref: () => null,
       }),
     [preview, number]
@@ -395,10 +396,16 @@ export function Canvas({
       aria-label={`第 ${number} 頁`}
       aria-describedby="canvas-help"
       className={cn(
-        "relative aspect-video w-full touch-none overflow-hidden rounded-lg border border-border bg-white outline-offset-4 select-none focus-visible:outline-2",
+        "relative aspect-video w-full touch-none overflow-hidden border border-border bg-white bg-size-[100%_100%] outline-offset-4 select-none focus-visible:outline-2",
         className
       )}
-      style={{ cursor: drag?.kind === "move" ? "move" : cursor }}
+      style={{
+        cursor: drag?.kind === "move" ? "move" : cursor,
+        // The template background lives on the frame, not in the slide's
+        // SVG: rebuilt with every edit, the 4K image was decoded again each
+        // time, which Safari showed as a white flash.
+        backgroundImage: `url(${BACKGROUND_PATH})`,
+      }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={onPointerUp}

@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   CircleHelpIcon,
   CopyPlusIcon,
+  LayoutGridIcon,
   Redo2Icon,
   SendToBackIcon,
   Trash2Icon,
@@ -29,7 +30,7 @@ import {
   TextTools,
 } from "@/components/editor/dock-tools";
 import { SlideView } from "@/components/slide-view";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import {
   Popover,
   PopoverContent,
@@ -42,6 +43,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { compare } from "fast-json-patch";
+import Link from "next/link";
 
 import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
@@ -319,6 +321,45 @@ export function Editor({
     return () => observer.disconnect();
   }, [doc.slides.length]);
 
+  // The zyx mark turns black over a slide and back over the page, as on the
+  // Made pages, since no fade separates it from what scrolls beneath.
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    let frame = 0;
+    const update = () => {
+      const over = slideItems.current.some((item) => {
+        const canvas = item?.querySelector("[role=application]");
+        const rect = canvas?.getBoundingClientRect();
+        // The mark sits 20 px in from the corner and is 20 px tall.
+        return (
+          rect &&
+          rect.left <= 32 &&
+          rect.right >= 32 &&
+          rect.top <= 30 &&
+          rect.bottom >= 30
+        );
+      });
+      document.documentElement.style.setProperty(
+        "--stage-logo-ink",
+        over ? "var(--color-black)" : ""
+      );
+    };
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    };
+    update();
+    root.addEventListener("scroll", schedule, { passive: true });
+    window.addEventListener("resize", schedule);
+    return () => {
+      cancelAnimationFrame(frame);
+      root.removeEventListener("scroll", schedule);
+      window.removeEventListener("resize", schedule);
+      document.documentElement.style.removeProperty("--stage-logo-ink");
+    };
+  }, [doc.slides.length]);
+
   /** Scrolls a slide into view, and focuses its canvas when asked. */
   const goTo = (target: number, focus = false) => {
     if (target < 0 || target >= doc.slides.length) return;
@@ -561,6 +602,8 @@ export function Editor({
           data-surface="tinted"
           className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border p-1"
         >
+          <DockLink href="/" tip="所有簡報" icon={LayoutGridIcon} />
+          <Separator orientation="vertical" className="mx-1 my-2" />
           <Tool
             tip="復原"
             icon={Undo2Icon}
@@ -768,6 +811,33 @@ function PageList({
         </ol>
       </PopoverContent>
     </Popover>
+  );
+}
+
+function DockLink({
+  href,
+  tip,
+  icon: Icon,
+}: {
+  href: string;
+  tip: string;
+  icon: ComponentType;
+}) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            href={href}
+            aria-label={tip}
+            className={buttonVariants({ variant: "ghost", size: "icon" })}
+          />
+        }
+      >
+        <Icon />
+      </TooltipTrigger>
+      <TooltipContent>{tip}</TooltipContent>
+    </Tooltip>
   );
 }
 

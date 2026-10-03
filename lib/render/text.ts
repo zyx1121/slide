@@ -7,6 +7,7 @@ import {
   ASCENT,
   charWidth,
   fontOf,
+  isCurlyQuote,
   isWide,
   LINE_HEIGHT,
   measure,
@@ -118,7 +119,9 @@ function styleKey(style: RunStyle): string {
   return `${style.size}|${style.color}|${style.bold}|${style.italic}|${style.underline}|${style.strike}`;
 }
 
-const breaksLikeCjk = (cp: number) => isWide(cp) || fontOf(cp) === "cjk";
+// Curly quotes are drawn as CJK but break as punctuation: "don’t" stays whole.
+const breaksLikeCjk = (cp: number) =>
+  isWide(cp) || (fontOf(cp) === "cjk" && !isCurlyQuote(cp));
 
 function canBreakAfter(chars: Char[], i: number): boolean {
   const here = chars[i];

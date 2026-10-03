@@ -62,10 +62,19 @@ export function isWide(cp: number): boolean {
 }
 
 /**
+ * Curly quotes. PowerPoint draws them with the East Asian font, one em wide,
+ * in text marked Chinese, which is all text here (checked against its PDF).
+ */
+export const isCurlyQuote = (cp: number) =>
+  cp === 0x2018 || cp === 0x2019 || cp === 0x201c || cp === 0x201d;
+
+/**
  * The font that draws a character: Carlito when it has the glyph, otherwise
- * the CJK font (Noto Sans TC, or a tofu box of its width).
+ * the CJK font (Noto Sans TC, or a tofu box of its width). Curly quotes are
+ * the CJK font's.
  */
 export function fontOf(cp: number): "latin" | "cjk" | "emoji" {
+  if (isCurlyQuote(cp)) return "cjk";
   if (REGULAR[cp] !== undefined) return "latin";
   // Symbols Noto Sans TC has (★, ※) stay in it; the rest are emoji.
   if (NOTO[cp] === undefined && isEmoji(cp)) return "emoji";
@@ -74,6 +83,7 @@ export function fontOf(cp: number): "latin" | "cjk" | "emoji" {
 
 /** The advance width of one character, in px. */
 export function charWidth(cp: number, style: FontStyle): number {
+  if (isCurlyQuote(cp)) return style.size;
   if (REGULAR[cp] !== undefined) {
     const units = (metrics.widths[variant(style)] as Table)[cp] ?? REGULAR[cp]!;
     return (units / UNITS) * style.size;

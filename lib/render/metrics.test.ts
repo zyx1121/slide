@@ -29,6 +29,16 @@ describe("metrics", () => {
     expect(measure("語音辨識", regular)).toBe(192);
   });
 
+  it("draws curly quotes one em wide in the CJK font, as PowerPoint does", () => {
+    for (const ch of ["‘", "’", "“", "”"]) {
+      expect(fontOf(ch.codePointAt(0)!)).toBe("cjk");
+      expect(charWidth(ch.codePointAt(0)!, regular)).toBe(48);
+    }
+    // Straight quotes stay Carlito's.
+    expect(fontOf(0x22)).toBe("latin");
+    expect(measure("他說“你好”", regular)).toBe(48 * 6);
+  });
+
   it("measures symbols with the font that draws them", () => {
     // ① is in Carlito (2720 of 2048 units), ※ only in Noto Sans TC (1 em).
     expect(fontOf(0x2460)).toBe("latin");

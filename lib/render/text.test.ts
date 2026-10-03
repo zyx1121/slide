@@ -274,6 +274,29 @@ describe("layoutText", () => {
     expect(lineTexts(layout)).toEqual(["line one", "line two", "line three"]);
   });
 
+  it("draws curly quotes in the CJK font but breaks around them as punctuation", () => {
+    const layout = layoutText(
+      { paragraphs: [{ runs: [{ text: "don’t say “hi”" }] }] },
+      { w: 2000, h: 500 },
+      defaults
+    );
+    expect(layout.lines[0].segments.map((s) => [s.text, s.script])).toEqual([
+      ["don", "latin"],
+      ["’", "cjk"],
+      ["t say ", "latin"],
+      ["“", "cjk"],
+      ["hi", "latin"],
+      ["”", "cjk"],
+    ]);
+    // Too narrow for the whole word: it breaks by character, not after ’.
+    const narrow = layoutText(
+      { paragraphs: [{ runs: [{ text: "don’t stop" }] }] },
+      { w: measure("don’t s", style), h: 500 },
+      defaults
+    );
+    expect(lineTexts(narrow)).toEqual(["don’t", "stop"]);
+  });
+
   it("splits symbols by the font that draws them", () => {
     const layout = layoutText(
       { paragraphs: [{ runs: [{ text: "①※★✅" }] }] },

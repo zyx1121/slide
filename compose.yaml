@@ -48,6 +48,9 @@ services:
     <<: *slide
     command: web
     environment: *database
+    volumes:
+      # Uploaded images, once per sha256 (ASSETS_DIR in the image).
+      - assets:/data/assets
     ports:
       - "${SLIDE_BIND:-127.0.0.1}:${SLIDE_PORT:-3000}:3000"
     healthcheck:
@@ -69,3 +72,4 @@ services:
 
 volumes:
   postgres:
+  assets:

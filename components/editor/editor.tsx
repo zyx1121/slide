@@ -6,6 +6,7 @@ import {
   ChevronRightIcon,
   CircleHelpIcon,
   CopyPlusIcon,
+  ImageIcon,
   LayoutGridIcon,
   TypeIcon,
   Redo2Icon,
@@ -81,6 +82,7 @@ import {
 } from "@/lib/editor/ops";
 import {
   movedSlide,
+  newImage,
   newShape,
   type NewShapeKind,
   shareSlides,
@@ -116,6 +118,7 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText } from "@/lib/render/svg";
+import { uploadImage } from "@/lib/editor/upload";
 import { cn } from "@/lib/utils";
 
 /** What became of an edit: applied, a no-op, paused while saving is, or refused. */
@@ -129,6 +132,7 @@ const HELP = [
   "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個。",
   "按兩下形狀或標題來打字，選取形狀後按 Enter 也可以；Esc 結束。",
   "連接線：從形狀拖到另一個形狀，兩端會黏在最近的連接點；拖選取線條的端點可以改接。",
+  "圖片：用插入圖片、貼上或直接拖進投影片；拖角落會維持比例，按住 Shift 可以自由變形。",
   "方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift 鎖定方向，按 Alt 不對齊。",
   "⌘Z 復原，⌘⇧Z 重做，⌘D 再製，⌘C、⌘X、⌘V 複製、剪下、貼上（Windows 用 Ctrl）。",
   "Page Up、Page Down 換頁。",
@@ -456,6 +460,43 @@ export function Editor({
     }
   };
 
+  // Images on their way to the server, for the status in the dock.
+  const [uploads, setUploads] = useState(0);
+  const filePicker = useRef<HTMLInputElement>(null);
+
+  /**
+   * Uploads image files and places each on a slide, centered on `at` (the
+   * middle of the slide by default) and stepped down for the next one.
+   * Files that are not images are left out without a word; a refused
+   * image says why.
+   */
+  const addImages = async (target: number, files: File[], at?: Point) => {
+    const images = files.filter((file) => file.type.startsWith("image/"));
+    if (images.length === 0) return;
+    endEdit();
+    setUploads((n) => n + images.length);
+    const placed: string[] = [];
+    let k = 0;
+    for (const file of images) {
+      const result = await uploadImage(file);
+      setUploads((n) => n - 1);
+      if (!result.ok) {
+        setRefusal(result.message);
+        continue;
+      }
+      const center = at ?? { x: 960, y: 540 };
+      const shape = newImage(result.asset, {
+        x: center.x + 40 * k,
+        y: center.y + 40 * k,
+      });
+      k++;
+      if (commit(insertOps(target, shape), target) === "applied") {
+        placed.push(shape.id);
+      }
+    }
+    if (placed.length > 0) select(target, placed);
+  };
+
   /** Adds a connector drawn on a slide and selects it. */
   const drawLine = (at: number, start: End, end: End) => {
     setTool(null);
@@ -723,6 +764,14 @@ export function Editor({
     const clip = parseClip(
       data?.getData(CLIP_TYPE) || data?.getData("text/plain")
     );
+    // A picture copied from elsewhere (a screenshot, an image in a page)
+    // is uploaded and placed.
+    const files = [...(data?.files ?? [])];
+    if (!clip && files.some((file) => file.type.startsWith("image/"))) {
+      event.preventDefault();
+      void addImages(target, files);
+      return;
+    }
     if (!clip) return;
     event.preventDefault();
     place(target, clip);
@@ -866,9 +915,11 @@ export function Editor({
   const status =
     saving.phase === "reloading"
       ? "載入最新版本…"
-      : saving.pending > 0
-        ? "儲存中…"
-        : "已儲存";
+      : uploads > 0
+        ? "上傳圖片中…"
+        : saving.pending > 0
+          ? "儲存中…"
+          : "已儲存";
 
   return (
     <TextFocus.Provider value={textarea}>
@@ -913,11 +964,26 @@ export function Editor({
                   tool={tool}
                   onDrawLine={(start, end) => drawLine(i, start, end)}
                   onLineEnd={(id, side, end) => moveLineEnd(i, id, side, end)}
+                  onDropFiles={(files, point) =>
+                    void addImages(i, files, point)
+                  }
                 />
               </li>
             ))}
           </ol>
         </div>
+        <input
+          ref={filePicker}
+          type="file"
+          accept="image/png,image/jpeg,image/gif"
+          multiple
+          hidden
+          onChange={(event) => {
+            const files = [...(event.target.files ?? [])];
+            event.target.value = "";
+            void addImages(visible, files);
+          }}
+        />
         <p id="canvas-help" className="sr-only">
           {HELP.join(" ")}
         </p>
@@ -990,6 +1056,11 @@ export function Editor({
                     tip="插入文字方塊"
                     icon={TypeIcon}
                     onClick={() => insert("text")}
+                  />
+                  <Tool
+                    tip="插入圖片"
+                    icon={ImageIcon}
+                    onClick={() => filePicker.current?.click()}
                   />
                   <Tool
                     tip="畫連接線"

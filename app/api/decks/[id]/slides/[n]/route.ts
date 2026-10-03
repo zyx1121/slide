@@ -1,3 +1,4 @@
+import { slideAssetUris } from "@/lib/assets/store";
 import { getSession } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { getDeck } from "@/lib/deck/store";
@@ -22,11 +23,11 @@ export async function GET(
   if (!deck || !slide) {
     return Response.json({ error: "no such slide" }, { status: 404 });
   }
+  const assets = await slideAssetUris(sql, user.sub, slide);
   const svg = renderSlideSvg(slide, {
     slideNumber: index + 1,
     background: backgroundDataUri(),
-    // Image assets arrive with #11; until then pictures render as placeholders.
-    assetHref: () => null,
+    assetHref: (sha256) => assets.get(sha256) ?? null,
   });
   return new Response(new Uint8Array(renderPng(svg)), {
     headers: {

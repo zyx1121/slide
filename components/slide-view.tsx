@@ -1,4 +1,5 @@
 import type { Slide } from "@/lib/deck/schema";
+import { assetUrl } from "@/lib/editor/upload";
 import { renderSlideSvg } from "@/lib/render/svg";
 import { BACKGROUND_PATH } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
@@ -22,7 +23,7 @@ export function SlideView({
   const svg = renderSlideSvg(slide, {
     slideNumber: number,
     background: BACKGROUND_PATH,
-    assetHref: () => null,
+    assetHref: assetUrl,
   });
   return (
     <div

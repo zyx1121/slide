@@ -101,6 +101,32 @@ export function newShape(kind: NewShapeKind, slide: Slide): Shape {
   return { ...base, kind };
 }
 
+/** The largest share of the slide a new picture takes: 80% of each side. */
+const IMAGE_FIT = 0.8;
+/** Canvas px per image px: 144 canvas px per inch over 96 dpi. */
+const IMAGE_SCALE = 1.5;
+
+/**
+ * A new picture at its natural size, shrunk to fit 80% of the slide, with
+ * its aspect ratio kept, centered on `at` (the slide's center by default)
+ * and kept on the slide.
+ */
+export function newImage(
+  asset: { sha256: string; width: number; height: number },
+  at: { x: number; y: number } = { x: 960, y: 540 }
+): Shape {
+  const k = Math.min(
+    IMAGE_SCALE,
+    (1920 * IMAGE_FIT) / asset.width,
+    (1080 * IMAGE_FIT) / asset.height
+  );
+  const w = tidy(asset.width * k);
+  const h = tidy(asset.height * k);
+  const x = tidy(Math.max(0, Math.min(1920 - w, at.x - w / 2)));
+  const y = tidy(Math.max(0, Math.min(1080 - h, at.y - h / 2)));
+  return { id: newId("im"), kind: "image", x, y, w, h, asset: asset.sha256 };
+}
+
 /**
  * The new document with every slide that did not change kept as the same
  * object, so the canvases of untouched slides skip drawing them again.

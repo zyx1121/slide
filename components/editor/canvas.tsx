@@ -40,6 +40,7 @@ import {
   withLineEnd,
 } from "@/lib/editor/connect";
 import { movedSlide, resizedSlide } from "@/lib/editor/preview";
+import { assetUrl } from "@/lib/editor/upload";
 import { ALL_EDGES, type Edges, type Guide, snapRect } from "@/lib/editor/snap";
 import { caretAt, paragraphAt, type Pos, wordAt } from "@/lib/editor/text-edit";
 import {
@@ -163,6 +164,7 @@ export function Canvas({
   tool,
   onDrawLine,
   onLineEnd,
+  onDropFiles,
   className,
 }: {
   slide: Slide;
@@ -188,6 +190,8 @@ export function Canvas({
   onDrawLine: (start: End, end: End) => void;
   /** One end of a connector dragged to a new place or site. */
   onLineEnd: (id: string, side: Side, end: End) => void;
+  /** Files dropped on the slide, at a canvas point. */
+  onDropFiles: (files: File[], at: Point) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -284,7 +288,7 @@ export function Canvas({
         slideNumber: number,
         background: null,
         bare: true,
-        assetHref: () => null,
+        assetHref: assetUrl,
       }),
     [preview, number]
   );
@@ -548,10 +552,17 @@ export function Canvas({
       return;
     }
     const delta = { x: p.x - drag.origin.x, y: p.y - drag.origin.y };
-    let next = resizeBox(drag.start, drag.handle, delta, event.shiftKey);
+    // A picture keeps its proportions from a corner unless Shift is held,
+    // as in PowerPoint; other shapes keep them only with Shift.
+    const corner = drag.handle.length === 2;
+    const keep =
+      shapes.get(drag.id)?.kind === "image" && corner
+        ? !event.shiftKey
+        : event.shiftKey;
+    let next = resizeBox(drag.start, drag.handle, delta, keep);
     let guides: Guide[] = [];
     // Smart guides for an unturned box resized freely: snap the dragged edges.
-    if (!event.altKey && !event.shiftKey && !drag.start.rotation) {
+    if (!event.altKey && !keep && !drag.start.rotation) {
       const { handle } = drag;
       const edges = {
         x: handle.includes("e") ? [1] : handle.includes("w") ? [0] : [],
@@ -680,6 +691,15 @@ export function Canvas({
       onPointerCancel={() => setDrag(null)}
       onPointerLeave={() => setHover(null)}
       onDoubleClick={onDoubleClick}
+      onDragOver={(event) => {
+        if (event.dataTransfer.types.includes("Files")) event.preventDefault();
+      }}
+      onDrop={(event) => {
+        const files = [...event.dataTransfer.files];
+        if (files.length === 0) return;
+        event.preventDefault();
+        onDropFiles(files, toCanvas(event));
+      }}
       onKeyDown={onKeyDown}
     >
       <div

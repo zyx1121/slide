@@ -4,7 +4,7 @@ import { applyOperations } from "../deck/patch";
 import { sampleDocument } from "../deck/sample";
 import type { Shape } from "../deck/schema";
 import { boxOps, deleteOps, insertOps, moveOps, reorderOps } from "./ops";
-import { movedSlide, newShape, resizedSlide } from "./preview";
+import { movedSlide, newShape, resizedSlide, shareSlides } from "./preview";
 
 const doc = sampleDocument();
 const slide = doc.slides[0];
@@ -158,5 +158,22 @@ describe("previews", () => {
     expect(second).toMatchObject({ x: 760, y: 480 });
     expect(second.id).not.toBe(first.id);
     expect(ids(apply(insertOps(0, second)).shapes).at(-1)).toBe(second.id);
+  });
+});
+
+describe("shareSlides", () => {
+  it("keeps untouched slides as the same objects", () => {
+    const two = {
+      ...doc,
+      slides: [...doc.slides, { id: "sl_second", title: "Two", shapes: [] }],
+    };
+    const edited = applyOperations(
+      two,
+      moveOps(two.slides[0], 0, new Set(["sh_asr"]), 5, 0)
+    ).document;
+    const shared = shareSlides(two, edited);
+    expect(shared.slides[1]).toBe(two.slides[1]);
+    expect(shared.slides[0]).not.toBe(two.slides[0]);
+    expect(shared).toEqual(edited);
   });
 });

@@ -1,12 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
-import { BottomCorners, LegalLinks, TopCorners } from "@/components/corners";
+import { TopCorners } from "@/components/corners";
 
 /**
  * The shell for a page whose working surface fills the viewport, as Plump's
- * canvas does: the four corners, without the scroll fade a column page
- * needs, over the surface. Column pages use TaskShell instead.
+ * canvas does: the zyx mark and the page's actions in the top corners, over
+ * the surface, which scrolls under a fade. The owner keeps the bottom
+ * corners off this page. Column pages use TaskShell instead.
  */
 export function StageShell({
   title,
@@ -27,6 +28,7 @@ export function StageShell({
         跳至主要內容
       </a>
       <TopCorners
+        fade
         nav={
           actions && (
             <nav
@@ -47,17 +49,6 @@ export function StageShell({
         <h1 className="sr-only">{title}</h1>
         {children}
       </main>
-      <BottomCorners
-        links={
-          <LegalLinks
-            labels={{ privacy: "隱私", terms: "條款" }}
-            tips={{
-              privacy: "zyx.tw 各站的資料與紀錄方式",
-              terms: "zyx.tw 各站的使用條款",
-            }}
-          />
-        }
-      />
     </>
   );
 }

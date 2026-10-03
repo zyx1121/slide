@@ -64,12 +64,20 @@ import {
   moveOps,
   reorderOps,
 } from "@/lib/editor/ops";
-import { movedSlide, newShape, type NewShapeKind } from "@/lib/editor/preview";
+import {
+  movedSlide,
+  newShape,
+  type NewShapeKind,
+  shareSlides,
+} from "@/lib/editor/preview";
 import { createSaver, type SaverState } from "@/lib/editor/saver";
 import { cn } from "@/lib/utils";
 
 /** What became of an edit: applied, a no-op, paused while saving is, or refused. */
 type Commit = "applied" | "unchanged" | "paused" | "refused";
+
+/** The selection of every slide but the one being edited. */
+const NONE: string[] = [];
 
 /** The keyboard and mouse help, shown from the dock and read with the canvas. */
 const HELP = [
@@ -137,8 +145,14 @@ export function Editor({
     historyRef.current = next;
     setHistoryState(next);
   };
+  // The slide holding the selection, which keyboard and arrange tools act
+  // on, and the slide most in view, which the page number shows and inserts
+  // go to.
   const [slideIndex, setSlideIndex] = useState(0);
+  const [visibleIndex, setVisibleIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
+  const scroller = useRef<HTMLDivElement>(null);
+  const slideItems = useRef<(HTMLLIElement | null)[]>([]);
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
   const nudgeRef = useRef(nudge);
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
@@ -157,6 +171,7 @@ export function Editor({
     docRef.current = fresh;
     setDoc(fresh);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
+    setVisibleIndex((i) => Math.min(i, fresh.slides.length - 1));
     setSelection([]);
     clearTimeout(nudgeTimer.current);
     nudgeRef.current = { dx: 0, dy: 0 };
@@ -166,6 +181,7 @@ export function Editor({
 
   const index = Math.min(slideIndex, doc.slides.length - 1);
   const slide = doc.slides[index];
+  const visible = Math.min(visibleIndex, doc.slides.length - 1);
 
   /**
    * Applies an edit here and queues it for saving. Each patch is guarded by
@@ -176,7 +192,7 @@ export function Editor({
    * unguarded; they are guarded again against the document they meet.
    */
   const commit = useCallback(
-    (ops: Operation[], recordStep = true): Commit => {
+    (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
@@ -192,22 +208,23 @@ export function Editor({
         setRefusal("這個修改無法套用，沒有存到。");
         return "refused";
       }
-      docRef.current = result.document;
-      setDoc(result.document);
+      const next = shareSlides(docRef.current, result.document);
+      docRef.current = next;
+      setDoc(next);
       setRefusal(null);
       if (recordStep) {
-        const next = record(historyRef.current, {
+        const step = record(historyRef.current, {
           ops,
           inverse: result.inverse,
-          slide: index,
+          slide: slideOf,
         });
-        historyRef.current = next;
-        setHistoryState(next);
+        historyRef.current = step;
+        setHistoryState(step);
       }
       saver.save(result.operations);
       return "applied";
     },
-    [saver, index]
+    [saver]
   );
 
   /** Saves gathered arrow-key nudges as one edit. */
@@ -218,7 +235,7 @@ export function Editor({
     nudgeRef.current = { dx: 0, dy: 0 };
     setNudge(nudgeRef.current);
     const current = docRef.current.slides[index];
-    commit(moveOps(current, index, new Set(selection), dx, dy));
+    commit(moveOps(current, index, new Set(selection), dx, dy), index);
   }, [commit, index, selection]);
 
   // Nudges still gathering are saved when the editor closes, and leaving the
@@ -236,39 +253,73 @@ export function Editor({
     return () => window.removeEventListener("beforeunload", warn);
   }, [unsaved]);
 
-  const select = (ids: string[]) => {
+  /** Selects shapes on a slide, which becomes the one being edited. */
+  const select = (target: number, ids: string[]) => {
     flushNudge();
+    setSlideIndex(target);
     setSelection(ids);
   };
 
+  /** Inserts on the slide in view and selects the new shape. */
   const insert = (kind: NewShapeKind) => {
     flushNudge();
-    const shape = newShape(kind, docRef.current.slides[index]);
-    if (commit(insertOps(index, shape)) === "applied") {
-      setSelection([shape.id]);
+    const shape = newShape(kind, docRef.current.slides[visible]);
+    if (commit(insertOps(visible, shape), visible) === "applied") {
+      select(visible, [shape.id]);
     }
   };
 
   const reorder = (to: "front" | "back") => {
     flushNudge();
-    commit(
-      reorderOps(docRef.current.slides[index], index, new Set(selection), to)
-    );
+    const current = docRef.current.slides[index];
+    commit(reorderOps(current, index, new Set(selection), to), index);
   };
 
   const remove = () => {
     flushNudge();
     const current = docRef.current.slides[index];
-    if (commit(deleteOps(current, index, new Set(selection))) === "applied") {
-      setSelection([]);
-    }
+    const ops = deleteOps(current, index, new Set(selection));
+    if (commit(ops, index) === "applied") setSelection([]);
   };
 
-  const goTo = (target: number) => {
-    if (target < 0 || target >= doc.slides.length || target === index) return;
-    flushNudge();
-    setSlideIndex(target);
-    setSelection([]);
+  // The page number follows the slide most in view.
+  useEffect(() => {
+    const root = scroller.current;
+    if (!root) return;
+    const ratios = new Map<number, number>();
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          const at = Number((entry.target as HTMLElement).dataset.index);
+          ratios.set(at, entry.intersectionRatio);
+        }
+        let best = 0;
+        for (const [at, ratio] of ratios) {
+          if (ratio > (ratios.get(best) ?? -1)) best = at;
+        }
+        setVisibleIndex(best);
+      },
+      { root, threshold: [0, 0.25, 0.5, 0.75, 1] }
+    );
+    for (const item of slideItems.current) if (item) observer.observe(item);
+    return () => observer.disconnect();
+  }, [doc.slides.length]);
+
+  /** Scrolls a slide into view, and focuses its canvas when asked. */
+  const goTo = (target: number, focus = false) => {
+    if (target < 0 || target >= doc.slides.length) return;
+    const item = slideItems.current[target];
+    if (!item) return;
+    const still = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    item.scrollIntoView({
+      behavior: still ? "auto" : "smooth",
+      block: "center",
+    });
+    if (focus) {
+      item.querySelector<HTMLElement>("[role=application]")?.focus({
+        preventScroll: true,
+      });
+    }
   };
 
   /** Undoes or redoes one edit, on the slide it was made on. */
@@ -276,7 +327,7 @@ export function Editor({
     flushNudge();
     const move = (direction === "undo" ? undo : redo)(historyRef.current);
     if (!move) return;
-    const outcome = commit(move.ops, false);
+    const outcome = commit(move.ops, move.slide, false);
     if (outcome === "paused") return;
     if (outcome === "refused") {
       // Steps before this one were made on top of it; none can be undone
@@ -288,24 +339,30 @@ export function Editor({
     // A step that changes nothing any more is passed over.
     setHistory(move.history);
     setSlideIndex(move.slide);
+    goTo(move.slide);
     const kept = new Set(
       docRef.current.slides[move.slide]?.shapes.map((shape) => shape.id)
     );
     setSelection((ids) => ids.filter((id) => kept.has(id)));
   };
 
-  /** Adds a clip's shapes to the current slide and selects them. */
-  const place = (clip: Clip) => {
-    const target = docRef.current.slides[index];
-    const shapes = pasteShapes(clip, pasteOffset(target, clip));
-    const ops = shapes.flatMap((shape) => insertOps(index, shape));
-    if (commit(ops) === "applied") {
-      setSelection(shapes.map((shape) => shape.id));
+  /** Adds a clip's shapes to a slide and selects them. */
+  const place = (target: number, clip: Clip) => {
+    const onto = docRef.current.slides[target];
+    const shapes = pasteShapes(clip, pasteOffset(onto, clip));
+    const ops = shapes.flatMap((shape) => insertOps(target, shape));
+    if (commit(ops, target) === "applied") {
+      select(
+        target,
+        shapes.map((shape) => shape.id)
+      );
     }
   };
 
-  const copy = (event: ClipboardEvent) => {
+  /** Copies the selection, when it is on the slide whose canvas has focus. */
+  const copy = (event: ClipboardEvent, from: number) => {
     flushNudge();
+    if (from !== index) return false;
     const clip = copyShapes(docRef.current.slides[index], new Set(selection));
     if (!clip) return false;
     if (!event.clipboardData) return false;
@@ -316,7 +373,7 @@ export function Editor({
     return true;
   };
 
-  const paste = (event: ClipboardEvent) => {
+  const paste = (event: ClipboardEvent, target: number) => {
     flushNudge();
     const data = event.clipboardData;
     // Anything but shapes copied here (text, an image) pastes nothing.
@@ -325,22 +382,25 @@ export function Editor({
     );
     if (!clip) return;
     event.preventDefault();
-    place(clip);
+    place(target, clip);
   };
 
-  const cut = (event: ClipboardEvent) => {
+  const cut = (event: ClipboardEvent, from: number) => {
     // While edits are paused a cut would copy without removing anything.
     if (!saver.state().accepting) return;
-    if (copy(event)) remove();
+    if (copy(event, from)) remove();
   };
 
   const duplicate = () => {
     flushNudge();
     const clip = copyShapes(docRef.current.slides[index], new Set(selection));
-    if (clip) place(clip);
+    if (clip) place(index, clip);
   };
 
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+  /** Keys on the canvas of slide `at`; selection lives on the active slide. */
+  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, at: number) => {
+    const picked = at === index ? selection : NONE;
+    const own = docRef.current.slides[at];
     const step = event.shiftKey ? NUDGE * 10 : NUDGE;
     const arrows: Record<string, [number, number]> = {
       ArrowLeft: [-step, 0],
@@ -348,7 +408,7 @@ export function Editor({
       ArrowUp: [0, -step],
       ArrowDown: [0, step],
     };
-    if (event.key in arrows && selection.length > 0) {
+    if (event.key in arrows && picked.length > 0) {
       event.preventDefault();
       if (!saver.state().accepting) return;
       const [dx, dy] = arrows[event.key];
@@ -361,28 +421,31 @@ export function Editor({
       nudgeTimer.current = setTimeout(flushNudge, NUDGE_SAVE_DELAY);
     } else if (
       (event.key === "Delete" || event.key === "Backspace") &&
-      selection.length > 0
+      picked.length > 0
     ) {
       event.preventDefault();
       remove();
-    } else if (event.key === "Tab" && selection.length > 0) {
+    } else if (event.key === "Tab" && picked.length > 0) {
       // With a selection, Tab picks the next shape, so the keyboard alone
       // can reach every shape; without one, Tab leaves the canvas.
       event.preventDefault();
-      const order = slide.shapes.map((shape) => shape.id);
-      const last = order.indexOf(selection[selection.length - 1]);
+      const order = own.shapes.map((shape) => shape.id);
+      const last = order.indexOf(picked[picked.length - 1]);
       const step = event.shiftKey ? -1 : 1;
-      select([order[(last + step + order.length) % order.length]]);
+      select(at, [order[(last + step + order.length) % order.length]]);
     } else if (event.key === "PageUp" || event.key === "PageDown") {
       event.preventDefault();
-      goTo(index + (event.key === "PageUp" ? -1 : 1));
+      goTo(at + (event.key === "PageUp" ? -1 : 1), true);
     } else if (event.key === "Escape") {
-      select([]);
+      select(at, []);
     } else if (event.metaKey || event.ctrlKey) {
       const key = event.key.toLowerCase();
       if (key === "a") {
         event.preventDefault();
-        select(slide.shapes.map((shape) => shape.id));
+        select(
+          at,
+          own.shapes.map((shape) => shape.id)
+        );
       } else if (key === "z") {
         event.preventDefault();
         travel(event.shiftKey ? "redo" : "undo");
@@ -414,27 +477,44 @@ export function Editor({
 
   return (
     <div className="relative size-full">
-      {/* The slide, as wide as the page, keeping 64 px above and below for
-          the corners and the dock. */}
-      <div className="absolute inset-x-0 inset-y-16 flex items-center justify-center">
-        <Canvas
-          className="w-[min(100%,calc((100dvh_-_8rem)*16/9))]"
-          slide={shown}
-          number={index + 1}
-          selection={selection}
-          onSelect={select}
-          onMove={(ids, dx, dy) =>
-            commit(moveOps(docRef.current.slides[index], index, ids, dx, dy))
-          }
-          onResize={(id: string, box: Box) =>
-            commit(boxOps(docRef.current.slides[index], index, id, box))
-          }
-          onGestureStart={flushNudge}
-          onKeyDown={onKeyDown}
-          onCopy={copy}
-          onCut={cut}
-          onPaste={paste}
-        />
+      {/* The slides, one after another down a page that scrolls. Each is as
+          wide as the page and short enough to be seen whole, with 64 px kept
+          at the top for the corners and room at the bottom for the dock. */}
+      <div
+        ref={scroller}
+        className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
+      >
+        <ol className="flex flex-col items-center gap-10 pt-16 pb-28">
+          {doc.slides.map((item, i) => (
+            <li
+              key={item.id}
+              ref={(element) => {
+                slideItems.current[i] = element;
+              }}
+              data-index={i}
+              className="flex w-full snap-center justify-center"
+            >
+              <Canvas
+                className="w-[min(100%,calc((100dvh_-_8rem)*16/9))]"
+                slide={i === index ? shown : item}
+                number={i + 1}
+                selection={i === index ? selection : NONE}
+                onSelect={(ids) => select(i, ids)}
+                onMove={(ids, dx, dy) =>
+                  commit(moveOps(docRef.current.slides[i], i, ids, dx, dy), i)
+                }
+                onResize={(id: string, box: Box) =>
+                  commit(boxOps(docRef.current.slides[i], i, id, box), i)
+                }
+                onGestureStart={flushNudge}
+                onKeyDown={(event) => onKeyDown(event, i)}
+                onCopy={(event) => copy(event, i)}
+                onCut={(event) => cut(event, i)}
+                onPaste={(event) => paste(event, i)}
+              />
+            </li>
+          ))}
+        </ol>
       </div>
       <p id="canvas-help" className="sr-only">
         {HELP.join(" ")}
@@ -442,7 +522,7 @@ export function Editor({
 
       {/* The dock floats at the bottom center, as Plump's does; only the bar
           and the notice take pointer events, the rest stays the canvas's. */}
-      <div className="pointer-events-none absolute inset-x-0 bottom-3 flex flex-col items-center gap-2 px-2 max-md:bottom-16">
+      <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-2">
         {problem && (
           <div
             role="alert"
@@ -525,19 +605,19 @@ export function Editor({
           <Tool
             tip="上一頁"
             icon={ChevronLeftIcon}
-            disabled={index === 0}
-            onClick={() => goTo(index - 1)}
+            disabled={visible === 0}
+            onClick={() => goTo(visible - 1)}
           />
           <PageList
             slides={doc.slides}
-            index={index}
+            index={visible}
             onPick={(target) => goTo(target)}
           />
           <Tool
             tip="下一頁"
             icon={ChevronRightIcon}
-            disabled={index === doc.slides.length - 1}
-            onClick={() => goTo(index + 1)}
+            disabled={visible === doc.slides.length - 1}
+            onClick={() => goTo(visible + 1)}
           />
           <Separator orientation="vertical" className="mx-1 my-2" />
           <p className="min-w-16 px-2 text-center text-xs text-muted-foreground">

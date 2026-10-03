@@ -100,6 +100,7 @@ describe("proxy", () => {
       "/auth/callback",
       "/api/health",
       "/api/assets",
+      "/api/decks/import",
       "/s/abc",
       "/template/winlab-background.png",
       "/_next/static/chunk.js",

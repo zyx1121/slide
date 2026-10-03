@@ -6,11 +6,25 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { storedDocumentProblem } from "@/lib/deck/schema";
 import { getDeck } from "@/lib/deck/store";
+import { describeSkipped } from "@/lib/pptx/report";
 
 export const dynamic = "force-dynamic";
 
-export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
+export default async function DeckPage({
+  params,
+  searchParams,
+}: PageProps<"/decks/[id]">) {
   const { id } = await params;
+  // Right after an import: what the .pptx had that the deck does not.
+  const { imported } = await searchParams;
+  let notice: string | null = null;
+  if (typeof imported === "string") {
+    try {
+      notice = describeSkipped(JSON.parse(imported)) ?? "匯入完成。";
+    } catch {
+      notice = null;
+    }
+  }
   const user = await requireUser();
   // Someone else's deck is a 404, the same as a deck that does not exist.
   const deck = await getDeck(sql, user.sub, id);
@@ -25,6 +39,7 @@ export default async function DeckPage({ params }: PageProps<"/decks/[id]">) {
         initialPublished={deck.published}
         initialPublicId={deck.publicId}
         invalid={storedDocumentProblem(deck.document)}
+        notice={notice}
       />
     </StageShell>
   );

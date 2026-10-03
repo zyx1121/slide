@@ -205,6 +205,7 @@ export function Editor({
   initialPublished,
   initialPublicId,
   invalid = null,
+  notice: initialNotice = null,
 }: {
   deckId: string;
   initialDocument: DeckDocument;
@@ -216,6 +217,8 @@ export function Editor({
    * edit would be refused, so none is offered.
    */
   invalid?: string | null;
+  /** A note to show once, such as an import report. */
+  notice?: string | null;
 }) {
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
@@ -238,6 +241,8 @@ export function Editor({
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
   const nudgeRef = useRef(nudge);
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+
+  const [notice, setNotice] = useState(initialNotice);
 
   /** An edit that could not be applied here; it never reached the server. */
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -1034,6 +1039,19 @@ export function Editor({
         {/* The dock floats at the bottom center, as Plump's does; only the bar
           and the notice take pointer events, the rest stays the canvas's. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-2">
+          {notice && !problem && (
+            <div
+              role="status"
+              data-slot="floating-notice"
+              data-surface="tinted"
+              className="pointer-events-auto flex max-w-xl items-center gap-3 rounded-xl border px-3 py-2"
+            >
+              <p className="text-xs">{notice}</p>
+              <Button variant="ghost" onClick={() => setNotice(null)}>
+                知道了
+              </Button>
+            </div>
+          )}
           {problem && (
             <div
               role="alert"

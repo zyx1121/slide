@@ -258,3 +258,16 @@ export function describeIssues(error: z.ZodError): string[] {
     (issue) => `${issue.path.join(".") || "(document)"}: ${issue.message}`
   );
 }
+
+/**
+ * Why a stored document cannot be edited, in a sentence for its member, or
+ * null when it is valid. Every write validates the whole result, so a deck
+ * stored before a schema change (or written around the mutation path) would
+ * refuse every edit without saying why.
+ */
+export function storedDocumentProblem(document: unknown): string | null {
+  const parsed = DeckDocument.safeParse(document);
+  if (parsed.success) return null;
+  const [first] = describeIssues(parsed.error);
+  return `這份簡報有一筆資料不符合格式（${first}），所以現在不能編輯。請把這段訊息回報給維護者。`;
+}

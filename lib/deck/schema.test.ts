@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "./sample";
-import { DeckDocument, describeIssues } from "./schema";
+import { DeckDocument, describeIssues, storedDocumentProblem } from "./schema";
 
 function issuesOf(document: unknown): string[] {
   const result = DeckDocument.safeParse(document);
@@ -133,5 +133,15 @@ describe("DeckDocument", () => {
     expect(describeIssues(many.error!)).toEqual([
       "slides.0: a slide holds at most 20000 characters of text",
     ]);
+  });
+
+  it("says why a stored deck that breaks the schema cannot be edited", () => {
+    const doc = sampleDocument();
+    expect(storedDocumentProblem(doc)).toBeNull();
+    // Ids one character short, as two test decks once had.
+    doc.slides[0].shapes[0].id = "sh_p";
+    expect(storedDocumentProblem(doc)).toBe(
+      "這份簡報有一筆資料不符合格式（slides.0.shapes.0.id: ids look like sh_k4m9x2qa），所以現在不能編輯。請把這段訊息回報給維護者。"
+    );
   });
 });

@@ -12,6 +12,7 @@ import {
   shapeTextDefaults,
   TITLE_TEXT,
   titleBody,
+  titleText,
 } from "../render/svg";
 import { DEFAULT_TEXT, TITLE } from "../render/template";
 import { layoutText, type TextLayout } from "../render/text";
@@ -162,12 +163,15 @@ export function checkSlide(slide: Slide, index: number): Violation[] {
   const shapes = new Map(slide.shapes.map((shape) => [shape.id, shape]));
 
   if (slide.title) {
-    const layout = layoutText(titleBody(slide.title), TITLE.box, TITLE_TEXT);
+    // The title shrinks to fit, down to half its size; past that it runs
+    // into the title rule.
+    const fitted = titleText(slide.title);
+    const layout = layoutText(titleBody(slide.title), TITLE.box, fitted);
     if (layout.height + 2 * TITLE_TEXT.inset.y > TITLE.box.h + 1) {
       add(
         null,
         "title-overflow",
-        "標題超過一行，會壓到標題線：縮短標題，細節放進內文。"
+        "標題太長，縮到一半字級仍放不下，會壓到標題線：縮短標題，細節放進內文。"
       );
     }
   }

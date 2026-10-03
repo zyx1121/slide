@@ -29,8 +29,8 @@ export type TextDefaults = {
 
 export type Segment = {
   text: string;
-  /** Drawn in Carlito ("latin") or in the CJK font ("cjk"); see fontOf. */
-  script: "latin" | "cjk";
+  /** Drawn in Carlito, the CJK font or the emoji font; see fontOf. */
+  script: "latin" | "cjk" | "emoji";
   x: number;
   width: number;
   size: number;
@@ -183,15 +183,27 @@ function trimTrailingSpaces(chars: Char[]): Char[] {
 // Segments split where the style or the font changes, so every drawn run is
 // in one font: renderers that fall back per glyph (resvg) would otherwise draw
 // the rest of a mixed run in the fallback font and ignore its weight.
-function segmentsOf(chars: Char[], x0: number): Segment[] {
+// With `extra`, the space justification adds after a character: the next
+// character starts a new segment there, so the gap falls between words (or
+// CJK characters) rather than being spread over every glyph.
+function segmentsOf(chars: Char[], x0: number, extra?: number[]): Segment[] {
   const segments: Segment[] = [];
   let x = x0;
-  for (const c of chars) {
+  let gap = false;
+  chars.forEach((c, i) => {
     const last = segments[segments.length - 1];
-    const script = isSpace(c.ch) && last ? last.script : fontOf(c.cp);
+    // A space goes with the run before it, but never in the emoji font,
+    // whose space is not as wide as the one measured.
+    const script =
+      isSpace(c.ch) && last && last.script !== "emoji"
+        ? last.script
+        : isSpace(c.ch)
+          ? "latin"
+          : fontOf(c.cp);
     const text = c.ch === "\t" ? "    " : c.ch;
     if (
       last &&
+      !gap &&
       last.script === script &&
       styleKey(last) === styleKey(c.style)
     ) {
@@ -200,9 +212,29 @@ function segmentsOf(chars: Char[], x0: number): Segment[] {
     } else {
       segments.push({ ...c.style, script, text, x, width: c.width });
     }
-    x += c.width;
-  }
+    const after = extra?.[i] ?? 0;
+    x += c.width + after;
+    gap = after > 0;
+  });
   return segments;
+}
+
+/**
+ * The space justification adds after each character of a line: spread over
+ * the spaces between words, or between characters when there are none
+ * (CJK), so the line fills its room.
+ */
+function justify(visible: Char[], room: number): number[] {
+  const width = visible.reduce((sum, c) => sum + c.width, 0);
+  const free = room - width;
+  if (free <= 0 || visible.length < 2) return [];
+  let gaps = visible
+    .map((c, i) => (isSpace(c.ch) && i > 0 ? i : -1))
+    .filter((i) => i >= 0);
+  if (gaps.length === 0) gaps = visible.slice(0, -1).map((_, i) => i);
+  const extra: number[] = new Array(visible.length).fill(0);
+  for (const i of gaps) extra[i] = free / gaps.length;
+  return extra;
 }
 
 /** Lays `body` out in a `w` x `h` box. */
@@ -300,12 +332,17 @@ export function layoutText(
             ? room - width
             : 0;
       const x0 = defaults.inset.x + indent + offset;
+      // Justified lines fill their room, but for a paragraph's last line
+      // and lines that end in a break.
+      const ends =
+        range.end >= chars.length || LINE_BREAKS.has(chars[range.end].ch);
+      const extra = align === "justify" && !ends ? justify(visible, room) : [];
       const carets: Caret[] = [];
       let x = x0;
-      for (const c of lineChars) {
+      lineChars.forEach((c, i) => {
         carets.push({ at: c.at, x });
-        x += c.width;
-      }
+        x += c.width + (extra[i] ?? 0);
+      });
       carets.push({ at: offsetAt(range.end), x });
       const line: Line = {
         paragraph: paragraphIndex,
@@ -315,7 +352,7 @@ export function layoutText(
         baseline: y + size * ASCENT,
         height,
         carets,
-        segments: segmentsOf(visible, x0),
+        segments: segmentsOf(visible, x0, extra),
       };
       if (label && index === 0) {
         line.bullet = {

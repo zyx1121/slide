@@ -14,6 +14,11 @@ export const MAX_TOTAL_BYTES = 200 * 1024 * 1024;
 /** Limits for one XML part: its size and its elements. */
 export const MAX_XML_BYTES = 8 * 1024 * 1024;
 export const MAX_XML_ELEMENTS = 200_000;
+/** The most elements one import may parse, across all its parts. */
+export const MAX_IMPORT_ELEMENTS = 2_000_000;
+
+/** What is left of an import's element budget, shared by its parts. */
+export type ElementBudget = { left: number };
 
 export class PptxError extends Error {
   constructor(
@@ -99,8 +104,12 @@ function convert(raw: Raw[]): El[] {
   return out;
 }
 
-/** The root element of an XML part. */
-export function parseXml(bytes: Uint8Array): El {
+/**
+ * The root element of an XML part. With a budget, the part's elements are
+ * taken from it, so many parts cannot add up to more than one import may
+ * hold.
+ */
+export function parseXml(bytes: Uint8Array, budget?: ElementBudget): El {
   if (bytes.length > MAX_XML_BYTES) {
     throw new PptxError("too-large", "an XML part is too large");
   }
@@ -109,6 +118,12 @@ export function parseXml(bytes: Uint8Array): El {
     if (byte === 0x3c && ++elements > MAX_XML_ELEMENTS) {
       throw new PptxError("too-large", "an XML part has too many elements");
     }
+  if (budget) {
+    budget.left -= elements;
+    if (budget.left < 0) {
+      throw new PptxError("too-large", "the file has too many elements");
+    }
+  }
   const text = new TextDecoder().decode(bytes);
   if (/<!DOCTYPE|<!ENTITY/i.test(text)) {
     throw new PptxError("malformed", "XML with a document type");

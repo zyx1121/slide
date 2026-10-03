@@ -55,7 +55,8 @@ export async function POST(request: Request) {
     // Anything the importer trips over is the file's fault, not the server's.
     const code = error instanceof PptxError ? error.code : "malformed";
     if (!(error instanceof PptxError)) {
-      console.warn("import: unreadable .pptx", error);
+      // Logged as an error: it may be a bug in the importer, not the file.
+      console.error("import: the importer failed on a file", error);
     }
     return Response.json(
       { error: code },

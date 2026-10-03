@@ -18,6 +18,8 @@ import {
   child,
   children,
   type El,
+  type ElementBudget,
+  MAX_IMPORT_ELEMENTS,
   num,
   parseXml,
   path,
@@ -756,16 +758,22 @@ export async function importPptx(
 ): Promise<ImportResult> {
   const started = Date.now();
   const parts = unzipPptx(bytes);
-  // Each part is parsed once: slides share layouts, masters and themes.
-  const parsedParts = new Map<string, El>();
+  // Every part takes its elements from one budget, so a file cannot add
+  // up many capped parts into more than the server can hold.
+  const budget: ElementBudget = { left: MAX_IMPORT_ELEMENTS };
+  const read = (name: string | undefined): El | undefined => {
+    const bytes = name ? parts.get(name) : undefined;
+    return bytes ? parseXml(bytes, budget) : undefined;
+  };
+  // Layouts, masters and themes are shared by slides: each is parsed once
+  // and kept. A slide's own tree is let go once the slide is read.
+  const shared = new Map<string, El>();
   const xml = (name: string | undefined): El | undefined => {
     if (!name) return undefined;
-    const cached = parsedParts.get(name);
+    const cached = shared.get(name);
     if (cached) return cached;
-    const bytes = parts.get(name);
-    if (!bytes) return undefined;
-    const el = parseXml(bytes);
-    parsedParts.set(name, el);
+    const el = read(name);
+    if (el) shared.set(name, el);
     return el;
   };
   const relsCache = new Map<string, ReturnType<typeof relationships>>();
@@ -812,7 +820,7 @@ export async function importPptx(
       continue;
     }
     seen.add(rel.target);
-    const slideXml = xml(rel.target)!;
+    const slideXml = read(rel.target)!;
     const rels = relsOf(rel.target);
     const layoutName = [...rels.values()].find((r) =>
       r.type.endsWith("/slideLayout")
@@ -889,7 +897,7 @@ export async function importPptx(
     slides.push({ id: newId("sl"), title: "", shapes: [] });
   }
 
-  const core = xml("docProps/core.xml");
+  const core = read("docProps/core.xml");
   const coreTitle = core ? textOf(child(core, "dc:title")).trim() : "";
   const documentTitle =
     clean(coreTitle || fallbackTitle)

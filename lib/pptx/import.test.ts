@@ -5,7 +5,12 @@ import { sampleDocument } from "../deck/sample";
 import type { DeckDocument, Shape } from "../deck/schema";
 import { exportPptx } from "./export";
 import { importPptx } from "./import";
-import { MAX_PART_BYTES, MAX_XML_ELEMENTS, PptxError } from "./read";
+import {
+  MAX_IMPORT_ELEMENTS,
+  MAX_PART_BYTES,
+  MAX_XML_ELEMENTS,
+  PptxError,
+} from "./read";
 import { describeSkipped } from "./report";
 
 const PNG_1X1 = Uint8Array.from(
@@ -244,5 +249,42 @@ describe("importPptx", () => {
     expect(
       shape.kind === "text" && shape.text.paragraphs[0].runs[0].text.length
     ).toBe(5000);
+  });
+
+  it("refuses many capped slides that add up to too many elements", async () => {
+    const parts = unzipSync(exportPptx(richDeck(), new Map()));
+    // Slides just under the per-part cap, enough of them to pass the total.
+    const count = Math.ceil(MAX_IMPORT_ELEMENTS / MAX_XML_ELEMENTS) + 1;
+    const filler = "<a/>".repeat(MAX_XML_ELEMENTS - 100);
+    const ids: string[] = [];
+    const rels: string[] = [];
+    for (let n = 1; n <= count; n++) {
+      parts[`ppt/slides/slide${n}.xml`] = strToU8(
+        `<p:sld><p:cSld><p:spTree>${filler}</p:spTree></p:cSld></p:sld>`
+      );
+      ids.push(`<p:sldId id="${300 + n}" r:id="rIdX${n}"/>`);
+      rels.push(
+        `<Relationship Id="rIdX${n}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide${n}.xml"/>`
+      );
+    }
+    parts["ppt/presentation.xml"] = strToU8(
+      strFromU8(parts["ppt/presentation.xml"]).replace(
+        /<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/,
+        `<p:sldIdLst>${ids.join("")}</p:sldIdLst>`
+      )
+    );
+    parts["ppt/_rels/presentation.xml.rels"] = strToU8(
+      strFromU8(parts["ppt/_rels/presentation.xml.rels"]).replace(
+        "</Relationships>",
+        `${rels.join("")}</Relationships>`
+      )
+    );
+    const before = process.memoryUsage().heapUsed;
+    const failed = await importPptx(zipSync(parts), saveImage).catch(
+      (e: PptxError) => e.code
+    );
+    expect(failed).toBe("too-large");
+    // Slide trees are let go as the import goes: far below the 2 GB heap.
+    expect(process.memoryUsage().heapUsed - before).toBeLessThan(1_000_000_000);
   });
 });

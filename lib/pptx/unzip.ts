@@ -1,9 +1,10 @@
 // A zip reader for untrusted uploads. It reads the central directory itself
 // and holds every entry to what it declares: entries may not overlap (one
 // compressed run counted many times), a stored entry's size must match, and
-// a deflated entry is inflated in small steps that stop the moment its
-// output passes its declared size. Memory and CPU are then bounded by the
-// declared sizes, which are capped before anything is read.
+// a deflated entry is inflated in 64 KB steps of input that stop once its
+// output passes its declared size (one step can inflate to some 64 MB before
+// the check runs). Memory and CPU are then bounded by the declared sizes,
+// which are capped before anything is read.
 import { Inflate } from "fflate";
 
 export type ZipLimits = {

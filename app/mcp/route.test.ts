@@ -93,10 +93,16 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(init.body.result.serverInfo.name).toBe("slide.winlab.tw");
     const tools = (await rpc("tools/list", {})).body.result.tools;
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
+      "add_shapes",
+      "add_slide",
       "check_deck",
+      "delete_shapes",
+      "delete_slide",
       "get_deck",
       "list_decks",
+      "move_slide",
       "render_slide",
+      "update_shapes",
     ]);
   });
 
@@ -128,5 +134,38 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       (await call("check_deck", { deck_id: deckId })).content[0].text
     );
     expect(checked).toEqual({ deck: deckId, violations: [] });
+  });
+
+  it("stores an agent's edit as a suggestion and leaves the deck as it is", async () => {
+    const before = JSON.parse(
+      (await call("get_deck", { deck_id: deckId })).content[0].text
+    );
+    const result = JSON.parse(
+      (
+        await call("update_shapes", {
+          deck_id: deckId,
+          slide: 1,
+          updates: [{ id: "sh_asr", set: { fill: "#fff2cc" } }],
+        })
+      ).content[0].text
+    );
+    expect(result).toMatchObject({ status: "suggested", changed: ["sh_asr"] });
+    const after = JSON.parse(
+      (await call("get_deck", { deck_id: deckId })).content[0].text
+    );
+    expect(after.version).toBe(before.version);
+    const [row] = await db`
+      select status, author_kind from revisions where id = ${result.suggestion}`;
+    expect(row).toEqual({ status: "suggested", author_kind: "agent" });
+  });
+
+  it("says why an edit cannot be suggested", async () => {
+    const bad = await call("add_shapes", {
+      deck_id: deckId,
+      slide: 1,
+      shapes: [{ kind: "rect", x: 0, y: 0, w: 10, h: 10, fill: "red" }],
+    });
+    expect(bad.isError).toBe(true);
+    expect(bad.content[0].text).toContain("colors look like");
   });
 });

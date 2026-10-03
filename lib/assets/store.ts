@@ -112,8 +112,16 @@ export function slideAssets(slide: Slide): string[] {
 }
 
 /**
+ * The most pixels the server decodes for one slide: 100 million. resvg
+ * holds every picture of a slide decoded at once, so many pictures under the
+ * per-image limit could still take the server's memory.
+ */
+export const SLIDE_PIXEL_BUDGET = 100_000_000;
+
+/**
  * Data URIs of the slide's assets that `sub` owns, for rendering on the
- * server, where the SVG cannot fetch anything.
+ * server, where the SVG cannot fetch anything. Pictures past the slide's
+ * pixel budget are left out and drawn as placeholders.
  */
 export async function slideAssetUris(
   db: Db,
@@ -121,7 +129,18 @@ export async function slideAssetUris(
   slide: Slide
 ): Promise<Map<string, string>> {
   const uris = new Map<string, string>();
-  for (const sha256 of slideAssets(slide)) {
+  const shas = slideAssets(slide);
+  if (shas.length === 0) return uris;
+  const sizes = await db<{ sha256: string; pixels: number }[]>`
+    select a.sha256, a.width::bigint * a.height as pixels from assets a
+    join asset_owners o on o.sha256 = a.sha256
+    where o.sub = ${sub} and a.sha256 in ${db(shas)}`;
+  const pixels = new Map(sizes.map((row) => [row.sha256, Number(row.pixels)]));
+  let budget = SLIDE_PIXEL_BUDGET;
+  for (const sha256 of shas) {
+    const cost = pixels.get(sha256);
+    if (cost === undefined || cost > budget) continue;
+    budget -= cost;
     const asset = await readAsset(db, sub, sha256);
     if (asset) {
       uris.set(

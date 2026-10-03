@@ -70,6 +70,33 @@ describe.skipIf(!TEST_DATABASE_URL)("asset store", () => {
     expect((await slideAssetUris(db, "eve", slide)).size).toBe(0);
   });
 
+  it("draws no more than the slide's pixel budget on the server", async () => {
+    // Three different 6000 x 6000 pictures: 36 million pixels each.
+    const shas: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const big = PNG_1X1.slice();
+      new DataView(big.buffer).setUint32(16, 6000);
+      new DataView(big.buffer).setUint32(20, 6000);
+      // A different trailing byte makes different bytes, so a new asset.
+      const bytes = new Uint8Array([...big, i]);
+      shas.push((await saveAsset(db, "alice", bytes)).sha256);
+    }
+    const slide = {
+      ...sampleDocument().slides[0],
+      shapes: shas.map((sha256, i) => ({
+        id: `im_big${i}`,
+        kind: "image" as const,
+        x: 0,
+        y: 0,
+        w: 10,
+        h: 10,
+        asset: sha256,
+      })),
+    };
+    const uris = await slideAssetUris(db, "alice", slide);
+    expect([...uris.keys()]).toEqual(shas.slice(0, 2));
+  });
+
   it("refuses empty, oversized and unsupported files", async () => {
     const code = async (bytes: Uint8Array) =>
       saveAsset(db, "alice", bytes).catch((error: AssetError) => error.code);

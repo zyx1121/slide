@@ -76,6 +76,42 @@ describe("applyOperations", () => {
     ]);
   });
 
+  it("refuses op names that are not RFC 6902 operations", () => {
+    for (const op of [
+      "toString",
+      "constructor",
+      "hasOwnProperty",
+      "valueOf",
+      "_get",
+      "__proto__",
+      "",
+    ]) {
+      const refused = refusal(() =>
+        applyOperations(sampleDocument(), [
+          { op, path: "/title", value: "x" } as never,
+        ])
+      );
+      expect(refused.code).toBe("invalid_patch");
+      expect(refused.message).toMatch(/^operation 0: op must be one of/);
+    }
+    for (const operation of [null, "replace", 42, []]) {
+      expect(
+        refusal(() => applyOperations(sampleDocument(), [operation])).code
+      ).toBe("invalid_patch");
+    }
+  });
+
+  it("refuses a patch that changes nothing", () => {
+    for (const ops of [
+      [{ op: "test", path: "/title", value: "Agent Sense" }],
+      [{ op: "replace", path: "/title", value: "Agent Sense" }],
+    ]) {
+      const refused = refusal(() => applyOperations(sampleDocument(), ops));
+      expect(refused.code).toBe("invalid_patch");
+      expect(refused.message).toBe("the patch changes nothing");
+    }
+  });
+
   it("refuses prototype pollution paths", () => {
     expect(
       refusal(() =>

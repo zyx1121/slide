@@ -27,13 +27,16 @@ export async function createTestDb(): Promise<{
     onnotice: () => {},
     connection: { search_path: schema },
   });
-  await migrate(db, join(process.cwd(), "migrations"), () => {});
-
-  return {
-    db,
-    async drop() {
-      await db.unsafe(`drop schema ${schema} cascade`);
-      await db.end();
-    },
+  const drop = async () => {
+    await db.unsafe(`drop schema ${schema} cascade`);
+    await db.end();
   };
+  try {
+    await migrate(db, join(process.cwd(), "migrations"), () => {});
+  } catch (error) {
+    // Leave no schema behind when the migrations themselves fail.
+    await drop();
+    throw error;
+  }
+  return { db, drop };
 }

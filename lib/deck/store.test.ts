@@ -185,6 +185,15 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     );
     expect(badResult.code).toBe("invalid_document");
     expect(badResult.details.issues?.[0]).toMatch(/sh_capture is not a shape/);
+    const badOp = await refusal(
+      mutateDeck(db, {
+        deckId: deck.id,
+        actor: alice,
+        baseVersion: 0,
+        ops: [{ op: "toString", path: "/title", value: "x" }],
+      })
+    );
+    expect(badOp.code).toBe("invalid_patch");
     const [{ count }] = await db`
       select count(*)::int as count from revisions where deck_id = ${deck.id}
     `;

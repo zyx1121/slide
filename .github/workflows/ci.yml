@@ -87,6 +87,10 @@ jobs:
         run: |
           sed -e 's/^SLIDE_VERSION=.*/SLIDE_VERSION=ci/' \
               -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-postgres/' \
+              -e 's|^KEYCLOAK_ISSUER=.*|KEYCLOAK_ISSUER=http://127.0.0.1:9/realms/ci|' \
+              -e 's/^KEYCLOAK_CLIENT_ID=.*/KEYCLOAK_CLIENT_ID=slide/' \
+              -e 's/^KEYCLOAK_CLIENT_SECRET=.*/KEYCLOAK_CLIENT_SECRET=ci-secret/' \
+              -e "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" \
               .env.example > .env
           docker compose up -d
       - name: Smoke test

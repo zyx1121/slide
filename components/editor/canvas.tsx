@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  type ClipboardEvent,
   type KeyboardEvent,
   type PointerEvent,
   useEffect,
@@ -101,6 +102,9 @@ export function Canvas({
   onResize,
   onGestureStart,
   onKeyDown,
+  onCopy,
+  onCut,
+  onPaste,
   className,
 }: {
   slide: Slide;
@@ -112,6 +116,9 @@ export function Canvas({
   /** Called as a pointer gesture begins, before it reads any shape. */
   onGestureStart: () => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
+  onCopy: (event: ClipboardEvent<HTMLDivElement>) => void;
+  onCut: (event: ClipboardEvent<HTMLDivElement>) => void;
+  onPaste: (event: ClipboardEvent<HTMLDivElement>) => void;
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -366,6 +373,9 @@ export function Canvas({
       onPointerUp={onPointerUp}
       onPointerCancel={() => setDrag(null)}
       onKeyDown={onKeyDown}
+      onCopy={onCopy}
+      onCut={onCut}
+      onPaste={onPaste}
     >
       <div
         data-slot="slide-view"

@@ -1,7 +1,15 @@
 "use client";
 
-import { BringToFrontIcon, SendToBackIcon, Trash2Icon } from "lucide-react";
 import {
+  BringToFrontIcon,
+  CopyPlusIcon,
+  Redo2Icon,
+  SendToBackIcon,
+  Trash2Icon,
+  Undo2Icon,
+} from "lucide-react";
+import {
+  type ClipboardEvent,
   type ComponentType,
   type KeyboardEvent,
   useCallback,
@@ -22,8 +30,23 @@ import {
 import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
+import {
+  type Clip,
+  CLIP_TYPE,
+  copyShapes,
+  parseClip,
+  pasteOffset,
+  pasteShapes,
+} from "@/lib/editor/clipboard";
 import type { Box } from "@/lib/editor/geometry";
 import { guard } from "@/lib/editor/guard";
+import {
+  EMPTY_HISTORY,
+  type History,
+  record,
+  redo,
+  undo,
+} from "@/lib/editor/history";
 import {
   boxOps,
   deleteOps,
@@ -87,6 +110,14 @@ export function Editor({
 }) {
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
+  const [history, setHistoryState] = useState<History>(EMPTY_HISTORY);
+  const historyRef = useRef(history);
+  const setHistory = (next: History) => {
+    historyRef.current = next;
+    setHistoryState(next);
+  };
+  // The last clip copied here, for a paste whose clipboard event carries none.
+  const lastClip = useRef<Clip | null>(null);
   const [slideIndex, setSlideIndex] = useState(0);
   const [selection, setSelection] = useState<string[]>([]);
   const [nudge, setNudge] = useState({ dx: 0, dy: 0 });
@@ -99,6 +130,9 @@ export function Editor({
   const reload = useCallback((fresh: DeckDocument) => {
     docRef.current = fresh;
     setDoc(fresh);
+    // Undo steps were made against the old document; they no longer apply.
+    historyRef.current = EMPTY_HISTORY;
+    setHistoryState(EMPTY_HISTORY);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
     setSelection([]);
     clearTimeout(nudgeTimer.current);
@@ -111,13 +145,16 @@ export function Editor({
   const slide = doc.slides[index];
 
   /**
-   * Applies an edit here and queues it for saving. Each patch is guarded by
-   * the ids of what it touches, so it can never land on other shapes. While
-   * the saver is reloading or offline, edits are refused: they would be made
-   * on a document the server does not have.
+   * Applies an edit here, queues it for saving, and returns whether it
+   * applied. Each patch is guarded by the ids of what it touches, so it can
+   * never land on other shapes. While the saver is reloading or offline,
+   * edits are refused: they would be made on a document the server does not
+   * have. An edit is recorded for undo with its inverse; an undo or redo is
+   * not recorded. History keeps patches unguarded; they are guarded again
+   * against the document they meet when undone or redone.
    */
   const commit = useCallback(
-    (ops: Operation[]): boolean => {
+    (ops: Operation[], recordStep = true): boolean => {
       if (ops.length === 0 || !saver.state().accepting) return false;
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -132,10 +169,19 @@ export function Editor({
       docRef.current = result.document;
       setDoc(result.document);
       setRefusal(null);
+      if (recordStep) {
+        const next = record(historyRef.current, {
+          ops,
+          inverse: result.inverse,
+          slide: index,
+        });
+        historyRef.current = next;
+        setHistoryState(next);
+      }
       saver.save(result.operations);
       return true;
     },
-    [saver]
+    [saver, index]
   );
 
   /** Saves gathered arrow-key nudges as one edit. */
@@ -188,6 +234,58 @@ export function Editor({
     if (commit(deleteOps(current, index, new Set(selection)))) setSelection([]);
   };
 
+  /** Undoes or redoes one edit, on the slide it was made on. */
+  const travel = (direction: "undo" | "redo") => {
+    flushNudge();
+    const move = (direction === "undo" ? undo : redo)(historyRef.current);
+    if (!move) return;
+    if (!commit(move.ops, false)) return;
+    setHistory(move.history);
+    setSlideIndex(move.slide);
+    const kept = new Set(
+      docRef.current.slides[move.slide]?.shapes.map((shape) => shape.id)
+    );
+    setSelection((ids) => ids.filter((id) => kept.has(id)));
+  };
+
+  /** Adds a clip's shapes to the current slide and selects them. */
+  const place = (clip: Clip) => {
+    const target = docRef.current.slides[index];
+    const shapes = pasteShapes(clip, pasteOffset(target, clip));
+    if (commit(shapes.flatMap((shape) => insertOps(index, shape)))) {
+      setSelection(shapes.map((shape) => shape.id));
+    }
+  };
+
+  const copy = (event: ClipboardEvent<HTMLDivElement>) => {
+    flushNudge();
+    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    if (!clip) return false;
+    event.preventDefault();
+    const text = JSON.stringify(clip);
+    event.clipboardData.setData(CLIP_TYPE, text);
+    event.clipboardData.setData("text/plain", text);
+    lastClip.current = clip;
+    return true;
+  };
+
+  const paste = (event: ClipboardEvent<HTMLDivElement>) => {
+    flushNudge();
+    const data = event.clipboardData;
+    const text = data.getData(CLIP_TYPE) || data.getData("text/plain");
+    // Text from elsewhere is not shapes; only an empty clipboard falls back.
+    const clip = text ? parseClip(text) : lastClip.current;
+    if (!clip) return;
+    event.preventDefault();
+    place(clip);
+  };
+
+  const duplicate = () => {
+    flushNudge();
+    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    if (clip) place(clip);
+  };
+
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const step = event.shiftKey ? NUDGE * 10 : NUDGE;
     const arrows: Record<string, [number, number]> = {
@@ -223,9 +321,21 @@ export function Editor({
       select([order[(last + step + order.length) % order.length]]);
     } else if (event.key === "Escape") {
       select([]);
-    } else if (event.key === "a" && (event.metaKey || event.ctrlKey)) {
-      event.preventDefault();
-      select(slide.shapes.map((shape) => shape.id));
+    } else if (event.metaKey || event.ctrlKey) {
+      const key = event.key.toLowerCase();
+      if (key === "a") {
+        event.preventDefault();
+        select(slide.shapes.map((shape) => shape.id));
+      } else if (key === "z") {
+        event.preventDefault();
+        travel(event.shiftKey ? "redo" : "undo");
+      } else if (key === "y") {
+        event.preventDefault();
+        travel("redo");
+      } else if (key === "d") {
+        event.preventDefault();
+        duplicate();
+      }
     }
   };
 
@@ -238,6 +348,20 @@ export function Editor({
   return (
     <div className="flex flex-col gap-5">
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+        <div className="flex">
+          <Tool
+            tip="復原"
+            icon={Undo2Icon}
+            disabled={history.past.length === 0}
+            onClick={() => travel("undo")}
+          />
+          <Tool
+            tip="重做"
+            icon={Redo2Icon}
+            disabled={history.future.length === 0}
+            onClick={() => travel("redo")}
+          />
+        </div>
         <div className="flex">
           <Tool
             tip="插入矩形"
@@ -267,6 +391,12 @@ export function Editor({
             icon={SendToBackIcon}
             disabled={none}
             onClick={() => reorder("back")}
+          />
+          <Tool
+            tip="再製"
+            icon={CopyPlusIcon}
+            disabled={none}
+            onClick={duplicate}
           />
           <Tool tip="刪除" icon={Trash2Icon} disabled={none} onClick={remove} />
         </div>
@@ -313,11 +443,17 @@ export function Editor({
             }
             onGestureStart={flushNudge}
             onKeyDown={onKeyDown}
+            onCopy={copy}
+            onCut={(event) => {
+              if (copy(event)) remove();
+            }}
+            onPaste={paste}
           />
           <p id="canvas-help" className="text-xs text-muted-foreground">
             點選形狀來選取，Shift 加選，拖曳空白處框選，Tab
             換選下一個。方向鍵移動，加 Shift 走得更遠。拖曳時按 Shift
-            鎖定方向，按 Alt 不對齊。
+            鎖定方向，按 Alt 不對齊。⌘Z 復原，⌘D 再製，⌘C、⌘V 複製貼上（Windows
+            用 Ctrl）。
           </p>
         </div>
       </div>

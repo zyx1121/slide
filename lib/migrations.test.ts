@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { migrationNames, pendingMigrations } from "./migrations";
+import {
+  migrationNames,
+  misnamedMigrations,
+  pendingMigrations,
+} from "./migrations";
 
 describe("migrationNames", () => {
   it("keeps only NNNN_name.sql files, in name order", () => {
@@ -13,6 +17,24 @@ describe("migrationNames", () => {
         "0001_init.sql",
       ])
     ).toEqual(["0001_init.sql", "0002_decks.sql"]);
+  });
+});
+
+describe("misnamedMigrations", () => {
+  it("flags SQL files the runner would skip", () => {
+    expect(
+      misnamedMigrations([
+        "0001_init.sql",
+        "001_short.sql",
+        "0003_upper.SQL",
+        "notes.md",
+        ".gitkeep",
+      ])
+    ).toEqual(["0003_upper.SQL", "001_short.sql"]);
+  });
+
+  it("returns nothing for a clean directory", () => {
+    expect(misnamedMigrations(["0001_init.sql", ".gitkeep"])).toEqual([]);
   });
 });
 

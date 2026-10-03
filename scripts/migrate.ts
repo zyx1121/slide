@@ -7,15 +7,24 @@ import { join } from "node:path";
 
 import postgres from "postgres";
 
-import { pendingMigrations } from "../lib/migrations";
+import { misnamedMigrations, pendingMigrations } from "../lib/migrations";
 
-const dir = process.env.MIGRATIONS_DIR ?? join(process.cwd(), "migrations");
+const dir = process.env.MIGRATIONS_DIR || join(process.cwd(), "migrations");
 const sql = postgres(process.env.DATABASE_URL!, {
   max: 1,
   onnotice: () => {},
 });
 
 async function main() {
+  // A missing or unreadable directory is an error, not "nothing to apply".
+  const files = await readdir(dir);
+  const misnamed = misnamedMigrations(files);
+  if (misnamed.length > 0) {
+    throw new Error(
+      `${dir}: ${misnamed.join(", ")} must be named NNNN_name.sql to be applied`
+    );
+  }
+
   await sql`select pg_advisory_lock(hashtext('slide.migrate'))`;
   await sql`
     create table if not exists schema_migrations (
@@ -27,15 +36,18 @@ async function main() {
     { name: string }[]
   >`select name from schema_migrations`;
   const applied = rows.map((row) => row.name);
-  const files = await readdir(dir).catch(() => [] as string[]);
   const pending = pendingMigrations(files, applied);
 
   for (const name of pending) {
     const body = await readFile(join(dir, name), "utf8");
-    await sql.begin(async (tx) => {
-      await tx.unsafe(body);
-      await tx`insert into schema_migrations (name) values (${name})`;
-    });
+    try {
+      await sql.begin(async (tx) => {
+        await tx.unsafe(body);
+        await tx`insert into schema_migrations (name) values (${name})`;
+      });
+    } catch (error) {
+      throw new Error(`${name} failed and was rolled back`, { cause: error });
+    }
     console.log(`migrate: applied ${name}`);
   }
   console.log(

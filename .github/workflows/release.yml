@@ -11,6 +11,11 @@ permissions:
   contents: read
   packages: write
 
+# Pushes publish in order, so an older run never overwrites a newer :main.
+concurrency:
+  group: release-image-main
+  cancel-in-progress: false
+
 jobs:
   image:
     runs-on: ubuntu-latest

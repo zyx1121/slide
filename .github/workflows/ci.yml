@@ -16,9 +16,9 @@ permissions:
   pull-requests: read
 
 concurrency:
-  # A retitle reruns only the title check, in its own group, so it never
-  # cancels a running build.
-  group: ci-${{ github.event.pull_request.number || github.ref }}-${{ github.event.action == 'edited' && 'title' || 'build' }}
+  # Every run, a retitle included, builds the head commit in full: a skipped
+  # job counts as passing a required check, so no run may skip the build.
+  group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -52,7 +52,6 @@ jobs:
 
   check:
     name: Typecheck, lint, format, test
-    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -67,7 +66,6 @@ jobs:
 
   compose:
     name: Image and compose smoke test
-    if: github.event.action != 'edited'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

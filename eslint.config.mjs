@@ -12,6 +12,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // The bundled migration runner (bun run build:migrate).
+    "dist/**",
   ]),
 ]);
 

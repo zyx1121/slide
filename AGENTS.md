@@ -12,6 +12,6 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 - Design and decisions live in [PLAN.md](PLAN.md). Work items are GitHub issues; one PR closes one issue.
 - Stack: Next.js 16 (App Router, no `src/`), Tailwind v4, shadcn (base-nova), Postgres through `postgres` (postgres.js), bun.
-- Schema changes are SQL files in `migrations/` named `NNNN_name.sql`, applied in name order by `scripts/migrate.ts`. Never edit a migration that has been applied; add a new one.
+- Schema changes are SQL files in `migrations/` named `NNNN_name.sql`, applied in name order by `scripts/migrate.ts`. Never edit a migration that has been applied; add a new one. The runner wraps each file in a transaction, so a file must not contain its own `BEGIN` or `COMMIT`.
 - Checks: `bun run typecheck`, `bun run lint`, `bun run format:check`, `bun run test`. CI also builds the image and smoke-tests `docker compose up` with `scripts/smoke.sh`.
 - GitHub text (issues, PRs, comments, docs) is English. UI copy is Traditional Chinese (zh-Hant).

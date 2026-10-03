@@ -85,10 +85,25 @@ function fromHsl(h: number, s: number, l: number): string {
   return `#${hex(r)}${hex(g)}${hex(b)}`;
 }
 
-function mix(hex: string, toward: number, amount: number): string {
+const toLinear = (v: number) => {
+  const c = v / 255;
+  return c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4;
+};
+const toSrgb = (l: number) =>
+  Math.round(
+    255 * (l <= 0.0031308 ? 12.92 * l : 1.055 * l ** (1 / 2.4) - 0.055)
+  );
+
+/**
+ * A color moved `amount` of the way to white (1) or black (0) in linear
+ * light, as PowerPoint applies tint and shade: its default table style's
+ * 40% tint of #4f81bd is #d0d8e8 in its PDF, where mixing in sRGB gives
+ * #b9cde5.
+ */
+function mix(hex: string, toward: 0 | 1, amount: number): string {
   const channel = (i: number) => {
-    const v = parseInt(hex.slice(i, i + 2), 16);
-    return Math.round(v + (toward - v) * amount);
+    const l = toLinear(parseInt(hex.slice(i, i + 2), 16));
+    return toSrgb(l + (toward - l) * amount);
   };
   return `#${[1, 3, 5].map((i) => channel(i).toString(16).padStart(2, "0")).join("")}`;
 }
@@ -143,7 +158,7 @@ export function readColor(
         break;
       }
       case "a:tint":
-        color = mix(color, 255, 1 - val);
+        color = mix(color, 1, 1 - val);
         break;
       case "a:shade":
         color = mix(color, 0, 1 - val);

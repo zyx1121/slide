@@ -22,6 +22,8 @@ import {
 export const LATIN_FONT = "Carlito";
 /** For CJK runs; PowerPoint on Windows uses Microsoft JhengHei instead. */
 export const CJK_FONT = "Noto Sans TC";
+/** For emoji on the server; browsers draw their own color emoji instead. */
+export const EMOJI_FONT = "Noto Emoji";
 
 export type RenderOptions = {
   /** 1-based, drawn in the template's slide number placeholder. */
@@ -95,6 +97,8 @@ function runSvg(segment: Segment, x0: number, y: number): string {
   if (segment.script === "cjk") {
     attrs.unshift('class="cjk"');
     attrs.push(`font-family="${CJK_FONT}"`);
+  } else if (segment.script === "emoji") {
+    attrs.push(`font-family="${EMOJI_FONT}"`);
   }
   if (segment.bold) attrs.push('font-weight="700"');
   // CJK is never slanted: browsers would fake an oblique, resvg would not.
@@ -174,6 +178,32 @@ export const TITLE_TEXT: TextDefaults = {
   inset: TITLE.inset,
   wrap: true,
 };
+
+/**
+ * The font scales a title may take: the master's title autofits
+ * (normAutofit), so a title too long for its placeholder shrinks instead of
+ * wrapping into the title rule, down to half its size.
+ */
+export const TITLE_SCALES = [1, 0.9, 0.8, 0.7, 0.6, 0.5];
+
+/** The largest of TITLE_SCALES at which the title fits its placeholder. */
+export function titleScale(title: string): number {
+  for (const scale of TITLE_SCALES) {
+    const layout = layoutText(titleBody(title), TITLE.box, {
+      ...TITLE_TEXT,
+      size: TITLE.size * scale,
+    });
+    if (layout.height + 2 * TITLE_TEXT.inset.y <= TITLE.box.h + 0.5) {
+      return scale;
+    }
+  }
+  return TITLE_SCALES[TITLE_SCALES.length - 1];
+}
+
+/** How a title is laid out, shrunk to fit. */
+export function titleText(title: string): TextDefaults {
+  return { ...TITLE_TEXT, size: TITLE.size * titleScale(title) };
+}
 
 /** A slide title as the text body the title placeholder draws. */
 export const titleBody = (title: string): TextBody => ({
@@ -335,7 +365,9 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
     );
   }
   if (slide.title) {
-    parts.push(textSvg(titleBody(slide.title), TITLE.box, TITLE_TEXT));
+    parts.push(
+      textSvg(titleBody(slide.title), TITLE.box, titleText(slide.title))
+    );
   }
   for (const shape of slide.shapes)
     parts.push(shapeSvg(shape, shapes, options));

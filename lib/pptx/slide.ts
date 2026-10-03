@@ -4,7 +4,7 @@
 // canvas px to EMU (1 px = 6350 EMU, half a point).
 import type { Shape, Slide, TextBody } from "../deck/schema";
 import { type Point, routeConnector } from "../render/connector";
-import { shapeTextDefaults, type TextShape } from "../render/svg";
+import { shapeTextDefaults, type TextShape, titleScale } from "../render/svg";
 import { DEFAULT_TEXT } from "../render/template";
 import { connectorGeometry } from "./connector";
 
@@ -221,15 +221,24 @@ function connectorXml(
   return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvCxnSpPr>${glue(shape.start, "a:stCxn")}${glue(shape.end, "a:endCxn")}</p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr><p:spPr>${xfrm(geometry, geometry.rotation, geometry.flipH, geometry.flipV)}<a:prstGeom prst="${geometry.prst}"><a:avLst>${av}</a:avLst></a:prstGeom><a:noFill/>${line(shape.stroke, ends)}</p:spPr></p:cxnSp>`;
 }
 
-/** The title placeholder; lines of the title are line breaks in one paragraph. */
+/**
+ * The title placeholder; lines of the title are line breaks in one
+ * paragraph. A title the renderer shrank to fit is stored shrunk the same
+ * way, since PowerPoint draws the stored scale until the text is edited.
+ */
 function titleXml(title: string): string {
   if (!title) return "";
+  const scale = titleScale(title);
+  const bodyPr =
+    scale < 1
+      ? `<a:bodyPr><a:normAutofit fontScale="${Math.round(scale * 100000)}"/></a:bodyPr>`
+      : "<a:bodyPr/>";
   const lines = title.split("\n");
   const rPr = '<a:rPr lang="zh-TW" altLang="en-US" dirty="0"/>';
   const runs = lines
     .map((piece) => (piece ? `<a:r>${rPr}<a:t>${esc(piece)}</a:t></a:r>` : ""))
     .join(`<a:br>${rPr}</a:br>`);
-  return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p>${runs}</a:p></p:txBody></p:sp>`;
+  return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody>${bodyPr}<a:lstStyle/><a:p>${runs}</a:p></p:txBody></p:sp>`;
 }
 
 function slideNumberXml(number: number): string {

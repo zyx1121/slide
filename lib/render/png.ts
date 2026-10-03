@@ -15,6 +15,7 @@ const FONT_FILES = [
   "Carlito-BoldItalic.ttf",
   "NotoSansTC-Regular.otf",
   "NotoSansTC-Bold.otf",
+  "NotoEmoji.ttf",
 ];
 
 function fontDir(): string {

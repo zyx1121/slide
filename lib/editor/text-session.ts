@@ -7,8 +7,8 @@ import type { Shape, Slide, TextBody } from "../deck/schema";
 import {
   holdsText,
   shapeTextDefaults,
-  TITLE_TEXT,
   titleBody,
+  titleText,
 } from "../render/svg";
 import { TITLE } from "../render/template";
 import { layoutText, type TextDefaults, type TextLayout } from "../render/text";
@@ -61,7 +61,7 @@ export function frameOf(slide: Slide, target: string): TextFrame | null {
     return {
       box: TITLE.box,
       rotation: 0,
-      defaults: TITLE_TEXT,
+      defaults: titleText(slide.title),
       paragraphs: false,
     };
   }

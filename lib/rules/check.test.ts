@@ -55,10 +55,9 @@ describe("checkSlide", () => {
     expect(violation.message).toContain("#123456");
   });
 
-  it("flags text that overflows its box, and a title over one line", () => {
+  it("flags text that overflows its box, and a title too long to shrink", () => {
     const long = box("sh_a1", 100, 300, "word ".repeat(80), { h: 60 });
-    const title =
-      "A very long slide title that keeps going well past one line of the placeholder";
+    const title = "A very long slide title that keeps going ".repeat(8);
     expect(rules(slide([long], title))).toEqual([
       [null, "title-overflow"],
       ["sh_a1", "text-overflow"],

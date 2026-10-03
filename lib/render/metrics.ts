@@ -15,9 +15,13 @@ const REGULAR = metrics.widths.regular as Table;
 const NOTO = metrics.noto.widths as Table;
 const NOTO_UNITS = metrics.noto.unitsPerEm;
 
-/** Single line spacing as a multiple of the font size: 1.2207 for Calibri. */
-export const LINE_HEIGHT =
-  (metrics.ascender - metrics.descender + metrics.lineGap) / UNITS;
+/**
+ * Single line spacing as a multiple of the font size. PowerPoint sets lines
+ * 1.2 em apart, for Calibri and for CJK alike (measured from its PDF of 10
+ * lines at 18 pt: 21.55 pt apart), a little tighter than Calibri's own
+ * metrics (1.2207).
+ */
+export const LINE_HEIGHT = 1.2;
 
 /** The baseline's distance below the top of a line, per px of font size. */
 export const ASCENT = metrics.ascender / UNITS;
@@ -25,6 +29,17 @@ export const ASCENT = metrics.ascender / UNITS;
 function variant(style: FontStyle): Variant {
   if (style.bold) return style.italic ? "boldItalic" : "bold";
   return style.italic ? "italic" : "regular";
+}
+
+/** Emoji, drawn on the server with a monochrome emoji font. */
+export function isEmoji(cp: number): boolean {
+  return (
+    (cp >= 0x1f300 && cp <= 0x1faff) ||
+    (cp >= 0x2600 && cp <= 0x27bf) ||
+    (cp >= 0x1f000 && cp <= 0x1f2ff) ||
+    cp === 0xfe0f ||
+    cp === 0x200d
+  );
 }
 
 /** East Asian wide characters (CJK, kana, Hangul, full-width forms, emoji). */
@@ -50,8 +65,11 @@ export function isWide(cp: number): boolean {
  * The font that draws a character: Carlito when it has the glyph, otherwise
  * the CJK font (Noto Sans TC, or a tofu box of its width).
  */
-export function fontOf(cp: number): "latin" | "cjk" {
-  return REGULAR[cp] !== undefined ? "latin" : "cjk";
+export function fontOf(cp: number): "latin" | "cjk" | "emoji" {
+  if (REGULAR[cp] !== undefined) return "latin";
+  // Symbols Noto Sans TC has (★, ※) stay in it; the rest are emoji.
+  if (NOTO[cp] === undefined && isEmoji(cp)) return "emoji";
+  return "cjk";
 }
 
 /** The advance width of one character, in px. */

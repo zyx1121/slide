@@ -120,7 +120,7 @@ describe("layoutText", () => {
       defaults
     );
     expect(lineTexts(layout)).toEqual(["one", "two", "", "three"]);
-    expect(layout.lines[2].height).toBeCloseTo(40 * 1.2207, 3);
+    expect(layout.lines[2].height).toBeCloseTo(40 * 1.2, 3);
   });
 
   it("indents bullets by level and numbers them per level", () => {
@@ -158,7 +158,7 @@ describe("layoutText", () => {
       10 + (380 - width) / 2,
       6
     );
-    expect(centered.top).toBeCloseTo(5 + (290 - 40 * 1.2207) / 2, 3);
+    expect(centered.top).toBeCloseTo(5 + (290 - 40 * 1.2) / 2, 3);
     const right = layoutText(
       { paragraphs: [{ align: "right", runs: [{ text: "Hi" }] }] },
       { w: 400, h: 300 },
@@ -282,8 +282,53 @@ describe("layoutText", () => {
     );
     expect(layout.lines[0].segments.map((s) => [s.text, s.script])).toEqual([
       ["①", "latin"],
-      ["※★✅", "cjk"],
+      ["※★", "cjk"],
+      ["✅", "emoji"],
     ]);
+  });
+
+  it("justifies lines but the last, spreading space between words", () => {
+    const text = "aaaa bbbb cccc dddd eeee ffff";
+    const width = measure("aaaa bbbb cccc ", style);
+    const layout = layoutText(
+      { paragraphs: [{ align: "justify", runs: [{ text }] }] },
+      { w: width + 30, h: 500 },
+      defaults
+    );
+    const [first, last] = layout.lines;
+    // The first line ends at the right edge: its words moved apart.
+    const end = first.segments.at(-1)!;
+    expect(end.x + end.width).toBeCloseTo(width + 30, 3);
+    expect(first.segments.map((s) => s.text.trim()).filter(Boolean)).toEqual([
+      "aaaa",
+      "bbbb",
+      "cccc",
+    ]);
+    // The last line keeps its natural spacing, from the left.
+    expect(last.segments[0].x).toBe(0);
+    expect(last.segments.length).toBe(1);
+    // Carets follow the moved words.
+    const c = first.carets.find((caret) => caret.at === 10)!;
+    expect(c.x).toBeCloseTo(
+      first.segments.find((s) => s.text.startsWith("cccc"))!.x,
+      3
+    );
+  });
+
+  it("justifies CJK between characters", () => {
+    const layout = layoutText(
+      {
+        paragraphs: [
+          { align: "justify", runs: [{ text: "語音辨識系統架構與設計" }] },
+        ],
+      },
+      { w: 40 * 4.5, h: 500 },
+      defaults
+    );
+    const [first] = layout.lines;
+    expect(first.segments.map((s) => s.text)).toEqual(["語", "音", "辨", "識"]);
+    const end = first.segments.at(-1)!;
+    expect(end.x + end.width).toBeCloseTo(40 * 4.5, 3);
   });
 
   it("lays out a very long line without running out of stack", () => {

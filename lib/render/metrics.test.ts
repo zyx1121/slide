@@ -6,7 +6,8 @@ const regular = { size: 48, bold: false, italic: false };
 
 describe("metrics", () => {
   it("uses Calibri's single line spacing", () => {
-    expect(LINE_HEIGHT).toBeCloseTo(1.2207, 4);
+    // PowerPoint's single spacing, measured from its own PDF.
+    expect(LINE_HEIGHT).toBe(1.2);
   });
 
   it("measures Latin with Carlito's widths and bold wider than regular", () => {
@@ -36,9 +37,11 @@ describe("metrics", () => {
     expect(charWidth(0x203b, regular)).toBe(48);
     // ✓ is narrower than an em in Noto Sans TC (683 of 1000).
     expect(charWidth(0x2713, regular)).toBeCloseTo(0.683 * 48, 6);
-    // Neither font has ✅ or Thai: one em, drawn by the CJK font.
-    expect(fontOf(0x2705)).toBe("cjk");
+    // Neither font has ✅: one em, drawn by the emoji font. Thai: one em,
+    // a box in the CJK font.
+    expect(fontOf(0x2705)).toBe("emoji");
     expect(charWidth(0x2705, regular)).toBe(48);
+    expect(fontOf(0x0e01)).toBe("cjk");
     expect(charWidth(0x0e01, regular)).toBe(48);
   });
 });

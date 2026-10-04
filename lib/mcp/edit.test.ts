@@ -4,7 +4,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { sampleDocument } from "../deck/sample";
 import { createDeck, ensureUser, getDeck, mutateDeck } from "../deck/store";
 import { createTestDb, TEST_DATABASE_URL } from "../test-db";
-import { editDeck } from "./edit";
+import type { DeckDocument } from "../deck/schema";
+import { editDeck, type EditOutcome } from "./edit";
 import { updateShapes } from "./write";
 
 describe.skipIf(!TEST_DATABASE_URL)("editDeck (Postgres)", () => {
@@ -49,6 +50,39 @@ describe.skipIf(!TEST_DATABASE_URL)("editDeck (Postgres)", () => {
     expect(shapes.get("sh_router")).toMatchObject({ x: 100 });
   });
 
+  it("waits for a write holding the deck, then plans on what it left", async () => {
+    const deck = await createDeck(db, "alice", sampleDocument());
+    let pending: Promise<EditOutcome> | undefined;
+    await db.begin(async (tx) => {
+      // Another write holds the deck and puts a shape in front, so every
+      // shape after it moves down one position.
+      const [row] = await tx<{ document: DeckDocument }[]>`
+        select document from decks where id = ${deck.id} for update`;
+      const document = row.document;
+      document.slides[0].shapes.unshift({
+        ...document.slides[0].shapes[0],
+        id: "sh_member",
+      });
+      // The agent's edit arrives now, and waits for the lock.
+      pending = editDeck(db, "alice", deck.id, fill("#e2f0d9"));
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      await tx`
+        update decks set document = ${tx.json(document as never)},
+          version = version + 1
+        where id = ${deck.id}`;
+    });
+    expect(await pending).toMatchObject({ ok: true, version: 2 });
+    const shapes = (await getDeck(db, "alice", deck.id))!.document.slides[0]
+      .shapes;
+    expect(shapes.slice(0, 3).map((shape) => shape.id)).toEqual([
+      "sh_member",
+      "sh_capture",
+      "sh_asr",
+    ]);
+    expect(shapes[2]).toMatchObject({ fill: "#e2f0d9" });
+    expect(shapes[0]).not.toMatchObject({ fill: "#e2f0d9" });
+  });
+
   it("says why a plan cannot be made, or the deck is not there", async () => {
     const deck = await createDeck(db, "alice", sampleDocument());
     const missing = await editDeck(db, "alice", deck.id, (document) =>
@@ -57,6 +91,7 @@ describe.skipIf(!TEST_DATABASE_URL)("editDeck (Postgres)", () => {
       ])
     );
     expect(missing).toMatchObject({ ok: false });
+    expect((missing as { message: string }).message).toMatch(/sh_nothere/);
     expect(
       await editDeck(db, "alice", "dk_nothere00", fill("#000000"))
     ).toEqual({

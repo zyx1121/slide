@@ -69,7 +69,9 @@ export async function restoreDeckAction(form: FormData): Promise<ActionResult> {
   const user = await requireUser();
   const id = form.get("id");
   if (typeof id !== "string") return MALFORMED;
-  await restoreDeck(sql, user.sub, id);
+  if (!(await restoreDeck(sql, user.sub, id))) {
+    return { ok: false, error: "這份簡報已經還原，或已經不在了。" };
+  }
   refresh();
   return { ok: true };
 }

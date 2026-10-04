@@ -8,6 +8,8 @@ import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { guard } from "../editor/guard";
 import { deleteOps } from "../editor/ops";
+import { duplicateSlide, insertSlideOps } from "../editor/slides";
+import type { TemplateId } from "../render/template";
 
 export class WriteError extends Error {}
 
@@ -222,5 +224,49 @@ export function moveSlide(
     ]),
     created: [],
     changed: [found.id],
+  };
+}
+
+/** Copies a slide, with new ids for it and its shapes, right after it. */
+export function copySlide(
+  document: DeckDocument,
+  slide: number | string
+): Planned {
+  const { slide: found, index } = findSlide(document, slide);
+  if (document.slides.length >= 500) {
+    throw new WriteError("a deck holds at most 500 slides");
+  }
+  const copy = duplicateSlide(found);
+  return {
+    ops: guard(document, insertSlideOps(index + 1, copy)),
+    created: [copy.id, ...copy.shapes.map((shape) => shape.id)],
+    changed: [],
+  };
+}
+
+/** Renames the deck. */
+export function retitle(document: DeckDocument, title: string): Planned {
+  const value = title.trim();
+  if (!value) throw new WriteError("a deck needs a title");
+  if (value === document.title) throw new WriteError("the deck has that title");
+  return {
+    ops: [{ op: "replace", path: "/title", value }],
+    created: [],
+    changed: [],
+  };
+}
+
+/** Puts the deck on another template. */
+export function retemplate(
+  document: DeckDocument,
+  template: TemplateId
+): Planned {
+  if ((document.template ?? "plain") === template) {
+    throw new WriteError(`the deck is already on the ${template} template`);
+  }
+  return {
+    ops: [{ op: "add", path: "/template", value: template }],
+    created: [],
+    changed: [],
   };
 }

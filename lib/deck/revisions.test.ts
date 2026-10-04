@@ -233,6 +233,34 @@ describe.skipIf(!TEST_DATABASE_URL)(
       expect(latest).toMatchObject({ author: "agent", decidedBy: "agent" });
     });
 
+    it("asks before an agent restores a deck that was public", async () => {
+      const deck = await fresh();
+      await actOnDeck(db, "alice", deck.id, "publish");
+      await actOnDeck(db, "alice", deck.id, "delete");
+      expect(
+        (await actOnDeck(db, "alice", deck.id, "restore", "agent")).outcome
+      ).toBe("requested");
+      expect(await getDeck(db, "alice", deck.id)).toBeNull();
+      // A private deck comes back at once.
+      const quiet = await fresh();
+      await actOnDeck(db, "alice", quiet.id, "delete");
+      expect(
+        (await actOnDeck(db, "alice", quiet.id, "restore", "agent")).outcome
+      ).toBe("applied");
+    });
+
+    it("reverts a deck action only while no later one followed", async () => {
+      const deck = await fresh();
+      const first = await actOnDeck(db, "alice", deck.id, "publish");
+      await actOnDeck(db, "alice", deck.id, "unpublish");
+      await actOnDeck(db, "alice", deck.id, "publish");
+      const firstId = (first as { revisionId: string }).revisionId;
+      expect(await revertRevision(db, "alice", deck.id, firstId)).toMatchObject(
+        { outcome: "conflict" }
+      );
+      expect((await getDeck(db, "alice", deck.id))!.published).toBe(true);
+    });
+
     it("refuses another member's deck for every action", async () => {
       const deck = await fresh();
       for (const action of [

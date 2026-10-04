@@ -128,6 +128,11 @@ describe("deck actions", () => {
       ok: true,
     });
     expect(restoreDeck).toHaveBeenCalledWith({}, "alice-sub", "dk_1");
+    vi.mocked(restoreDeck).mockResolvedValue(false);
+    expect(await restoreDeckAction(form({ id: "dk_1" }))).toEqual({
+      ok: false,
+      error: expect.any(String),
+    });
     expect(await restoreDeckAction(form({}))).toEqual({
       ok: false,
       error: expect.any(String),

@@ -5,10 +5,32 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type postgres from "postgres";
 import * as z from "zod";
 
-import { slideAssetUris } from "../assets/store";
+import {
+  AssetError,
+  readAsset,
+  saveAsset,
+  slideAssetUris,
+} from "../assets/store";
 import { DeckError } from "../deck/errors";
+import { ASSET_MAX_BYTES, DECK_TITLE_MAX } from "../deck/limits";
+import {
+  acceptSuggestion,
+  actOnDeck,
+  type DeckAction,
+  listRevisions,
+  listSuggestions,
+  rejectSuggestion,
+  revertRevision,
+} from "../deck/revisions";
 import { getSelection } from "../deck/selection";
-import { getDeck, listDecks, mutateDeck } from "../deck/store";
+import {
+  blankDocument,
+  createDeck,
+  getDeck,
+  listDecks,
+  listDeletedDecks,
+  mutateDeck,
+} from "../deck/store";
 import { shapeBounds, unionRects } from "../editor/geometry";
 import { plainText } from "../editor/text-edit";
 import {
@@ -17,15 +39,20 @@ import {
   renderPngAsync,
 } from "../render/png";
 import { holdsText, renderSlideSvg } from "../render/svg";
-import { templateOf } from "../render/template";
+import { TEMPLATE_IDS, templateOf } from "../render/template";
+import { importDeck } from "../pptx/import-deck";
+import { fileName, pptxBytes } from "../pptx/response";
 import { checkDeck } from "../rules/check";
 import {
   addShapes,
   addSlide,
+  copySlide,
   deleteShapes,
   deleteSlide,
   moveSlide,
   type Planned,
+  retemplate,
+  retitle,
   updateShapes,
   WriteError,
 } from "./write";
@@ -48,6 +75,22 @@ const SlideRef = z
 const SHAPES_HELP =
   "Shapes follow the deck document (see get_deck): rect, roundRect (corner 0 to 0.5), ellipse, preset (geometry: triangle, rtTriangle, diamond, parallelogram, trapezoid, homePlate, chevron, rightArrow, leftArrow, upArrow, downArrow, leftRightArrow, upDownArrow, leftBracket, rightBracket, bentArrow or flowChartSummingJunction), freeform (path: SVG path data with absolute M, L, C, Q and Z, coordinates 0 to 1000 across the box) and text have x, y, w, h (px on 1920 x 1080), optional rotation, fill (#rrggbb or null), stroke ({ color, width, dash }) and text ({ paragraphs: [{ runs: [{ text, size, color, bold, italic, underline }], align, bullet, level }], anchor }); text needs text. line has route (straight, elbow, curved), start and end ({ x, y } or { shape, site } with site 0 top, 1 left, 2 bottom, 3 right), stroke, startArrow and endArrow. Sizes are px: 18 pt is 36.";
 
+/** The most a .pptx sent over MCP may weigh: base64 in a JSON body. */
+export const MCP_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
+
+/** Bytes from base64, or null when the text is not base64 or too long. */
+function fromBase64(data: string, max: number): Buffer | null {
+  if (data.length > Math.ceil((max * 4) / 3) + 4) return null;
+  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
+  const bytes = Buffer.from(data, "base64");
+  return bytes.length > 0 && bytes.length <= max ? bytes : null;
+}
+
+const EntryId = z
+  .string()
+  .regex(/^[0-9]{1,18}$/)
+  .describe("An entry id from list_history");
+
 const DeckId = z
   .string()
   .regex(/^dk_[0-9a-z]{2,48}$/)
@@ -58,7 +101,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in member. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, and check_deck for the slide rules. Edits (add_shapes, update_shapes, delete_shapes, add_slide, delete_slide, move_slide) address shapes and slides by id and arrive as suggestions the member accepts or rejects in the editor; render_slide shows the deck as it is, without pending suggestions.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules and get_selection for what the member points at. Document edits (add_shapes, update_shapes, delete_shapes, add_slide, copy_slide, delete_slide, move_slide, rename_deck, set_template) arrive as suggestions; publish_deck and delete_deck as requests; render_slide shows the deck as it is, without pending ones. list_history shows suggestions, requests and every past change; accept, reject and revert act on them, but accept only when the member asked you to. create_deck, import_deck, upload_image (for picture shapes), export_deck, unpublish_deck and restore_deck act at once.",
     }
   );
   const { db, sub } = context;
@@ -83,10 +126,21 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "List decks",
       description:
-        "The member's decks, newest first: id, title, slide count, version, whether published, last update.",
+        "The member's decks, newest first: id, title, slide count, version, whether published, last update. With deleted, the decks the member deleted instead, which restore_deck brings back.",
+      inputSchema: { deleted: z.boolean().optional() },
       annotations: { readOnlyHint: true },
     },
-    async () => {
+    async ({ deleted }) => {
+      if (deleted) {
+        const gone = await listDeletedDecks(db, sub);
+        return text(
+          gone.map((deck) => ({
+            id: deck.id,
+            title: deck.title,
+            deletedAt: deck.deletedAt.toISOString(),
+          }))
+        );
+      }
       const decks = await listDecks(db, sub);
       return text(
         decks.map((deck) => ({
@@ -420,6 +474,317 @@ export function createServer(context: ToolContext): McpServer {
     },
     async ({ deck_id, slide, to }) =>
       suggest(deck_id, (document) => moveSlide(document, slide, to))
+  );
+
+  // ---------------------------------------------------- decks and files
+
+  server.registerTool(
+    "create_deck",
+    {
+      title: "Create a deck",
+      description:
+        "Creates a deck of one empty slide and returns its id. Template plain unless winlab is asked for.",
+      inputSchema: {
+        title: z.string().trim().min(1).max(DECK_TITLE_MAX).optional(),
+        template: z.enum(TEMPLATE_IDS).optional(),
+      },
+    },
+    async ({ title, template }) => {
+      const document = blankDocument(title);
+      if (template) document.template = template;
+      const deck = await createDeck(db, sub, document);
+      return text({ id: deck.id, title: deck.title, version: deck.version });
+    }
+  );
+
+  server.registerTool(
+    "import_deck",
+    {
+      title: "Import a .pptx",
+      description: `Makes a .pptx into a new deck, its pictures stored as the member's, and returns the deck's id and a report of what was left out. data is the file in base64, at most ${MCP_IMPORT_MAX_BYTES / 1024 / 1024} MiB; larger files go through the editor's 匯入.`,
+      inputSchema: {
+        data: z.string().min(1),
+        file_name: z.string().max(255).optional(),
+      },
+    },
+    async ({ data, file_name }) => {
+      const bytes = fromBase64(data, MCP_IMPORT_MAX_BYTES);
+      if (!bytes) {
+        return failure(
+          `data must be a base64 .pptx of at most ${MCP_IMPORT_MAX_BYTES} bytes.`
+        );
+      }
+      const result = await importDeck(db, sub, bytes, {
+        fallbackTitle: file_name?.replace(/\.pptx$/i, "").trim() || undefined,
+        source: "mcp import_deck",
+      });
+      return result.ok
+        ? text({ id: result.deckId, report: result.report })
+        : failure(`The import failed: ${result.code}.`);
+    }
+  );
+
+  server.registerTool(
+    "upload_image",
+    {
+      title: "Upload a picture",
+      description: `Stores a PNG, JPEG or GIF (base64, at most ${ASSET_MAX_BYTES / 1024 / 1024} MiB) as the member's and returns its sha256, width and height; an image shape names it as asset.`,
+      inputSchema: { data: z.string().min(1) },
+    },
+    async ({ data }) => {
+      const bytes = fromBase64(data, ASSET_MAX_BYTES);
+      if (!bytes) {
+        return failure(
+          `data must be a base64 picture of at most ${ASSET_MAX_BYTES} bytes.`
+        );
+      }
+      try {
+        return text(await saveAsset(db, sub, bytes));
+      } catch (error) {
+        if (!(error instanceof AssetError)) throw error;
+        return failure(`The picture was refused: ${error.code}.`);
+      }
+    }
+  );
+
+  server.registerTool(
+    "get_image",
+    {
+      title: "Get a picture",
+      description:
+        "One of the member's pictures by its sha256 (an image shape's asset), as an image.",
+      inputSchema: { sha256: z.string().regex(/^[0-9a-f]{64}$/) },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ sha256 }) => {
+      const asset = await readAsset(db, sub, sha256);
+      if (!asset) return failure(`No picture ${sha256} among the member's.`);
+      return {
+        content: [
+          {
+            type: "image" as const,
+            data: Buffer.from(asset.data).toString("base64"),
+            mimeType: asset.mime,
+          },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "export_deck",
+    {
+      title: "Export a deck",
+      description:
+        "The deck as a .pptx file, with the member's pictures embedded, returned as an embedded resource.",
+      inputSchema: { deck_id: DeckId },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ deck_id }) => {
+      const deck = await getDeck(db, sub, deck_id);
+      if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
+      const bytes = await pptxBytes(db, deck);
+      return {
+        content: [
+          {
+            type: "resource" as const,
+            resource: {
+              uri: `slide://decks/${deck.id}/${encodeURIComponent(fileName(deck.title))}`,
+              mimeType:
+                "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+              blob: Buffer.from(bytes).toString("base64"),
+            },
+          },
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "rename_deck",
+    {
+      title: "Rename a deck",
+      description: "Suggests a new title for the deck.",
+      inputSchema: {
+        deck_id: DeckId,
+        title: z.string().trim().min(1).max(DECK_TITLE_MAX),
+      },
+    },
+    async ({ deck_id, title }) =>
+      suggest(deck_id, (document) => retitle(document, title))
+  );
+
+  server.registerTool(
+    "set_template",
+    {
+      title: "Switch template",
+      description:
+        "Suggests putting the deck on another template: plain (white, black title) or winlab (the WinLab master).",
+      inputSchema: { deck_id: DeckId, template: z.enum(TEMPLATE_IDS) },
+    },
+    async ({ deck_id, template }) =>
+      suggest(deck_id, (document) => retemplate(document, template))
+  );
+
+  server.registerTool(
+    "copy_slide",
+    {
+      title: "Copy a slide",
+      description:
+        "Suggests a copy of a slide right after it, with new ids for it and its shapes.",
+      inputSchema: { deck_id: DeckId, slide: SlideRef },
+    },
+    async ({ deck_id, slide }) =>
+      suggest(deck_id, (document) => copySlide(document, slide))
+  );
+
+  /** A deck action by the agent: done, or waiting as a request. */
+  const deckAction = async (deck_id: string, action: DeckAction) => {
+    const result = await actOnDeck(db, sub, deck_id, action, "agent");
+    switch (result.outcome) {
+      case "gone":
+        return failure(`No deck ${deck_id} among the member's decks.`);
+      case "already":
+        return text({ status: "unchanged", note: "Nothing to do." });
+      case "requested":
+        return text({
+          status: "requested",
+          entry: result.revisionId,
+          note: "The member sees this as a request in the editor; nothing happens until it is accepted.",
+        });
+      case "applied":
+        return text({ status: "applied", entry: result.revisionId });
+    }
+  };
+
+  server.registerTool(
+    "publish_deck",
+    {
+      title: "Publish a deck",
+      description:
+        "Requests publishing the deck at a public link anyone can open; it waits for acceptance.",
+      inputSchema: { deck_id: DeckId },
+    },
+    async ({ deck_id }) => deckAction(deck_id, "publish")
+  );
+
+  server.registerTool(
+    "unpublish_deck",
+    {
+      title: "Unpublish a deck",
+      description: "Stops the deck's public link at once.",
+      inputSchema: { deck_id: DeckId },
+    },
+    async ({ deck_id }) => deckAction(deck_id, "unpublish")
+  );
+
+  server.registerTool(
+    "delete_deck",
+    {
+      title: "Delete a deck",
+      description:
+        "Requests deleting the deck; it waits for acceptance, and a deleted deck can be restored.",
+      inputSchema: { deck_id: DeckId },
+    },
+    async ({ deck_id }) => deckAction(deck_id, "delete")
+  );
+
+  server.registerTool(
+    "restore_deck",
+    {
+      title: "Restore a deck",
+      description:
+        "Brings back a deleted deck (list_decks with deleted). A deck that was public when deleted comes back as a request, since its link would work again.",
+      inputSchema: {
+        deck_id: z.string().regex(/^dk_[0-9a-z]{2,48}$/),
+      },
+    },
+    async ({ deck_id }) => deckAction(deck_id, "restore")
+  );
+
+  // ------------------------------------------------------------- review
+
+  server.registerTool(
+    "list_history",
+    {
+      title: "List history",
+      description:
+        "The deck's pending suggestions and requests (oldest first, edits with their patch) and its history (newest first): each entry's id, kind (edit, publish, unpublish, delete, restore), status, author, who decided it and when.",
+      inputSchema: {
+        deck_id: DeckId,
+        limit: z.number().int().min(1).max(200).optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ deck_id, limit }) => {
+      const deck = await getDeck(db, sub, deck_id);
+      if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
+      const [pending, history] = await Promise.all([
+        listSuggestions(db, sub, deck_id),
+        listRevisions(db, sub, deck_id, limit ?? 50),
+      ]);
+      return text({ version: deck.version, pending, history });
+    }
+  );
+
+  const review = (
+    action: "accept" | "reject" | "revert",
+    deck_id: string,
+    entry: string
+  ) =>
+    action === "reject"
+      ? rejectSuggestion(db, sub, deck_id, entry, "agent").then((done) =>
+          done
+            ? text({ status: "rejected" })
+            : failure(`No pending entry ${entry} in deck ${deck_id}.`)
+        )
+      : (action === "accept" ? acceptSuggestion : revertRevision)(
+          db,
+          sub,
+          deck_id,
+          entry,
+          "agent"
+        ).then((outcome) =>
+          outcome.outcome === "gone"
+            ? failure(`No such entry ${entry} in deck ${deck_id}.`)
+            : outcome.outcome === "conflict"
+              ? failure(outcome.message)
+              : text(outcome)
+        );
+
+  server.registerTool(
+    "accept",
+    {
+      title: "Accept a suggestion or request",
+      description:
+        "Accepts a pending suggestion or request from list_history, as the agent. Accept only what the member asked you to.",
+      inputSchema: { deck_id: DeckId, entry: EntryId },
+    },
+    async ({ deck_id, entry }) => review("accept", deck_id, entry)
+  );
+
+  server.registerTool(
+    "reject",
+    {
+      title: "Reject a suggestion or request",
+      description: "Rejects a pending suggestion or request from list_history.",
+      inputSchema: { deck_id: DeckId, entry: EntryId },
+    },
+    async ({ deck_id, entry }) => review("reject", deck_id, entry)
+  );
+
+  server.registerTool(
+    "revert",
+    {
+      title: "Revert a change",
+      description:
+        "Undoes one applied entry from list_history as a new entry: an edit's inverse (refused when a later edit changed the same place), or a deck action's opposite (publishing again or deleting again waits as a request).",
+      inputSchema: {
+        deck_id: z.string().regex(/^dk_[0-9a-z]{2,48}$/),
+        entry: EntryId,
+      },
+    },
+    async ({ deck_id, entry }) => review("revert", deck_id, entry)
   );
 
   return server;

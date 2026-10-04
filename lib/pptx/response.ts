@@ -14,11 +14,11 @@ export function fileName(title: string): string {
   return `${safe || "slides"}.pptx`;
 }
 
-/** The deck as a PowerPoint download. */
-export async function pptxResponse(
+/** The deck as .pptx bytes, with its owner's pictures embedded. */
+export async function pptxBytes(
   db: postgres.Sql,
   deck: Deck
-): Promise<Response> {
+): Promise<Uint8Array> {
   // The owner's own pictures are embedded; any other shows as a frame.
   const media = new Map<string, Media>();
   const shas = new Set(
@@ -44,6 +44,15 @@ export async function pptxResponse(
       return out;
     }
   );
+  return bytes;
+}
+
+/** The deck as a PowerPoint download. */
+export async function pptxResponse(
+  db: postgres.Sql,
+  deck: Deck
+): Promise<Response> {
+  const bytes = await pptxBytes(db, deck);
   return new Response(new Uint8Array(bytes), {
     headers: {
       "content-type":

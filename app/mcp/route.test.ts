@@ -127,17 +127,33 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(init.body.result.serverInfo.name).toBe("slide");
     const tools = (await rpc("tools/list", {})).body.result.tools;
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
+      "accept",
       "add_shapes",
       "add_slide",
       "check_deck",
+      "copy_slide",
+      "create_deck",
+      "delete_deck",
       "delete_shapes",
       "delete_slide",
+      "export_deck",
       "get_deck",
+      "get_image",
       "get_selection",
+      "import_deck",
       "list_decks",
+      "list_history",
       "move_slide",
+      "publish_deck",
+      "reject",
+      "rename_deck",
       "render_slide",
+      "restore_deck",
+      "revert",
+      "set_template",
+      "unpublish_deck",
       "update_shapes",
+      "upload_image",
     ]);
   });
 
@@ -237,5 +253,116 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       type: "image",
       mimeType: "image/png",
     });
+  });
+
+  const json = (result: { content: { text: string }[] }) =>
+    JSON.parse(result.content[0].text);
+
+  it("does what the editor does: decks, files and templates", async () => {
+    const created = json(
+      await call("create_deck", { title: "From an agent", template: "winlab" })
+    );
+    expect(created).toMatchObject({ title: "From an agent", version: 0 });
+    const fresh = json(await call("get_deck", { deck_id: created.id }));
+    expect(fresh.document.template).toBe("winlab");
+
+    // Document changes wait as suggestions.
+    for (const [tool, args] of [
+      ["rename_deck", { title: "Renamed" }],
+      ["set_template", { template: "plain" }],
+      ["copy_slide", { slide: 1 }],
+    ] as const) {
+      const result = json(await call(tool, { deck_id: created.id, ...args }));
+      expect(result.status).toBe("suggested");
+    }
+    expect(
+      (await call("set_template", { deck_id: created.id, template: "winlab" }))
+        .isError
+    ).toBe(true);
+
+    // A picture goes up and comes back.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const asset = json(await call("upload_image", { data: png }));
+    expect(asset).toMatchObject({ width: 1, height: 1, mime: "image/png" });
+    const image = await call("get_image", { sha256: asset.sha256 });
+    expect(image.content[0]).toMatchObject({ type: "image", data: png });
+    expect((await call("upload_image", { data: "not base64!" })).isError).toBe(
+      true
+    );
+
+    // Export, then import what was exported.
+    const exported = await call("export_deck", { deck_id: deckId });
+    expect(exported.content[0]).toMatchObject({ type: "resource" });
+    const blob = exported.content[0].resource.blob as string;
+    expect(Buffer.from(blob, "base64").subarray(0, 2).toString()).toBe("PK");
+    const imported = json(
+      await call("import_deck", { data: blob, file_name: "Again.pptx" })
+    );
+    expect(imported.id).toMatch(/^dk_/);
+    expect(imported.report.slides).toBeGreaterThan(0);
+  });
+
+  it("asks before publishing or deleting, and reviews through history", async () => {
+    const deck = json(await call("create_deck", { title: "Reviewed" }));
+    const asked = json(await call("publish_deck", { deck_id: deck.id }));
+    expect(asked.status).toBe("requested");
+    const history = json(await call("list_history", { deck_id: deck.id }));
+    expect(history.pending).toHaveLength(1);
+    expect(history.pending[0]).toMatchObject({
+      kind: "publish",
+      author: "agent",
+    });
+    const accepted = json(
+      await call("accept", { deck_id: deck.id, entry: asked.entry })
+    );
+    expect(accepted).toMatchObject({ outcome: "applied", kind: "publish" });
+    const listed = json(await call("list_decks", {}));
+    expect(
+      listed.find((item: { id: string }) => item.id === deck.id).published
+    ).toBe(true);
+
+    // Unpublishing happens at once; reverting it asks again.
+    const off = json(await call("unpublish_deck", { deck_id: deck.id }));
+    expect(off.status).toBe("applied");
+    const back = json(
+      await call("revert", { deck_id: deck.id, entry: off.entry })
+    );
+    expect(back.outcome).toBe("requested");
+    expect(
+      json(await call("reject", { deck_id: deck.id, entry: back.revisionId }))
+    ).toEqual({ status: "rejected" });
+
+    // Delete waits; accepted, the deck moves to the deleted list.
+    const doomed = json(await call("delete_deck", { deck_id: deck.id }));
+    expect(doomed.status).toBe("requested");
+    await call("accept", { deck_id: deck.id, entry: doomed.entry });
+    expect(
+      json(await call("list_decks", { deleted: true })).map(
+        (item: { id: string }) => item.id
+      )
+    ).toContain(deck.id);
+    expect((await call("get_deck", { deck_id: deck.id })).isError).toBe(true);
+    expect(json(await call("restore_deck", { deck_id: deck.id })).status).toBe(
+      "applied"
+    );
+    expect((await call("get_deck", { deck_id: deck.id })).isError).toBeFalsy();
+  });
+
+  it("keeps every tool to the member's own decks", async () => {
+    const [bobs] = await db<{ id: string }[]>`
+      select id from decks where owner_sub = 'bob-sub' limit 1`;
+    for (const [tool, args] of [
+      ["export_deck", {}],
+      ["rename_deck", { title: "Mine" }],
+      ["delete_deck", {}],
+      ["publish_deck", {}],
+      ["list_history", {}],
+      ["accept", { entry: "1" }],
+      ["revert", { entry: "1" }],
+    ] as const) {
+      const result = await call(tool, { deck_id: bobs.id, ...args });
+      expect(result.isError, tool).toBe(true);
+    }
   });
 });

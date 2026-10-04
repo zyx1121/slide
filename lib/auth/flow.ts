@@ -94,7 +94,6 @@ export async function finishSignIn(
   }
 
   let user: SessionUser;
-  let idToken: string | undefined;
   let verified = false;
   try {
     const configuration = await oidc(env);
@@ -115,7 +114,6 @@ export async function finishSignIn(
       email: String(claims.email ?? ""),
     };
     verified = claims.email_verified === true;
-    idToken = tokens.id_token;
   } catch (error) {
     console.error("auth: callback refused", error);
     return failure(env, "failed");
@@ -133,7 +131,7 @@ export async function finishSignIn(
   const response = NextResponse.redirect(new URL(signIn.next, env.appUrl));
   response.cookies.set(
     sessionCookie(env),
-    await sealSession({ ...user, idToken }, env.secret),
+    await sealSession(user, env.secret),
     cookieOptions(env, SESSION_SECONDS)
   );
   response.cookies.set(signInCookie(env), "", cookieOptions(env, 0));
@@ -143,9 +141,9 @@ export async function finishSignIn(
 /**
  * POST /auth/logout: clears the session and, when the provider has an
  * end-session endpoint (Keycloak does, Google does not), ends its session
- * too, which then sends the member back to APP_URL. A cross-site form cannot
- * sign a member out: it is refused, and a request without a session clears
- * nothing.
+ * too, which may ask first and then sends the member back to APP_URL. A
+ * cross-site form cannot sign a member out: it is refused, and a request
+ * without a session clears nothing.
  */
 export async function signOut(
   request: NextRequest,
@@ -162,14 +160,16 @@ export async function signOut(
   if (!session) return NextResponse.redirect(env.appUrl, 303);
   let target: URL = env.appUrl;
   try {
-    target = client.buildEndSessionUrl(await oidc(env), {
-      post_logout_redirect_uri: env.appUrl.href,
-      ...(session?.idToken
-        ? { id_token_hint: session.idToken }
-        : { client_id: env.clientId }),
-    });
+    const configuration = await oidc(env);
+    if (configuration.serverMetadata().end_session_endpoint) {
+      target = client.buildEndSessionUrl(configuration, {
+        post_logout_redirect_uri: env.appUrl.href,
+        client_id: env.clientId,
+      });
+    }
   } catch (error) {
-    console.error("auth: no end-session endpoint", error);
+    // The provider is out of reach: the app's own session ends anyway.
+    console.error("auth: end-session lookup failed", error);
   }
   const response = NextResponse.redirect(target, 303);
   response.cookies.set(sessionCookie(env), "", cookieOptions(env, 0));

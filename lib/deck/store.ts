@@ -251,11 +251,10 @@ export async function mutateDeck(
     const [revision] = await tx<{ id: string }[]>`
       insert into revisions
         (deck_id, base_version, version, author_kind, author_sub, status,
-         patch, inverse, decided_kind, decided_at)
+         patch, inverse)
       values
         (${deckId}, ${row.version}, ${version}, ${actor.kind}, ${actor.sub}, 'applied',
-         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))},
-         ${actor.kind}, now())
+         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))})
       returning id
     `;
     return { status: "applied", version, revisionId: String(revision.id) };

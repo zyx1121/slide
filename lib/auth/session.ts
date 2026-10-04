@@ -31,19 +31,10 @@ export type SessionUser = {
   email: string;
 };
 
-type SessionPayload = {
-  sub: string;
-  name: string;
-  email: string;
-  idt?: string;
-};
-
-// A browser keeps a cookie of up to 4096 bytes; leave room for its name and
-// attributes. The ID token only makes sign-out skip a provider's confirm page.
-const MAX_COOKIE_VALUE = 3800;
+type SessionPayload = { sub: string; name: string; email: string };
 
 export async function sealSession(
-  user: SessionUser & { idToken?: string },
+  user: SessionUser,
   secret: string
 ): Promise<string> {
   const payload: SessionPayload = {
@@ -51,28 +42,19 @@ export async function sealSession(
     name: user.name,
     email: user.email,
   };
-  if (user.idToken) {
-    const withToken = await seal(
-      { ...payload, idt: user.idToken },
-      secret,
-      SESSION_SECONDS
-    );
-    if (withToken.length <= MAX_COOKIE_VALUE) return withToken;
-  }
   return seal(payload, secret, SESSION_SECONDS);
 }
 
 export async function unsealSession(
   token: string,
   secret: string
-): Promise<(SessionUser & { idToken?: string }) | null> {
+): Promise<SessionUser | null> {
   const payload = await unseal<SessionPayload>(token, secret);
   if (!payload || typeof payload.sub !== "string" || !payload.sub) return null;
   return {
     sub: payload.sub,
     name: String(payload.name ?? ""),
     email: String(payload.email ?? ""),
-    idToken: typeof payload.idt === "string" ? payload.idt : undefined,
   };
 }
 

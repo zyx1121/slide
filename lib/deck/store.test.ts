@@ -195,14 +195,13 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     expect(after?.version).toBe(1);
     expect(after?.document.slides[0].title).toBe("Overview");
     const [revision] = await db`
-      select status, author_kind, decided_kind, version,
+      select status, author_kind, version,
         inverse is not null as revertible
       from revisions where id = ${result.revisionId}
     `;
     expect(revision).toEqual({
       status: "applied",
       author_kind: "agent",
-      decided_kind: "agent",
       version: 1,
       revertible: true,
     });

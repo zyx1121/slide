@@ -125,8 +125,11 @@ describe("sign-in flow", () => {
       cookieFrom(response, sessionCookie(env)),
       env.secret
     );
-    expect(session?.sub).toBe("alice-sub");
-    expect(session?.idToken).toBeTruthy();
+    expect(session).toEqual({
+      sub: "alice-sub",
+      name: "Alice",
+      email: "alice@example.com",
+    });
     const cookie = setCookie(response, sessionCookie(env));
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=lax/i);
@@ -356,7 +359,7 @@ describe("sign-out", () => {
     expect(target.searchParams.get("post_logout_redirect_uri")).toBe(
       "http://app.test/"
     );
-    expect(target.searchParams.get("id_token_hint")).toBeTruthy();
+    expect(target.searchParams.get("client_id")).toBe("slide");
     expect(cookieFrom(response, sessionCookie(env))).toBe("");
   });
 

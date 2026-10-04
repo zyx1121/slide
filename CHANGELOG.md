@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.2...v0.1.3) (2026-10-04)
+
+
+### Bug fixes
+
+* buffer at most 2 MB of a request body for the proxy ([#99](https://github.com/zyx1121/slide.winlab.tw/issues/99)) ([c2c3e0d](https://github.com/zyx1121/slide.winlab.tw/commit/c2c3e0dd49e92ecc642481bb26aa4aba1ea0b59e))
+
 ## [0.1.2](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.1...v0.1.2) (2026-10-04)
 
 

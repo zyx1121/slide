@@ -324,7 +324,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(imported.report.slides).toBeGreaterThan(0);
   });
 
-  it("publishes and deletes at once, and undoes either through history", async () => {
+  it("publishes and deletes at once, and undoes either with its opposite", async () => {
     const deck = json(await call("create_deck", { title: "Reviewed" }));
     const published = json(await call("publish_deck", { deck_id: deck.id }));
     expect(published.status).toBe("applied");
@@ -340,11 +340,14 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       author: "agent",
     });
 
-    // Reverting the publish unpublishes, at once.
-    const back = json(
-      await call("revert", { deck_id: deck.id, entry: published.entry })
-    );
-    expect(back).toMatchObject({ outcome: "applied", kind: "unpublish" });
+    // A deck action is undone by its opposite tool, not by revert.
+    expect(
+      (await call("revert", { deck_id: deck.id, entry: published.entry }))
+        .isError
+    ).toBe(true);
+    expect(
+      json(await call("unpublish_deck", { deck_id: deck.id })).status
+    ).toBe("applied");
 
     // Delete moves the deck to the deleted list; restore brings it back.
     const doomed = json(await call("delete_deck", { deck_id: deck.id }));

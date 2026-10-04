@@ -120,7 +120,7 @@ Decided on 2026-10-04: the web app only helps present. Whatever a member can do 
 
 A member comments on what they select (slides, shapes, words); comments, replies, resolves and reopens are rows kept for good, so a thread is its whole conversation. The agent reads the open threads, answers each with edits, replies naming the entry that answers it, and resolves the thread.
 
-Decided on 2026-10-04, later the same day: no suggestions, requests or accepting. An agent's edits and deck actions (publish and delete included) apply at once, like the member's. Every change is an entry in the deck's history, and revert undoes any one; a deleted deck can be restored. The editor picks up changes made elsewhere within 3 s, and a save that meets a deck that moved on is replayed on it when it still fits.
+Decided on 2026-10-04, later the same day: no suggestions, requests or accepting. An agent's edits and deck actions (publish and delete included) apply at once, like the member's. Every change is an entry in the deck's history, and revert undoes any one edit; publishing and deleting are undone by their opposite (unpublish, restore), and a deleted deck can be restored. The editor picks up changes made elsewhere within 3 s, and a save that meets a deck that moved on is replayed on it when it still fits.
 
 ## Evidence
 

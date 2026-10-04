@@ -326,6 +326,34 @@ describe.skipIf(!TEST_DATABASE_URL)("grants (Postgres)", () => {
     }
   });
 
+  it("gives no code to a session whose member has no row", async () => {
+    const ghost = { sub: "ghost-sub", name: "", email: "alice@example.com" };
+    const response = await approveAs(
+      { tx: consent("ghost-sub"), decision: "allow" },
+      { cookie: await sessionCookie(ghost) },
+      db
+    );
+    expect(response.status).toBe(403);
+  });
+
+  it("matches a redirect URI written another way", async () => {
+    const response = await redeem(await codeFor(), {
+      redirect_uri: "https://CLAUDE.ai:443/api/mcp/auth_callback",
+    });
+    expect(response.status).toBe(200);
+  });
+
+  it("clears expired rows of every grant now and then", async () => {
+    await db`
+      insert into mcp_refresh_tokens (hash, family, sub, client_id, scope, expires_at)
+      values ('stale', 'abandoned', 'alice-sub', ${CLIENT}, 'decks', now() - interval '1 day')
+    `;
+    await codeFor();
+    expect(
+      await db`select 1 from mcp_refresh_tokens where hash = 'stale'`
+    ).toHaveLength(0);
+  });
+
   it("refuses an expired code", async () => {
     const code = await codeFor();
     await db`update mcp_codes set expires_at = now() - interval '1 second'`;

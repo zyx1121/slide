@@ -54,8 +54,13 @@ export async function createCode(
   }
 ): Promise<string> {
   const code = randomToken();
+  // Expired codes and the refresh tokens of grants nobody uses any more go
+  // here, now and then, whichever grant they belong to.
   await db`
     delete from mcp_codes where expires_at < now()
+  `;
+  await db`
+    delete from mcp_refresh_tokens where expires_at < now()
   `;
   await db`
     insert into mcp_codes

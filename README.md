@@ -31,6 +31,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Hands your agent** what you selected over MCP: the shapes as JSON, the words you marked, and a picture of that part of the slide
 - **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any of them can be reverted on its own
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
+- **Presents** full screen, or split across screens: the projector shows only the slides while your screen shows the slide, the next one, your speaker notes (written in the editor or by your agent) and a timer
 - **Publishes** a deck to a read-only link anyone can open and download
 - **Checks** a deck against the lab's slide rules: sizes, palette, overflow, overlaps, contrast
 
@@ -106,7 +107,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two
 - Decks are private to their owner; sharing with other members is not there yet
-- Agents work on decks that already exist: no tool creates, imports, publishes or deletes a deck
+- In Safari and Firefox the projection window cannot place itself on the projector: drag it there, then double-click it to go full screen (Chromium browsers open it on the other screen)
 
 ## Contributing
 

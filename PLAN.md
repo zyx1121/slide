@@ -75,6 +75,10 @@ Text is edited where it is drawn. The renderer draws the draft as it is typed, a
 
 `check_deck` and the editor panel share one rule set: font size bounds, palette, text overflow, overlapping text, connectors crossing text, low contrast. The rules come from the WinLab slide guidelines and the QA checklist in `zyx1121/plugin` `skills/winlab-pptx`.
 
+### Presenting
+
+Presenting needs no server state. 播放 shows the slides full screen over the editor. 簡報者模式 opens a projection window (only the slide, on black) and turns the tab into the presenter view: the slide shown and the next, the speaker notes below them, a timer and the clock. The presenter view decides what shows and tells the projection windows over a `BroadcastChannel` named for the deck (`lib/present/control.ts`); keys pressed in a projection window go back to it, so a clicker works in either window. Each projection keeps every slide drawn with the template background on its frame, so changing slides never decodes the background again. A deck changed elsewhere comes in through the editor's 3 second check and stays on the same slide by id. Where the browser can place windows (Chromium's Window Management API) the projection window opens on the other screen; elsewhere it is dragged there.
+
 ## Scope of v0.1
 
 1. Editor: shapes, glued connectors, text, images, and basic operations (drag, snap, multi-select, copy and paste, undo, z-order)

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.4.0](https://github.com/zyx1121/slide/compare/v0.3.0...v0.4.0) (2026-10-04)
+
+
+### Features
+
+* fewer dock tools, and delete decks without asking ([#142](https://github.com/zyx1121/slide/issues/142)) ([9a19d0e](https://github.com/zyx1121/slide/commit/9a19d0e31cd70aab2d5292818d975700d231bcdf))
+* revert edits only; deck actions are undone by their opposite ([#143](https://github.com/zyx1121/slide/issues/143)) ([4af1d62](https://github.com/zyx1121/slide/commit/4af1d62870bdc48434c75d8d9966d59d8325105e))
+
+
+### Bug fixes
+
+* keep paragraph settings a text style change leaves alone ([#139](https://github.com/zyx1121/slide/issues/139)) ([bd7820d](https://github.com/zyx1121/slide/commit/bd7820da0579bed5cbd93f2c7a6511106b3939fb))
+
 ## [0.3.0](https://github.com/zyx1121/slide/compare/v0.2.0...v0.3.0) (2026-10-04)
 
 

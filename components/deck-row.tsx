@@ -38,13 +38,21 @@ type Props = {
 
 /**
  * A deck card's text: the title, which links the whole card, the size and
- * last edit, and the rename and delete actions. Both act in place, without a
- * dialog: the theme's frosted overlays turn unreadable over white slides.
+ * last edit, and the rename and delete actions. Renaming happens in place,
+ * without a dialog: the theme's frosted overlays turn unreadable over white
+ * slides. Deleting happens at once: the deck moves to 最近刪除 below, where
+ * it can be restored.
  */
 export function DeckRow({ id, title, slideCount, updated }: Props) {
-  const [mode, setMode] = useState<"view" | "rename" | "delete">("view");
+  const [mode, setMode] = useState<"view" | "rename">("view");
   const renameButton = useRef<HTMLButtonElement>(null);
-  const deleteButton = useRef<HTMLButtonElement>(null);
+  // On success the list refreshes without this deck; focus moves to the
+  // page's main region instead of being lost.
+  const [deleted, deleteAction, deleting] = useDeckAction(
+    deleteDeckAction,
+    () => document.getElementById("task")?.focus()
+  );
+  const deleteError = deleted && !deleted.ok ? deleted.error : null;
   // The button that opened a form gets focus back once the view returns,
   // which after a save waits for the refreshed list.
   const restore = useRef<RefObject<HTMLButtonElement | null>>(null);
@@ -74,52 +82,54 @@ export function DeckRow({ id, title, slideCount, updated }: Props) {
         >
           {title}
         </Link>
-        {mode === "delete" ? (
-          <DeleteForm
-            id={id}
-            title={title}
-            onCancel={() => back(deleteButton)}
-          />
-        ) : (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {slideCount} 頁 · <time dateTime={updated.iso}>{updated.text}</time>
-          </span>
+        <span className="text-xs text-muted-foreground tabular-nums">
+          {slideCount} 頁 · <time dateTime={updated.iso}>{updated.text}</time>
+        </span>
+        {deleteError && (
+          <p role="alert" className="relative z-10 text-xs text-destructive">
+            {deleteError}
+          </p>
         )}
       </div>
-      {mode === "view" && (
-        <div className="relative z-10 -my-1 -mr-2 flex">
+      <div className="relative z-10 -my-1 -mr-2 flex">
+        <IconAction
+          ref={renameButton}
+          tip="重新命名"
+          label={`重新命名「${title}」`}
+          icon={PencilIcon}
+          onClick={() => setMode("rename")}
+        />
+        <form action={deleteAction}>
+          <input type="hidden" name="id" value={id} />
           <IconAction
-            ref={renameButton}
-            tip="重新命名"
-            label={`重新命名「${title}」`}
-            icon={PencilIcon}
-            onClick={() => setMode("rename")}
-          />
-          <IconAction
-            ref={deleteButton}
-            tip="刪除"
+            type="submit"
+            tip="刪除（可在最近刪除還原）"
             label={`刪除「${title}」`}
             icon={Trash2Icon}
-            onClick={() => setMode("delete")}
+            disabled={deleting}
           />
-        </div>
-      )}
+        </form>
+      </div>
     </div>
   );
 }
 
 function IconAction({
   ref,
+  type = "button",
   tip,
   label,
   icon: Icon,
+  disabled,
   onClick,
 }: {
-  ref: Ref<HTMLButtonElement>;
+  ref?: Ref<HTMLButtonElement>;
+  type?: "button" | "submit";
   tip: string;
   label: string;
   icon: ComponentType;
-  onClick: () => void;
+  disabled?: boolean;
+  onClick?: () => void;
 }) {
   return (
     <Tooltip>
@@ -127,9 +137,11 @@ function IconAction({
         render={
           <Button
             ref={ref}
+            type={type}
             variant="ghost"
             size="icon"
             aria-label={label}
+            disabled={disabled}
             className="text-muted-foreground"
             onClick={onClick}
           />
@@ -204,66 +216,6 @@ function RenameForm({
       </div>
       {error && (
         <p id={errorId} className="text-xs text-destructive">
-          {error}
-        </p>
-      )}
-    </form>
-  );
-}
-
-function DeleteForm({
-  id,
-  title,
-  onCancel,
-}: {
-  id: string;
-  title: string;
-  onCancel: () => void;
-}) {
-  // On success the list refreshes without this deck, which unmounts the
-  // form; focus moves to the page's main region instead of being lost.
-  const [state, action, pending] = useDeckAction(deleteDeckAction, () =>
-    document.getElementById("task")?.focus()
-  );
-  const messageId = useId();
-  const error = state && !state.ok ? state.error : null;
-
-  return (
-    <form
-      action={action}
-      className="relative z-10 mt-1 flex flex-col gap-2"
-      onKeyDown={(event) => {
-        if (event.key !== "Escape") return;
-        event.preventDefault();
-        onCancel();
-      }}
-    >
-      <input type="hidden" name="id" value={id} />
-      <p id={messageId} className="text-xs text-muted-foreground">
-        簡報會移到下方的「最近刪除」，隨時可以還原。
-      </p>
-      <div className="flex gap-2">
-        <Button
-          type="submit"
-          variant="destructive"
-          disabled={pending}
-          aria-label={`刪除「${title}」`}
-          aria-describedby={messageId}
-        >
-          刪除
-        </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          autoFocus
-          aria-describedby={messageId}
-          onClick={onCancel}
-        >
-          取消
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-destructive">
           {error}
         </p>
       )}

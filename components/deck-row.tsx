@@ -3,8 +3,6 @@
 import { PencilIcon, Trash2Icon } from "lucide-react";
 import Link from "next/link";
 import {
-  type ComponentType,
-  type Ref,
   type RefObject,
   startTransition,
   useActionState,
@@ -19,13 +17,9 @@ import {
   deleteDeckAction,
   renameDeckAction,
 } from "@/app/actions";
+import { Tool } from "@/components/editor/dock-parts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { DECK_TITLE_MAX } from "@/lib/deck/limits";
 
 type Props = {
@@ -92,65 +86,27 @@ export function DeckRow({ id, title, slideCount, updated }: Props) {
         )}
       </div>
       <div className="relative z-10 -my-1 -mr-2 flex">
-        <IconAction
+        <Tool
           ref={renameButton}
           tip="重新命名"
           label={`重新命名「${title}」`}
           icon={PencilIcon}
+          className="text-muted-foreground"
           onClick={() => setMode("rename")}
         />
         <form action={deleteAction}>
           <input type="hidden" name="id" value={id} />
-          <IconAction
+          <Tool
             type="submit"
             tip="刪除（可在最近刪除還原）"
             label={`刪除「${title}」`}
             icon={Trash2Icon}
             disabled={deleting}
+            className="text-muted-foreground"
           />
         </form>
       </div>
     </div>
-  );
-}
-
-function IconAction({
-  ref,
-  type = "button",
-  tip,
-  label,
-  icon: Icon,
-  disabled,
-  onClick,
-}: {
-  ref?: Ref<HTMLButtonElement>;
-  type?: "button" | "submit";
-  tip: string;
-  label: string;
-  icon: ComponentType;
-  disabled?: boolean;
-  onClick?: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            ref={ref}
-            type={type}
-            variant="ghost"
-            size="icon"
-            aria-label={label}
-            disabled={disabled}
-            className="text-muted-foreground"
-            onClick={onClick}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
   );
 }
 

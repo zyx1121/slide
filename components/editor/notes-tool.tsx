@@ -7,19 +7,9 @@
 import { NotebookPenIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { DockPopover } from "@/components/editor/dock-parts";
 import { Textarea } from "@/components/ui/textarea";
 import { NOTES_MAX } from "@/lib/deck/limits";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 /** How long typing pauses before it is saved, as for text on a slide. */
 const SAVE_DELAY = 800;
@@ -78,57 +68,36 @@ export function NotesTool({
   const label = has ? `講稿：第 ${slideNumber} 頁有講稿` : "講稿";
 
   return (
-    <Popover
+    <DockPopover
+      tip={label}
+      trigger={<NotebookPenIcon />}
+      button={{ variant: has ? "secondary" : "ghost" }}
+      panel="flex w-[min(36rem,calc(100vw-2rem))] flex-col gap-2"
       open={open}
       onOpenChange={(next) => {
         if (!next) save();
         setOpen(next);
       }}
     >
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant={has ? "secondary" : "ghost"}
-                  size="icon"
-                  aria-label={label}
-                />
-              }
-            />
-          }
-        >
-          <NotebookPenIcon />
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="flex w-[min(36rem,calc(100vw-2rem))] flex-col gap-2"
-      >
-        <div className="flex items-baseline justify-between gap-3">
-          <label className="text-xs font-medium" htmlFor="slide-notes">
-            第 {slideNumber} 頁的講稿
-          </label>
-          <span className="text-xs text-muted-foreground">
-            簡報者模式顯示在投影片下方
-          </span>
-        </div>
-        <Textarea
-          id="slide-notes"
-          value={value}
-          maxLength={NOTES_MAX}
-          rows={8}
-          disabled={disabled}
-          placeholder="寫下這一頁要講的話。"
-          className="max-h-[50dvh] min-h-40"
-          onChange={(event) => change(event.target.value)}
-          onBlur={save}
-        />
-      </PopoverContent>
-    </Popover>
+      <div className="flex items-baseline justify-between gap-3">
+        <label className="text-xs font-medium" htmlFor="slide-notes">
+          第 {slideNumber} 頁的講稿
+        </label>
+        <span className="text-xs text-muted-foreground">
+          簡報者模式顯示在投影片下方
+        </span>
+      </div>
+      <Textarea
+        id="slide-notes"
+        value={value}
+        maxLength={NOTES_MAX}
+        rows={8}
+        disabled={disabled}
+        placeholder="寫下這一頁要講的話。"
+        className="max-h-[50dvh] min-h-40"
+        onChange={(event) => change(event.target.value)}
+        onBlur={save}
+      />
+    </DockPopover>
   );
 }

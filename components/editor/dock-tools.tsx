@@ -33,17 +33,8 @@ import {
 
 import { TextFocus } from "@/components/editor/text-editor";
 
+import { DockPopover, Tool } from "@/components/editor/dock-parts";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type {
   Align,
   Anchor,
@@ -105,7 +96,7 @@ const colorName = (value: string | null) =>
     : (PALETTE.find((color) => color.value === value)?.name ?? value);
 
 /** A dock button that opens its choices above the dock. */
-function DockPopover({
+function ChoicePopover({
   tip,
   label,
   trigger,
@@ -123,35 +114,18 @@ function DockPopover({
   // While a text is edited, closing hands the keys back to it.
   const text = useContext(TextFocus);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  className="relative min-w-8 px-2"
-                  aria-label={label}
-                />
-              }
-            />
-          }
-        >
-          {trigger}
-        </TooltipTrigger>
-        <TooltipContent>{tip}</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className={wide ? "w-80" : "w-auto"}
-        finalFocus={() => text?.current ?? true}
-      >
-        {children(() => setOpen(false))}
-      </PopoverContent>
-    </Popover>
+    <DockPopover
+      tip={tip}
+      label={label}
+      trigger={trigger}
+      button={{ size: "default", className: "relative min-w-8 px-2" }}
+      panel={wide ? "w-80" : "w-auto"}
+      open={open}
+      onOpenChange={setOpen}
+      finalFocus={() => text?.current ?? true}
+    >
+      {children(() => setOpen(false))}
+    </DockPopover>
   );
 }
 
@@ -297,7 +271,7 @@ export function FillTool({
   onChange: Change;
 }) {
   return (
-    <DockPopover
+    <ChoicePopover
       tip="填色"
       label={`填色：${value === "mixed" ? "混合" : colorName(value)}`}
       trigger={<ColorIcon icon={PaintBucketIcon} color={value} />}
@@ -322,7 +296,7 @@ export function FillTool({
           </Button>
         </div>
       )}
-    </DockPopover>
+    </ChoicePopover>
   );
 }
 
@@ -339,7 +313,7 @@ export function StrokeTool({
 }) {
   const name = line ? "線條" : "框線";
   return (
-    <DockPopover
+    <ChoicePopover
       tip={name}
       label={`${name}：${stroke.color === "mixed" ? "混合" : colorName(stroke.color)}`}
       trigger={<ColorIcon icon={PenLineIcon} color={stroke.color} />}
@@ -390,7 +364,7 @@ export function StrokeTool({
           )}
         </div>
       )}
-    </DockPopover>
+    </ChoicePopover>
   );
 }
 
@@ -413,7 +387,7 @@ export function TextTools({
   const BulletIcon = bullet && bullet.value !== "none" ? bullet.icon : ListIcon;
   return (
     <>
-      <DockPopover
+      <ChoicePopover
         tip="字級"
         label={`字級：${text.size === "mixed" ? "混合" : `${pt(text.size)} pt`}`}
         trigger={
@@ -441,26 +415,26 @@ export function TextTools({
             ))}
           </div>
         )}
-      </DockPopover>
-      <Toggle
+      </ChoicePopover>
+      <Tool
         tip="粗體"
         icon={BoldIcon}
-        on={text.bold}
+        pressed={text.bold}
         onClick={() => toggle("bold", text.bold)}
       />
-      <Toggle
+      <Tool
         tip="斜體"
         icon={ItalicIcon}
-        on={text.italic}
+        pressed={text.italic}
         onClick={() => toggle("italic", text.italic)}
       />
-      <Toggle
+      <Tool
         tip="底線"
         icon={UnderlineIcon}
-        on={text.underline}
+        pressed={text.underline}
         onClick={() => toggle("underline", text.underline)}
       />
-      <DockPopover
+      <ChoicePopover
         tip="文字顏色"
         label={`文字顏色：${text.color === "mixed" ? "混合" : colorName(text.color)}`}
         trigger={<ColorIcon icon={BaselineIcon} color={text.color} />}
@@ -474,8 +448,8 @@ export function TextTools({
             }}
           />
         )}
-      </DockPopover>
-      <DockPopover
+      </ChoicePopover>
+      <ChoicePopover
         tip="對齊"
         label={`對齊：${align.name}`}
         trigger={<AlignIcon />}
@@ -504,8 +478,8 @@ export function TextTools({
             />
           </div>
         )}
-      </DockPopover>
-      <DockPopover
+      </ChoicePopover>
+      <ChoicePopover
         tip="項目符號"
         label={`項目符號：${bullet?.name ?? "混合"}`}
         trigger={<BulletIcon />}
@@ -524,46 +498,18 @@ export function TextTools({
             }}
           />
         )}
-      </DockPopover>
-      <Action
+      </ChoicePopover>
+      <Tool
         tip="減少縮排"
         icon={IndentDecreaseIcon}
         onClick={() => onChange({ kind: "level", delta: -1 })}
       />
-      <Action
+      <Tool
         tip="增加縮排"
         icon={IndentIncreaseIcon}
         onClick={() => onChange({ kind: "level", delta: 1 })}
       />
     </>
-  );
-}
-
-function Action({
-  tip,
-  icon: Icon,
-  onClick,
-}: {
-  tip: string;
-  icon: ComponentType;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={tip}
-            onClick={onClick}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
   );
 }
 
@@ -583,7 +529,7 @@ export function LineTools({
       : HEADS.find((option) => option.value === head)!.name;
   return (
     <>
-      <DockPopover
+      <ChoicePopover
         tip="線型"
         label={`線型：${route?.name ?? "混合"}`}
         trigger={<RouteIcon />}
@@ -602,12 +548,12 @@ export function LineTools({
             }}
           />
         )}
-      </DockPopover>
+      </ChoicePopover>
       {(["start", "end"] as const).map((end) => {
         const head = end === "start" ? line.start : line.end;
         const tip = end === "start" ? "起點箭頭" : "終點箭頭";
         return (
-          <DockPopover
+          <ChoicePopover
             key={end}
             tip={tip}
             label={`${tip}：${headName(head)}`}
@@ -631,40 +577,9 @@ export function LineTools({
                 )}
               />
             )}
-          </DockPopover>
+          </ChoicePopover>
         );
       })}
     </>
-  );
-}
-
-function Toggle({
-  tip,
-  icon: Icon,
-  on,
-  onClick,
-}: {
-  tip: string;
-  icon: ComponentType;
-  on: Shared<boolean>;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant={on === true ? "secondary" : "ghost"}
-            size="icon"
-            aria-label={tip}
-            aria-pressed={on === "mixed" ? "mixed" : on}
-            onClick={onClick}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
   );
 }

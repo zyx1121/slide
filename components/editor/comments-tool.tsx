@@ -13,18 +13,9 @@ import {
   threadAction,
 } from "@/app/decks/[id]/actions";
 import { WHO } from "@/components/editor/who";
+import { DockPopover } from "@/components/editor/dock-parts";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { Thread } from "@/lib/deck/comments";
 import type { Target } from "@/lib/deck/selection";
 import { formatDateTime } from "@/lib/format";
@@ -119,185 +110,175 @@ export function CommentsTool({
     .sort((a, b) => (a.id === focus ? -1 : b.id === focus ? 1 : 0));
 
   return (
-    <Popover open={open} onOpenChange={onOpenChange}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant={openCount > 0 ? "secondary" : "ghost"}
-                  className="relative min-w-8 gap-1 px-2 tabular-nums"
-                  aria-label={label}
-                />
-              }
-            />
-          }
-        >
+    <DockPopover
+      tip={label}
+      trigger={
+        <>
           <MessageSquareIcon />
           {openCount > 0 && <span className="text-xs">{openCount}</span>}
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="flex w-96 flex-col gap-3"
+        </>
+      }
+      button={{
+        variant: openCount > 0 ? "secondary" : "ghost",
+        size: "default",
+        className: "relative min-w-8 gap-1 px-2 tabular-nums",
+      }}
+      panel="flex w-96 flex-col gap-3"
+      open={open}
+      onOpenChange={onOpenChange}
+    >
+      <form
+        className="flex flex-col gap-2"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void send();
+        }}
       >
-        <form
-          className="flex flex-col gap-2"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void send();
+        <label className="text-xs font-medium" htmlFor="new-comment">
+          評論{here ? anchorLabel(here, selection.targets) : "這一頁"}
+        </label>
+        <Textarea
+          id="new-comment"
+          value={draft}
+          maxLength={5000}
+          rows={3}
+          placeholder="寫下要改什麼，代理程式會讀到。"
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+              event.preventDefault();
+              void send();
+            }
           }}
-        >
-          <label className="text-xs font-medium" htmlFor="new-comment">
-            評論{here ? anchorLabel(here, selection.targets) : "這一頁"}
-          </label>
-          <Textarea
-            id="new-comment"
-            value={draft}
-            maxLength={5000}
-            rows={3}
-            placeholder="寫下要改什麼，代理程式會讀到。"
-            onChange={(event) => setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
-                event.preventDefault();
-                void send();
-              }
-            }}
-          />
-          <div className="flex justify-end">
-            <Button type="submit" disabled={working || !draft.trim()}>
-              送出
-            </Button>
-          </div>
-        </form>
+        />
+        <div className="flex justify-end">
+          <Button type="submit" disabled={working || !draft.trim()}>
+            送出
+          </Button>
+        </div>
+      </form>
 
-        <section className="flex flex-col gap-2 border-t pt-3">
-          <div className="flex items-center justify-between">
-            <h2 className="text-xs font-medium">討論</h2>
-            <Button
-              variant="ghost"
-              onClick={() => setShowResolved((value) => !value)}
-            >
-              {showResolved ? "只看未結案" : "也看已結案"}
-            </Button>
-          </div>
-          {shown.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              沒有{showResolved ? "" : "未結案的"}評論。
-            </p>
-          ) : (
-            <ol className="flex max-h-80 flex-col gap-3 overflow-y-auto">
-              {shown.map((thread) => {
-                const number = slideNumberOf(thread.slideId);
-                return (
-                  <li
-                    key={thread.id}
-                    className="flex flex-col gap-1 rounded-md px-2 py-1 hover:bg-foreground/5"
-                  >
-                    <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
-                      <span>
-                        {number
-                          ? anchorLabel(number, thread.targets)
-                          : "已刪除的頁面"}{" "}
-                        · {WHO[thread.author]} · {time(thread.createdAt)}
-                        {thread.status === "resolved" ? " · 已結案" : ""}
-                      </span>
-                      {number && (
-                        <Button
-                          variant="ghost"
-                          onClick={() =>
-                            onJump(
-                              thread.slideId,
-                              thread.targets.map((t) => t.shape)
-                            )
-                          }
-                        >
-                          跳到
-                        </Button>
-                      )}
-                    </div>
-                    <p className="text-sm whitespace-pre-wrap">{thread.body}</p>
-                    {thread.replies.map((reply) => (
-                      <p
-                        key={reply.id}
-                        className="border-l pl-2 text-xs whitespace-pre-wrap text-muted-foreground"
-                      >
-                        {WHO[reply.author]}
-                        {reply.kind === "resolve"
-                          ? " 結案"
-                          : reply.kind === "reopen"
-                            ? " 重新打開"
-                            : `：${reply.body}`}
-                        {reply.entryId ? `（見紀錄 #${reply.entryId}）` : ""}
-                      </p>
-                    ))}
-                    <form
-                      className="flex items-end gap-1"
-                      onSubmit={async (event) => {
-                        event.preventDefault();
-                        const body = replies[thread.id]?.trim();
-                        if (!body) return;
-                        const done = await run(() =>
-                          threadAction(deckId, thread.id, "reply", body)
-                        );
-                        if (done)
-                          setReplies((all) => ({ ...all, [thread.id]: "" }));
-                      }}
-                    >
-                      <Textarea
-                        aria-label="回覆"
-                        value={replies[thread.id] ?? ""}
-                        maxLength={5000}
-                        rows={1}
-                        placeholder="回覆"
-                        onChange={(event) =>
-                          setReplies((all) => ({
-                            ...all,
-                            [thread.id]: event.target.value,
-                          }))
-                        }
-                      />
+      <section className="flex flex-col gap-2 border-t pt-3">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-medium">討論</h2>
+          <Button
+            variant="ghost"
+            onClick={() => setShowResolved((value) => !value)}
+          >
+            {showResolved ? "只看未結案" : "也看已結案"}
+          </Button>
+        </div>
+        {shown.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            沒有{showResolved ? "" : "未結案的"}評論。
+          </p>
+        ) : (
+          <ol className="flex max-h-80 flex-col gap-3 overflow-y-auto">
+            {shown.map((thread) => {
+              const number = slideNumberOf(thread.slideId);
+              return (
+                <li
+                  key={thread.id}
+                  className="flex flex-col gap-1 rounded-md px-2 py-1 hover:bg-foreground/5"
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs text-muted-foreground">
+                    <span>
+                      {number
+                        ? anchorLabel(number, thread.targets)
+                        : "已刪除的頁面"}{" "}
+                      · {WHO[thread.author]} · {time(thread.createdAt)}
+                      {thread.status === "resolved" ? " · 已結案" : ""}
+                    </span>
+                    {number && (
                       <Button
-                        type="submit"
                         variant="ghost"
-                        disabled={working || !replies[thread.id]?.trim()}
-                      >
-                        回覆
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        disabled={working}
                         onClick={() =>
-                          void run(() =>
-                            threadAction(
-                              deckId,
-                              thread.id,
-                              thread.status === "open" ? "resolve" : "reopen"
-                            )
+                          onJump(
+                            thread.slideId,
+                            thread.targets.map((t) => t.shape)
                           )
                         }
                       >
-                        {thread.status === "open" ? "結案" : "重開"}
+                        跳到
                       </Button>
-                    </form>
-                  </li>
-                );
-              })}
-            </ol>
-          )}
-        </section>
-        {note && (
-          <p role="status" className="text-xs text-destructive">
-            {note}
-          </p>
+                    )}
+                  </div>
+                  <p className="text-sm whitespace-pre-wrap">{thread.body}</p>
+                  {thread.replies.map((reply) => (
+                    <p
+                      key={reply.id}
+                      className="border-l pl-2 text-xs whitespace-pre-wrap text-muted-foreground"
+                    >
+                      {WHO[reply.author]}
+                      {reply.kind === "resolve"
+                        ? " 結案"
+                        : reply.kind === "reopen"
+                          ? " 重新打開"
+                          : `：${reply.body}`}
+                      {reply.entryId ? `（見紀錄 #${reply.entryId}）` : ""}
+                    </p>
+                  ))}
+                  <form
+                    className="flex items-end gap-1"
+                    onSubmit={async (event) => {
+                      event.preventDefault();
+                      const body = replies[thread.id]?.trim();
+                      if (!body) return;
+                      const done = await run(() =>
+                        threadAction(deckId, thread.id, "reply", body)
+                      );
+                      if (done)
+                        setReplies((all) => ({ ...all, [thread.id]: "" }));
+                    }}
+                  >
+                    <Textarea
+                      aria-label="回覆"
+                      value={replies[thread.id] ?? ""}
+                      maxLength={5000}
+                      rows={1}
+                      placeholder="回覆"
+                      onChange={(event) =>
+                        setReplies((all) => ({
+                          ...all,
+                          [thread.id]: event.target.value,
+                        }))
+                      }
+                    />
+                    <Button
+                      type="submit"
+                      variant="ghost"
+                      disabled={working || !replies[thread.id]?.trim()}
+                    >
+                      回覆
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      disabled={working}
+                      onClick={() =>
+                        void run(() =>
+                          threadAction(
+                            deckId,
+                            thread.id,
+                            thread.status === "open" ? "resolve" : "reopen"
+                          )
+                        )
+                      }
+                    >
+                      {thread.status === "open" ? "結案" : "重開"}
+                    </Button>
+                  </form>
+                </li>
+              );
+            })}
+          </ol>
         )}
-      </PopoverContent>
-    </Popover>
+      </section>
+      {note && (
+        <p role="status" className="text-xs text-destructive">
+          {note}
+        </p>
+      )}
+    </DockPopover>
   );
 }

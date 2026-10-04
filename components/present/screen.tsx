@@ -6,19 +6,18 @@
 // hint says how, and the pointer hides when it rests.
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { useIdleCursor, usePresentKeys } from "@/components/present/hooks";
 import { Projection } from "@/components/present/projection";
 import { Button } from "@/components/ui/button";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
   act,
+  type Action,
   channelName,
   type Message,
   type Show,
-  typed,
 } from "@/lib/present/control";
 import { cn } from "@/lib/utils";
-
-const IDLE_MS = 2000;
 
 export function Screen({
   deckId,
@@ -33,12 +32,10 @@ export function Screen({
   const [linked, setLinked] = useState(false);
   const [ended, setEnded] = useState(false);
   const [full, setFull] = useState(false);
-  const [idle, setIdle] = useState(false);
+  const { idle, wake } = useIdleCursor();
   const channel = useRef<BroadcastChannel | null>(null);
   const linkedRef = useRef(false);
   const count = useRef(initialDocument.slides.length);
-  const digits = useRef("");
-  const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => {
     const opened = new BroadcastChannel(channelName(deckId));
@@ -72,40 +69,30 @@ export function Screen({
     else void page.documentElement.requestFullscreen?.().catch(() => {});
   }, []);
 
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      if (event.key === "f" || event.key === "F") {
-        event.preventDefault();
-        toggleFull();
-        return;
-      }
-      const next = typed(digits.current, event.key, event.shiftKey);
-      digits.current = next.digits;
-      if (!next.action) return;
-      event.preventDefault();
-      const action = next.action;
+  // A key moves the presenter view's show, or this window's when alone.
+  usePresentKeys(
+    (action: Action) => {
       if (linkedRef.current) {
         channel.current?.postMessage({ type: "act", action } satisfies Message);
       } else {
         setShow((current) => act(current, count.current, action));
       }
-    };
+    },
+    {
+      first: (event) => {
+        const plain = !event.metaKey && !event.ctrlKey && !event.altKey;
+        if (!plain || (event.key !== "f" && event.key !== "F")) return false;
+        toggleFull();
+        return true;
+      },
+    }
+  );
+  useEffect(() => {
     const onFull = () => setFull(Boolean(window.document.fullscreenElement));
-    window.addEventListener("keydown", onKey);
     window.document.addEventListener("fullscreenchange", onFull);
-    return () => {
-      window.removeEventListener("keydown", onKey);
+    return () =>
       window.document.removeEventListener("fullscreenchange", onFull);
-    };
-  }, [toggleFull]);
-
-  const wake = () => {
-    setIdle(false);
-    clearTimeout(idleTimer.current);
-    idleTimer.current = setTimeout(() => setIdle(true), IDLE_MS);
-  };
-  useEffect(() => () => clearTimeout(idleTimer.current), []);
+  }, []);
 
   return (
     <div

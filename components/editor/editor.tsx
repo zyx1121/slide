@@ -35,6 +35,7 @@ import {
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CommentsTool } from "@/components/editor/comments-tool";
+import { DockPopover, Tool } from "@/components/editor/dock-parts";
 import { NotesTool } from "@/components/editor/notes-tool";
 import { Play } from "@/components/present/play";
 import { screenName, screenUrl } from "@/components/present/presenter";
@@ -53,11 +54,6 @@ import {
 } from "@/components/editor/text-editor";
 import { SlideView } from "@/components/slide-view";
 import { Button, buttonVariants } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import {
   Tooltip,
@@ -1680,64 +1676,43 @@ function PageList({
 }) {
   const [open, setOpen] = useState(false);
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant="ghost"
-                  className="tabular-nums"
-                  aria-label={`第 ${index + 1} 頁，共 ${slides.length} 頁`}
-                />
-              }
-            />
-          }
-        >
-          {index + 1} / {slides.length}
-        </TooltipTrigger>
-        <TooltipContent>所有頁面</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="p-3"
-        // Up to four 8 rem thumbnails a row, no wider than the slides need.
-        style={{
-          width: `min(${Math.min(slides.length, 4) * 8.75 + 1.75}rem, calc(100vw - 2rem))`,
-        }}
-      >
-        <ol className="grid max-h-[60dvh] grid-cols-[repeat(auto-fill,8rem)] justify-center gap-3 overflow-y-auto p-1">
-          {slides.map((slide, i) => (
-            <li key={slide.id}>
-              <button
-                type="button"
-                aria-label={`第 ${i + 1} 頁`}
-                aria-current={i === index ? "page" : undefined}
-                onClick={() => {
-                  onPick(i);
-                  setOpen(false);
-                }}
-                className="flex w-full flex-col gap-1 rounded-lg outline-offset-2 focus-visible:outline-2"
-              >
-                <SlideView
-                  slide={slide}
-                  number={i + 1}
-                  template={template}
-                  decorative
-                  className={cn(i === index && "ring-2 ring-foreground")}
-                />
-                <span className="text-xs text-muted-foreground tabular-nums">
-                  {i + 1}
-                </span>
-              </button>
-            </li>
-          ))}
-        </ol>
-      </PopoverContent>
-    </Popover>
+    <DockPopover
+      tip="所有頁面"
+      label={`第 ${index + 1} 頁，共 ${slides.length} 頁`}
+      trigger={`${index + 1} / ${slides.length}`}
+      button={{ size: "default", className: "tabular-nums" }}
+      panel="p-3"
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <ol className="grid max-h-[60dvh] grid-cols-[repeat(auto-fill,8rem)] justify-center gap-3 overflow-y-auto p-1">
+        {slides.map((slide, i) => (
+          <li key={slide.id}>
+            <button
+              type="button"
+              aria-label={`第 ${i + 1} 頁`}
+              aria-current={i === index ? "page" : undefined}
+              onClick={() => {
+                onPick(i);
+                setOpen(false);
+              }}
+              className="flex w-full flex-col gap-1 rounded-lg outline-offset-2 focus-visible:outline-2"
+            >
+              <SlideView
+                slide={slide}
+                number={i + 1}
+                template={template}
+                decorative
+                className={cn(i === index && "ring-2 ring-foreground")}
+              />
+              <span className="text-xs text-muted-foreground tabular-nums">
+                {i + 1}
+              </span>
+            </button>
+          </li>
+        ))}
+      </ol>
+    </DockPopover>
   );
 }
 
@@ -1788,71 +1763,51 @@ function PublishTool({
   };
   const label = state.published ? "已發布" : "發布";
   return (
-    <Popover>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  variant={state.published ? "secondary" : "ghost"}
-                  size="icon"
-                  aria-label={label}
-                />
-              }
-            />
-          }
-        >
-          <GlobeIcon />
-        </TooltipTrigger>
-        <TooltipContent>{label}</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="w-80"
-      >
-        {url ? (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">
-              任何拿到連結的人都能看和下載這份簡報，不用登入。之後的修改也會馬上公開。
-            </p>
-            <input
-              readOnly
-              value={url}
-              aria-label="公開連結"
-              onFocus={(event) => event.currentTarget.select()}
-              className="h-8 rounded-md border bg-transparent px-2 text-xs"
-            />
-            <div className="flex gap-2">
-              <Button onClick={copy}>複製連結</Button>
-              <Button
-                variant="ghost"
-                disabled={busy}
-                onClick={() => toggle(false)}
-              >
-                停止發布
-              </Button>
-            </div>
-          </div>
-        ) : (
-          <div className="flex flex-col gap-3">
-            <p className="text-xs text-muted-foreground">
-              發布後，任何拿到連結的人都能看和下載這份簡報，不用登入；之後的修改也會馬上公開。可以隨時停止。
-            </p>
-            <Button disabled={busy} onClick={() => toggle(true)}>
-              發布
+    <DockPopover
+      tip={label}
+      trigger={<GlobeIcon />}
+      button={{ variant: state.published ? "secondary" : "ghost" }}
+      panel="w-80"
+    >
+      {url ? (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            任何拿到連結的人都能看和下載這份簡報，不用登入。之後的修改也會馬上公開。
+          </p>
+          <input
+            readOnly
+            value={url}
+            aria-label="公開連結"
+            onFocus={(event) => event.currentTarget.select()}
+            className="h-8 rounded-md border bg-transparent px-2 text-xs"
+          />
+          <div className="flex gap-2">
+            <Button onClick={copy}>複製連結</Button>
+            <Button
+              variant="ghost"
+              disabled={busy}
+              onClick={() => toggle(false)}
+            >
+              停止發布
             </Button>
           </div>
-        )}
-        {note && (
-          <p role="status" className="mt-2 text-xs text-muted-foreground">
-            {note}
+        </div>
+      ) : (
+        <div className="flex flex-col gap-3">
+          <p className="text-xs text-muted-foreground">
+            發布後，任何拿到連結的人都能看和下載這份簡報，不用登入；之後的修改也會馬上公開。可以隨時停止。
           </p>
-        )}
-      </PopoverContent>
-    </Popover>
+          <Button disabled={busy} onClick={() => toggle(true)}>
+            發布
+          </Button>
+        </div>
+      )}
+      {note && (
+        <p role="status" className="mt-2 text-xs text-muted-foreground">
+          {note}
+        </p>
+      )}
+    </DockPopover>
   );
 }
 
@@ -1889,36 +1844,21 @@ function SlideMenu({
     </Button>
   );
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button variant="ghost" size="icon" aria-label="投影片" />
-              }
-            />
-          }
-        >
-          <GalleryVerticalIcon />
-        </TooltipTrigger>
-        <TooltipContent>投影片</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="w-48"
-      >
-        <div className="flex flex-col">
-          {item("新增空白頁", "add")}
-          {item("複製這一頁", "duplicate")}
-          {item("上移", "up", first)}
-          {item("下移", "down", last)}
-          {item("刪除這一頁", "delete", only)}
-        </div>
-      </PopoverContent>
-    </Popover>
+    <DockPopover
+      tip="投影片"
+      trigger={<GalleryVerticalIcon />}
+      panel="w-48"
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <div className="flex flex-col">
+        {item("新增空白頁", "add")}
+        {item("複製這一頁", "duplicate")}
+        {item("上移", "up", first)}
+        {item("下移", "down", last)}
+        {item("刪除這一頁", "delete", only)}
+      </div>
+    </DockPopover>
   );
 }
 
@@ -1941,41 +1881,6 @@ function DockDownload({
             download
             aria-label={tip}
             className={buttonVariants({ variant: "ghost", size: "icon" })}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
-  );
-}
-
-function Tool({
-  tip,
-  icon: Icon,
-  disabled,
-  pressed,
-  onClick,
-}: {
-  tip: string;
-  icon: ComponentType;
-  disabled?: boolean;
-  /** For a tool that stays on until used: whether it is on. */
-  pressed?: boolean;
-  onClick: () => void;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant={pressed ? "secondary" : "ghost"}
-            size="icon"
-            aria-label={tip}
-            aria-pressed={pressed}
-            disabled={disabled}
-            onClick={onClick}
           />
         }
       >

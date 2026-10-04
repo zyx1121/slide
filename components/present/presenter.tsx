@@ -25,6 +25,7 @@ import {
 } from "react";
 
 import { deckStatusAction, loadDeckAction } from "@/app/decks/[id]/actions";
+import { usePresentKeys } from "@/components/present/hooks";
 import { FIT, SlideFrame } from "@/components/present/projection";
 import { Button } from "@/components/ui/button";
 import type { DeckDocument } from "@/lib/deck/schema";
@@ -34,7 +35,6 @@ import {
   channelName,
   type Message,
   type Show,
-  typed,
 } from "@/lib/present/control";
 import { followSlide } from "@/lib/editor/slides";
 import { templateOf } from "@/lib/render/template";
@@ -158,7 +158,6 @@ export function Presenter({
   useEffect(() => {
     latest.current = { document, version, show };
   }, [document, version, show]);
-  const digits = useRef("");
 
   const move = useCallback((action: Action) => {
     setShow((current) =>
@@ -199,31 +198,14 @@ export function Presenter({
   }, [document]);
 
   // Keys: the clicker's, and digits then Enter to go to a slide.
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      // Space and Enter on a focused button press the button.
-      const target = event.target as HTMLElement | null;
-      if (
-        target?.closest("button, a") &&
-        (event.key === " " || event.key === "Enter")
-      ) {
-        return;
-      }
-      if (event.key === "Escape") {
-        event.preventDefault();
-        end();
-        return;
-      }
-      const next = typed(digits.current, event.key, event.shiftKey);
-      digits.current = next.digits;
-      if (!next.action) return;
-      event.preventDefault();
-      move(next.action);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [end, move]);
+  usePresentKeys(move, {
+    buttons: true,
+    first: (event) => {
+      if (event.key !== "Escape") return false;
+      end();
+      return true;
+    },
+  });
 
   // The deck changed elsewhere: the new one, on the same slide by id.
   useEffect(() => {

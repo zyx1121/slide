@@ -5,12 +5,11 @@
 // the slide shown, which the editor then shows.
 import { useEffect, useRef, useState } from "react";
 
+import { useIdleCursor, usePresentKeys } from "@/components/present/hooks";
 import { Projection } from "@/components/present/projection";
 import type { DeckDocument } from "@/lib/deck/schema";
-import { act, type Show, typed } from "@/lib/present/control";
+import { act, type Action, type Show } from "@/lib/present/control";
 import { cn } from "@/lib/utils";
-
-const IDLE_MS = 2000;
 
 export function Play({
   document,
@@ -22,63 +21,47 @@ export function Play({
   onEnd: (index: number) => void;
 }) {
   const [show, setShow] = useState<Show>({ index: start, blank: null });
-  const [idle, setIdle] = useState(true);
+  const { idle, wake } = useIdleCursor(true);
   const latest = useRef({ show, onEnd, count: document.slides.length });
   useEffect(() => {
     latest.current = { show, onEnd, count: document.slides.length };
   }, [show, onEnd, document]);
   const root = useRef<HTMLDivElement>(null);
-  const idleTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const ended = useRef(false);
+  const end = () => {
+    if (ended.current) return;
+    ended.current = true;
+    latest.current.onEnd(latest.current.show.index);
+  };
+  const move = (action: Action) =>
+    setShow((current) => act(current, latest.current.count, action));
 
+  // Keys are the presentation's while it runs, never the editor's.
+  usePresentKeys(move, {
+    capture: true,
+    first: (event) => {
+      if (event.key !== "Escape") return false;
+      end();
+      return true;
+    },
+  });
+  // Leaving full screen another way (the browser's own Escape) ends it too.
   useEffect(() => {
-    let ended = false;
-    let digits = "";
-    const end = () => {
-      if (ended) return;
-      ended = true;
-      latest.current.onEnd(latest.current.show.index);
-    };
-    // Keys are the presentation's while it runs, never the editor's.
-    const onKey = (event: KeyboardEvent) => {
-      event.stopPropagation();
-      if (event.key === "Escape") {
-        event.preventDefault();
-        end();
-        return;
-      }
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
-      const next = typed(digits, event.key, event.shiftKey);
-      digits = next.digits;
-      if (!next.action) return;
-      event.preventDefault();
-      const action = next.action;
-      setShow((current) => act(current, latest.current.count, action));
-    };
     let wasFull = Boolean(window.document.fullscreenElement);
     const onFull = () => {
       const full = Boolean(window.document.fullscreenElement);
       if (wasFull && !full) end();
       wasFull = full;
     };
-    window.addEventListener("keydown", onKey, true);
     window.document.addEventListener("fullscreenchange", onFull);
     root.current?.focus();
-    return () => {
-      window.removeEventListener("keydown", onKey, true);
+    return () =>
       window.document.removeEventListener("fullscreenchange", onFull);
-    };
+    // Once, for as long as it runs.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const step = (by: 1 | -1) =>
-    setShow((current) =>
-      act(current, latest.current.count, { kind: "step", by })
-    );
-  const wake = () => {
-    setIdle(false);
-    clearTimeout(idleTimer.current);
-    idleTimer.current = setTimeout(() => setIdle(true), IDLE_MS);
-  };
-  useEffect(() => () => clearTimeout(idleTimer.current), []);
+  const step = (by: 1 | -1) => move({ kind: "step", by });
 
   return (
     <div

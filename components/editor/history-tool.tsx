@@ -8,17 +8,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import { historyAction, revertAction } from "@/app/decks/[id]/actions";
 import { WHO } from "@/components/editor/who";
+import { DockPopover } from "@/components/editor/dock-parts";
 import { Button } from "@/components/ui/button";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import type { Revision } from "@/lib/deck/revisions";
 import { formatDateTime } from "@/lib/format";
 
@@ -89,58 +80,45 @@ export function HistoryTool({
   };
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={<Button variant="ghost" size="icon" aria-label="紀錄" />}
-            />
-          }
-        >
-          <HistoryIcon />
-        </TooltipTrigger>
-        <TooltipContent>紀錄</TooltipContent>
-      </Tooltip>
-      <PopoverContent
-        side="top"
-        sideOffset={12}
-        data-surface="tinted"
-        className="flex w-96 flex-col gap-2"
-      >
-        <h2 className="text-xs font-medium">修改紀錄</h2>
-        <p className="text-xs text-muted-foreground">
-          你和代理程式的修改都會馬上生效，每一筆修改都可以單獨還原。
+    <DockPopover
+      tip="紀錄"
+      trigger={<HistoryIcon />}
+      panel="flex w-96 flex-col gap-2"
+      open={open}
+      onOpenChange={setOpen}
+    >
+      <h2 className="text-xs font-medium">修改紀錄</h2>
+      <p className="text-xs text-muted-foreground">
+        你和代理程式的修改都會馬上生效，每一筆修改都可以單獨還原。
+      </p>
+      <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto">
+        {revisions.map((revision) => (
+          <li
+            key={revision.id}
+            className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-foreground/5"
+          >
+            <span className="min-w-0 flex-1 text-xs text-muted-foreground">
+              #{revision.id} · {time(revision.createdAt)} ·{" "}
+              {WHO[revision.author]} · {what(revision)}
+              {revision.status === "rejected" ? " · 未採用" : ""}
+            </span>
+            {revision.status === "applied" && revision.kind === "edit" && (
+              <Button
+                variant="ghost"
+                disabled={working || busy}
+                onClick={() => void revert(revision.id)}
+              >
+                還原
+              </Button>
+            )}
+          </li>
+        ))}
+      </ol>
+      {note && (
+        <p role="status" className="text-xs text-destructive">
+          {note}
         </p>
-        <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto">
-          {revisions.map((revision) => (
-            <li
-              key={revision.id}
-              className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-foreground/5"
-            >
-              <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                #{revision.id} · {time(revision.createdAt)} ·{" "}
-                {WHO[revision.author]} · {what(revision)}
-                {revision.status === "rejected" ? " · 未採用" : ""}
-              </span>
-              {revision.status === "applied" && revision.kind === "edit" && (
-                <Button
-                  variant="ghost"
-                  disabled={working || busy}
-                  onClick={() => void revert(revision.id)}
-                >
-                  還原
-                </Button>
-              )}
-            </li>
-          ))}
-        </ol>
-        {note && (
-          <p role="status" className="text-xs text-destructive">
-            {note}
-          </p>
-        )}
-      </PopoverContent>
-    </Popover>
+      )}
+    </DockPopover>
   );
 }

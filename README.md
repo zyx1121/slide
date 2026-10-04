@@ -33,7 +33,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
 - **Presents** full screen, or split across screens: the projector shows only the slides while your screen shows the slide, the next one, your speaker notes (written in the editor or by your agent) and a timer
 - **Publishes** a deck to a read-only link anyone can open and download
-- **Checks** a deck against the lab's slide rules: sizes, palette, overflow, overlaps, contrast
+- **Checks** a deck for your agent (`check_deck`): text sizes, overflow, overlaps, contrast, and the template's palette
 
 ## Deploy
 
@@ -53,8 +53,8 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 
 ## Use
 
-1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one. The dock's template button switches a deck between the plain template and the WinLab one.
-2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors and styles what you select; the check mark shows the rule check.
+1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one.
+2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors, and a menu next to what you select styles it.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
 4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits show up at once; the history button in the dock (**紀錄**) lists every change, yours and your agent's, and reverts any of them.
 5. Download a `.pptx` from the dock, or publish the deck from the globe button and share its `/s/…` link.

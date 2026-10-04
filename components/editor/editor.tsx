@@ -2,16 +2,11 @@
 
 import {
   BringToFrontIcon,
-  ChevronLeftIcon,
-  ChevronRightIcon,
-  CircleHelpIcon,
   CopyPlusIcon,
   DownloadIcon,
   GalleryVerticalIcon,
   GlobeIcon,
   ImageIcon,
-  LayoutGridIcon,
-  LayoutTemplateIcon,
   MessageSquareIcon,
   PlayIcon,
   PresentationIcon,
@@ -39,7 +34,6 @@ import {
   selectAction,
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
-import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
 import { NotesTool } from "@/components/editor/notes-tool";
 import { Play } from "@/components/present/play";
@@ -148,11 +142,7 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText } from "@/lib/render/svg";
-import {
-  TEMPLATE_IDS,
-  templateOf,
-  type TemplateId,
-} from "@/lib/render/template";
+import { templateOf, type TemplateId } from "@/lib/render/template";
 import {
   blankSlide,
   deleteSlideOps,
@@ -174,7 +164,7 @@ const NONE: string[] = [];
 const short = (body: string) =>
   [...body].length > 80 ? `${[...body].slice(0, 80).join("")}…` : body;
 
-/** The keyboard and mouse help, shown from the dock and read with the canvas. */
+/** The keyboard and mouse help, read with the canvas by screen readers. */
 const HELP = [
   "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個；選取的物件旁會出現它的功能選單。",
   "按兩下形狀或標題來打字，選取形狀後按 Enter 也可以；Esc 結束。",
@@ -1177,15 +1167,6 @@ export function Editor({
     if (clip) place(index, clip);
   };
 
-  /** Moves the deck on to the next template, as one edit that undoes. */
-  const switchTemplate = () => {
-    flushNudge();
-    const current = templateOf(docRef.current).id;
-    const next: TemplateId =
-      TEMPLATE_IDS[(TEMPLATE_IDS.indexOf(current) + 1) % TEMPLATE_IDS.length];
-    commit([{ op: "add", path: "/template", value: next }], visible);
-  };
-
   /** Keys on the canvas of slide `at`; selection lives on the active slide. */
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, at: number) => {
     // Keys typed into a text belong to it.
@@ -1545,17 +1526,10 @@ export function Editor({
             data-surface="tinted"
             className="pointer-events-auto flex max-w-full items-center gap-0.5 overflow-x-auto rounded-2xl border p-1"
           >
-            <DockLink href="/" tip="所有簡報" icon={LayoutGridIcon} />
             <DockDownload
               href={`/api/decks/${deckId}/export`}
               tip="下載 PowerPoint"
               icon={DownloadIcon}
-            />
-            <Tool
-              tip={`範本：${templateOf(doc).name}（按一下切換）`}
-              icon={LayoutTemplateIcon}
-              disabled={paused}
-              onClick={switchTemplate}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
             <Tool
@@ -1610,23 +1584,11 @@ export function Editor({
               />
             </fieldset>
             <Separator orientation="vertical" className="mx-1 my-2" />
-            <Tool
-              tip="上一頁"
-              icon={ChevronLeftIcon}
-              disabled={visible === 0}
-              onClick={() => goTo(visible - 1)}
-            />
             <PageList
               slides={doc.slides}
               template={templateOf(doc).id}
               index={visible}
               onPick={(target) => goTo(target)}
-            />
-            <Tool
-              tip="下一頁"
-              icon={ChevronRightIcon}
-              disabled={visible === doc.slides.length - 1}
-              onClick={() => goTo(visible + 1)}
             />
             <SlideMenu
               disabled={paused}
@@ -1689,14 +1651,6 @@ export function Editor({
                 await saver.refresh();
               }}
             />
-            <CheckTool
-              document={doc}
-              onShow={(violation) => {
-                const at = violation.slide - 1;
-                goTo(at, true);
-                select(at, violation.shape ? [violation.shape] : []);
-              }}
-            />
             <p className="min-w-16 px-2 text-center text-xs text-muted-foreground">
               {status}
             </p>
@@ -1705,38 +1659,6 @@ export function Editor({
               publication={publication}
               onPublication={setPublication}
             />
-            <Popover>
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <PopoverTrigger
-                      render={
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label="操作說明"
-                        />
-                      }
-                    />
-                  }
-                >
-                  <CircleHelpIcon />
-                </TooltipTrigger>
-                <TooltipContent>操作說明</TooltipContent>
-              </Tooltip>
-              <PopoverContent
-                side="top"
-                sideOffset={12}
-                data-surface="tinted"
-                className="w-80"
-              >
-                <ul className="flex flex-col gap-1.5 text-xs text-muted-foreground">
-                  {HELP.map((line) => (
-                    <li key={line}>{line}</li>
-                  ))}
-                </ul>
-              </PopoverContent>
-            </Popover>
           </div>
         </div>
       </div>
@@ -1822,33 +1744,6 @@ function PageList({
         </ol>
       </PopoverContent>
     </Popover>
-  );
-}
-
-function DockLink({
-  href,
-  tip,
-  icon: Icon,
-}: {
-  href: string;
-  tip: string;
-  icon: ComponentType;
-}) {
-  return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Link
-            href={href}
-            aria-label={tip}
-            className={buttonVariants({ variant: "ghost", size: "icon" })}
-          />
-        }
-      >
-        <Icon />
-      </TooltipTrigger>
-      <TooltipContent>{tip}</TooltipContent>
-    </Tooltip>
   );
 }
 

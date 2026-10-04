@@ -1,5 +1,5 @@
 // Everything a member can do in the web app, an agent can do over MCP
-// (PLAN.md, v0.3). Each server action and API route a member uses maps to
+// (PLAN.md, Agents). Each server action and API route a member uses maps to
 // the tools that do the same; parity.test.ts fails when one is missing.
 export const PARITY: Record<string, readonly string[]> = {
   // app/actions.ts

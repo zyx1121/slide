@@ -1,5 +1,5 @@
-// The slide rules as code: the editor's check panel and the MCP tool
-// check_deck run this one rule set (PLAN.md, Rule check). Sources: the
+// The slide rules as code, which the MCP tool check_deck runs (PLAN.md,
+// Agents). Sources: the
 // WinLab slide guidelines (winlab:slides) and the QA checklist of the
 // winlab-pptx skill; the palette rule holds only on a template that asks for
 // it (the WinLab one). Every violation names its slide, its shape, the rule

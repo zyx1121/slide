@@ -8,6 +8,7 @@ import {
   deleteShapes,
   deleteSlide,
   moveSlide,
+  setSlideTitle,
   updateShapes,
   WriteError,
 } from "./write";
@@ -79,6 +80,18 @@ describe("agent writes by id", () => {
     );
     expect(() => deleteSlide(doc, 1)).toThrow("at least one slide");
     expect(() => moveSlide(doc, 1, 1)).toThrow(WriteError);
+  });
+
+  it("sets and clears a slide's title, by number or id", () => {
+    const titled = apply(setSlideTitle(doc, 1, "  Overview\nand plan ").ops);
+    expect(titled.slides[0].title).toBe("Overview\nand plan");
+    const plan = setSlideTitle(titled, "sl_overview", "");
+    expect(plan.changed).toEqual(["sl_overview"]);
+    expect(applyOperations(titled, plan.ops).document.slides[0].title).toBe("");
+    expect(() => setSlideTitle(titled, 1, "Overview\nand plan")).toThrow(
+      "has that title"
+    );
+    expect(() => setSlideTitle(doc, 2, "None")).toThrow("no slide 2");
   });
 
   it("refuses when the shapes have moved since the plan was made", () => {

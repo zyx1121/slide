@@ -206,6 +206,27 @@ export function deleteSlide(
   };
 }
 
+/**
+ * Sets a slide's title, which the deck's template draws; an empty one leaves
+ * the slide without a title.
+ */
+export function setSlideTitle(
+  document: DeckDocument,
+  slide: number | string,
+  title: string
+): Planned {
+  const { slide: found, index } = findSlide(document, slide);
+  const value = title.trim();
+  if (value === found.title) throw new WriteError("the slide has that title");
+  return {
+    ops: guard(document, [
+      { op: "replace", path: `/slides/${index}/title`, value },
+    ]),
+    created: [],
+    changed: [found.id],
+  };
+}
+
 /** Moves a slide so it becomes slide number `to`. */
 export function moveSlide(
   document: DeckDocument,

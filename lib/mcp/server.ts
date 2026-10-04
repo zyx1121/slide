@@ -57,6 +57,7 @@ import {
   type Planned,
   retemplate,
   retitle,
+  setSlideTitle,
   updateShapes,
   WriteError,
 } from "./write";
@@ -486,6 +487,22 @@ export function createServer(context: ToolContext): McpServer {
     },
     async ({ deck_id, slide }) =>
       edit(deck_id, (document) => deleteSlide(document, slide))
+  );
+
+  server.registerTool(
+    "set_slide_title",
+    {
+      title: "Set a slide's title",
+      description:
+        "Sets a slide's title, which the deck's template draws; an empty title leaves the slide without one, and a line break starts a new line.",
+      inputSchema: {
+        deck_id: DeckId,
+        slide: SlideRef,
+        title: z.string().max(500),
+      },
+    },
+    async ({ deck_id, slide, title }) =>
+      edit(deck_id, (document) => setSlideTitle(document, slide, title))
   );
 
   server.registerTool(

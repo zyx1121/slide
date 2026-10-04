@@ -7,6 +7,7 @@ import type { DeckDocument } from "../deck/schema";
 import { guard } from "./guard";
 import { deleteOps, insertOps, moveOps, reorderOps } from "./ops";
 import { newShape } from "./preview";
+import { insertSlideOps } from "./slides";
 
 const doc = sampleDocument();
 const slide = doc.slides[0];
@@ -77,6 +78,32 @@ describe("guard", () => {
     ]).document;
     expect(refused(moved, removal).code).toBe("invalid_patch");
     expect(refused(moved, front).code).toBe("invalid_patch");
+  });
+
+  it("pins the slide before an inserted slide, and the one it pushes on", () => {
+    const two = applyOperations(doc, [
+      {
+        op: "add",
+        path: "/slides/-",
+        value: { id: "sl_next", title: "", shapes: [] },
+      },
+    ]).document;
+    const added = { id: "sl_added", title: "", shapes: [] };
+    expect(guard(two, insertSlideOps(1, added))).toEqual([
+      { op: "test", path: "/slides/0/id", value: "sl_overview" },
+      { op: "test", path: "/slides/1/id", value: "sl_next" },
+      { op: "add", path: "/slides/1", value: added },
+    ]);
+    // At the end there is only the slide before it; first, only the one after.
+    expect(guard(two, insertSlideOps(2, added))[0]).toEqual({
+      op: "test",
+      path: "/slides/1/id",
+      value: "sl_next",
+    });
+    expect(guard(two, insertSlideOps(0, added))).toEqual([
+      { op: "test", path: "/slides/0/id", value: "sl_overview" },
+      { op: "add", path: "/slides/0", value: added },
+    ]);
   });
 
   it("pins only the slide for an insert", () => {

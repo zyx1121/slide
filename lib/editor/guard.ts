@@ -39,8 +39,15 @@ export function guard(document: DeckDocument, ops: Operation[]): Operation[] {
     const paths = op.op === "move" ? [op.from, op.path] : [op.path];
     for (const path of paths) {
       const match = POSITION.exec(path);
-      const slide = match && state.slides[Number(match[1])];
-      if (!match || !slide) continue;
+      if (!match) continue;
+      const at = Number(match[1]);
+      // A slide inserted at a position goes after the slide before it.
+      if (op.op === "add" && match[2] === undefined && SLOT.test(path)) {
+        const before = state.slides[at - 1];
+        if (before) pin(`/slides/${at - 1}/id`, before.id);
+      }
+      const slide = state.slides[at];
+      if (!slide) continue;
       pin(`/slides/${match[1]}/id`, slide.id);
       if (match[2] === undefined) continue;
       // Inserting at a position names a gap, not the shape now in it.

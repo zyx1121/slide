@@ -309,10 +309,14 @@ html:has([data-stage]) {
 
 /*
  * The editor draws selection, handles and guides over a slide, which is white
- * in both themes, so these grays stay the same in light and dark.
+ * in both themes, so these stay the same in light and dark. Selection is the
+ * one color in the editor: a blue outline over a white halo, with a light
+ * tint, so it reads on any shape and on the white slide.
  */
 :root {
-  --canvas-selection: oklch(0.45 0 0);
+  --canvas-selection: oklch(0.6 0.2 255);
+  --canvas-selection-halo: oklch(1 0 0 / 0.9);
+  --canvas-selection-fill: oklch(0.6 0.2 255 / 0.1);
   --canvas-handle: oklch(1 0 0);
   --canvas-guide: oklch(0.55 0 0);
 }

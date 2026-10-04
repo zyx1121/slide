@@ -12,6 +12,7 @@ import {
   ImageIcon,
   LayoutGridIcon,
   LayoutTemplateIcon,
+  MessageSquareIcon,
   TypeIcon,
   Redo2Icon,
   SendToBackIcon,
@@ -39,6 +40,7 @@ import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
 import { HistoryTool } from "@/components/editor/history-tool";
+import { SlideOverlay } from "@/components/editor/overlay";
 import {
   FillTool,
   LineTools,
@@ -167,7 +169,7 @@ const short = (body: string) =>
 
 /** The keyboard and mouse help, shown from the dock and read with the canvas. */
 const HELP = [
-  "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個。",
+  "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個；選取的物件旁會出現它的功能選單。",
   "按兩下形狀或標題來打字，選取形狀後按 Enter 也可以；Esc 結束。",
   "連接線：從形狀拖到另一個形狀，兩端會黏在最近的連接點；拖選取線條的端點可以改接。",
   "圖片：用插入圖片、貼上或直接拖進投影片；拖角落會維持比例，按住 Shift 可以自由變形。",
@@ -860,6 +862,11 @@ export function Editor({
     return () => clearTimeout(timer);
   }, [deckId, selectionInput]);
 
+  // The menu of the selected shapes floats next to them on the active slide,
+  // and steps aside while shapes are dragged.
+  const [dragging, setDragging] = useState(false);
+  const [activeSlide, setActiveSlide] = useState<HTMLElement | null>(null);
+
   // Comments: the panel, the thread to show first, and open threads as pins.
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentFocus, setCommentFocus] = useState<string | null>(null);
@@ -1181,6 +1188,17 @@ export function Editor({
       ? movedSlide(slide, new Set(selection), nudge.dx, nudge.dy)
       : slide;
   const none = selection.length === 0;
+  const selectedShapes = new Map(
+    shown.shapes.map((shape) => [shape.id, shape])
+  );
+  const selectedRegion = none
+    ? null
+    : unionRects(
+        selection
+          .map((id) => selectedShapes.get(id))
+          .filter((shape) => shape !== undefined)
+          .map((shape) => shapeBounds(shape, selectedShapes))
+      );
   const style = selectionStyle(slide, new Set(selection));
   // While a text is edited, the text tools show and change its selection.
   if (draft && draft.slide === index) {
@@ -1239,6 +1257,56 @@ export function Editor({
           ? "儲存中…"
           : "已儲存";
 
+  // The selected shapes' menu, floating next to them.
+  const selectionMenu = (
+    <>
+      {selection.length > 1 && (
+        <span className="px-2 text-xs whitespace-nowrap text-muted-foreground tabular-nums">
+          {selection.length} 個物件
+        </span>
+      )}
+      {style.fill !== undefined && (
+        <FillTool value={style.fill} onChange={restyle} />
+      )}
+      {style.stroke && (
+        <StrokeTool
+          stroke={style.stroke}
+          line={style.line !== undefined}
+          onChange={restyle}
+        />
+      )}
+      {style.line && <LineTools line={style.line} onChange={restyle} />}
+      {style.text && (
+        <>
+          <Separator orientation="vertical" className="mx-1 my-2" />
+          <TextTools text={style.text} onChange={restyle} />
+        </>
+      )}
+      <Separator orientation="vertical" className="mx-1 my-2" />
+      <Tool
+        tip="移到最上層"
+        icon={BringToFrontIcon}
+        onClick={() => reorder("front")}
+      />
+      <Tool
+        tip="移到最下層"
+        icon={SendToBackIcon}
+        onClick={() => reorder("back")}
+      />
+      <Tool tip="再製" icon={CopyPlusIcon} onClick={duplicate} />
+      <Tool tip="刪除" icon={Trash2Icon} onClick={remove} />
+      <Separator orientation="vertical" className="mx-1 my-2" />
+      <Tool
+        tip="評論選取的物件"
+        icon={MessageSquareIcon}
+        onClick={() => {
+          setCommentFocus(null);
+          setCommentsOpen(true);
+        }}
+      />
+    </>
+  );
+
   return (
     <TextFocus.Provider value={textarea}>
       <div className="relative size-full">
@@ -1261,7 +1329,10 @@ export function Editor({
                 data-index={i}
                 className="w-full snap-start scroll-mt-16 px-4"
               >
-                <div className="relative">
+                <div
+                  className="relative"
+                  ref={i === index ? setActiveSlide : undefined}
+                >
                   <Canvas
                     className="w-full"
                     slide={i === index ? shown : item}
@@ -1291,6 +1362,7 @@ export function Editor({
                     onDropFiles={(files, point) =>
                       void addImages(i, files, point)
                     }
+                    onDragging={setDragging}
                   />
                   {pinsOf(i).map((pin) => (
                     <button
@@ -1312,6 +1384,19 @@ export function Editor({
                     </button>
                   ))}
                 </div>
+                {i === index && (
+                  <SlideOverlay
+                    slide={activeSlide}
+                    region={dragging || paused ? null : selectedRegion}
+                    label={
+                      selection.length > 1
+                        ? `選取的 ${selection.length} 個物件`
+                        : "選取的物件"
+                    }
+                  >
+                    {selectionMenu}
+                  </SlideOverlay>
+                )}
               </li>
             ))}
           </ol>
@@ -1401,86 +1486,43 @@ export function Editor({
               onClick={() => travel("redo")}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
-            {/* The middle of the dock follows the selection: inserting with
-              nothing selected, otherwise the selection's own tools. */}
-            <fieldset
-              disabled={paused}
-              aria-label={none ? "插入" : "選取的物件"}
-              className="contents"
-            >
-              {none ? (
-                <>
-                  <Tool
-                    tip="插入矩形"
-                    icon={RectGlyph}
-                    onClick={() => insert("rect")}
-                  />
-                  <Tool
-                    tip="插入圓角矩形"
-                    icon={RoundRectGlyph}
-                    onClick={() => insert("roundRect")}
-                  />
-                  <Tool
-                    tip="插入橢圓"
-                    icon={EllipseGlyph}
-                    onClick={() => insert("ellipse")}
-                  />
-                  <Tool
-                    tip="插入文字方塊"
-                    icon={TypeIcon}
-                    onClick={() => insert("text")}
-                  />
-                  <Tool
-                    tip="插入圖片"
-                    icon={ImageIcon}
-                    onClick={() => filePicker.current?.click()}
-                  />
-                  <Tool
-                    tip="畫連接線"
-                    icon={ConnectorGlyph}
-                    pressed={tool === "connector"}
-                    onClick={() => {
-                      endEdit();
-                      setTool((current) => (current ? null : "connector"));
-                    }}
-                  />
-                </>
-              ) : (
-                <>
-                  {style.fill !== undefined && (
-                    <FillTool value={style.fill} onChange={restyle} />
-                  )}
-                  {style.stroke && (
-                    <StrokeTool
-                      stroke={style.stroke}
-                      line={style.line !== undefined}
-                      onChange={restyle}
-                    />
-                  )}
-                  {style.line && (
-                    <LineTools line={style.line} onChange={restyle} />
-                  )}
-                  {style.text && (
-                    <>
-                      <Separator orientation="vertical" className="mx-1 my-2" />
-                      <TextTools text={style.text} onChange={restyle} />
-                    </>
-                  )}
-                  <Separator orientation="vertical" className="mx-1 my-2" />
-                  <Tool
-                    tip="移到最上層"
-                    icon={BringToFrontIcon}
-                    onClick={() => reorder("front")}
-                  />
-                  <Tool
-                    tip="移到最下層"
-                    icon={SendToBackIcon}
-                    onClick={() => reorder("back")}
-                  />
-                  <Tool tip="再製" icon={CopyPlusIcon} onClick={duplicate} />
-                  <Tool tip="刪除" icon={Trash2Icon} onClick={remove} />
-                </>
-              )}
+            {/* Inserting stays in the dock; the selected shapes' own tools
+              float next to them (SlideOverlay, below the slides). */}
+            <fieldset disabled={paused} aria-label="插入" className="contents">
+              <Tool
+                tip="插入矩形"
+                icon={RectGlyph}
+                onClick={() => insert("rect")}
+              />
+              <Tool
+                tip="插入圓角矩形"
+                icon={RoundRectGlyph}
+                onClick={() => insert("roundRect")}
+              />
+              <Tool
+                tip="插入橢圓"
+                icon={EllipseGlyph}
+                onClick={() => insert("ellipse")}
+              />
+              <Tool
+                tip="插入文字方塊"
+                icon={TypeIcon}
+                onClick={() => insert("text")}
+              />
+              <Tool
+                tip="插入圖片"
+                icon={ImageIcon}
+                onClick={() => filePicker.current?.click()}
+              />
+              <Tool
+                tip="畫連接線"
+                icon={ConnectorGlyph}
+                pressed={tool === "connector"}
+                onClick={() => {
+                  endEdit();
+                  setTool((current) => (current ? null : "connector"));
+                }}
+              />
             </fieldset>
             <Separator orientation="vertical" className="mx-1 my-2" />
             <Tool

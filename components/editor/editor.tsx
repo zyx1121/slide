@@ -1146,9 +1146,10 @@ export function Editor({
     <TextFocus.Provider value={textarea}>
       <div className="relative size-full">
         {/* The slides, one after another down a page that scrolls. Each spans
-          the viewport less 1 rem on either side, with the same 1 rem between
-          slides, 64 px kept at the top for the corners and room at the bottom
-          for the dock. A slide snaps to sit just below the corners. */}
+          the scroller less 1 rem of padding on either side (padding, so a
+          scrollbar never eats it), with the same 1 rem between slides, 64 px
+          kept at the top for the corners and room at the bottom for the dock.
+          A slide snaps to sit just below the corners. */}
         <div
           ref={scroller}
           className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
@@ -1161,11 +1162,11 @@ export function Editor({
                   slideItems.current[i] = element;
                 }}
                 data-index={i}
-                className="flex w-full snap-start scroll-mt-16 justify-center"
+                className="w-full snap-start scroll-mt-16 px-4"
               >
                 <div className="relative">
                   <Canvas
-                    className="w-[calc(100dvw-2rem)]"
+                    className="w-full"
                     slide={!previewing && i === index ? shown : item}
                     number={i + 1}
                     template={shownTemplate}

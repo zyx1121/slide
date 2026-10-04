@@ -1,8 +1,9 @@
 // The deck's history (PLAN.md, Rule 2). Every change to a deck is an entry:
 // a document edit (a patch with its inverse), or a deck action (publish,
 // unpublish, delete, restore). The member's and their agent's apply at once
-// alike; any applied entry can be reverted on its own while nothing later
-// touched what it changed. Every query is scoped to the deck's owner; `by`
+// alike; any applied edit can be reverted on its own while nothing later
+// touched what it changed. A deck action is undone by its opposite action,
+// not by a revert. Every query is scoped to the deck's owner; `by`
 // names who acts for them.
 import type postgres from "postgres";
 
@@ -19,14 +20,6 @@ export type Who = "member" | "agent";
 /** What an entry does: a document edit, or an action on the deck itself. */
 export type EntryKind = "edit" | DeckAction;
 export type DeckAction = "publish" | "unpublish" | "delete" | "restore";
-
-/** The action that undoes a deck action. */
-const UNDO: Record<DeckAction, DeckAction> = {
-  publish: "unpublish",
-  unpublish: "publish",
-  delete: "restore",
-  restore: "delete",
-};
 
 export type Revision = {
   id: string;
@@ -239,9 +232,9 @@ function stillThere(patch: Operation[]): Operation[] {
 }
 
 /**
- * Reverts one applied entry, as a new entry. An edit's inverse is applied
- * after checking that what the edit set is still there; a deck action is
- * undone by its opposite (restore for delete, unpublish for publish).
+ * Reverts one applied edit, as a new entry: its inverse, after checking that
+ * what the edit set is still there. A deck action is refused: its opposite
+ * action undoes it (restore for delete, unpublish for publish).
  */
 export async function revertRevision(
   db: Db,
@@ -261,25 +254,11 @@ export async function revertRevision(
     if (!row) return { outcome: "gone" };
 
     if (row.kind !== "edit") {
-      // Like an edit, a deck action reverts only while nothing later did
-      // the same kind of thing: reverting an old publish after an
-      // unpublish and a publish would undo the later ones too.
-      const [later] = await tx`
-        select 1 from revisions
-        where deck_id = ${deckId} and id > ${revisionId} and status = 'applied'
-          and kind <> 'edit'
-        limit 1`;
-      if (later) {
-        return {
-          outcome: "conflict",
-          message: "後來又公開、取消公開、刪除或還原過，無法單獨還原這一筆。",
-        };
-      }
-      const undo = UNDO[row.kind];
-      const result = await act(tx, owner, deckId, undo, by);
-      return result.outcome === "applied"
-        ? { outcome: "applied", version: deck.version, kind: undo }
-        : result;
+      return {
+        outcome: "conflict",
+        message:
+          "公開、取消公開、刪除和還原簡報不從紀錄還原，請用相反的動作（發布按鈕或最近刪除）。",
+      };
     }
 
     if (deck.deleted || !row.inverse?.length) return { outcome: "gone" };

@@ -1,9 +1,9 @@
 "use client";
 // The dock's history: every change to the deck, the member's and their
-// agent's, newest first, each revertible on its own. Changes apply at once;
-// the history is how one is taken back.
+// agent's, newest first, each edit revertible on its own. Changes apply at
+// once; the history is how one is taken back. Publishing, deleting and the
+// like are listed, and undone by their opposite (the publish button, 最近刪除).
 import { HistoryIcon } from "lucide-react";
-import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { historyAction, revertAction } from "@/app/decks/[id]/actions";
@@ -59,7 +59,6 @@ export function HistoryTool({
   /** The deck changed on the server; the editor loads it again. */
   onChanged: () => Promise<void>;
 }) {
-  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [revisions, setRevisions] = useState<Revision[]>([]);
   const [working, setWorking] = useState(false);
@@ -88,11 +87,7 @@ export function HistoryTool({
     setNote(null);
     const result = await revertAction(deckId, id).catch(() => null);
     if (!result) setNote("連線中斷，請再試一次。");
-    else if (result.outcome === "applied" && result.kind === "delete") {
-      // The deck is gone from the lists; it waits under 最近刪除.
-      router.push("/");
-      return;
-    } else if (result.outcome === "applied") await onChanged();
+    else if (result.outcome === "applied") await onChanged();
     else if (result.outcome === "conflict") setNote(result.message);
     else setNote(MESSAGES[result.outcome] ?? null);
     await load();
@@ -121,7 +116,7 @@ export function HistoryTool({
       >
         <h2 className="text-xs font-medium">修改紀錄</h2>
         <p className="text-xs text-muted-foreground">
-          你和代理程式的修改都會馬上生效，每一筆都可以單獨還原。
+          你和代理程式的修改都會馬上生效，每一筆修改都可以單獨還原。
         </p>
         <ol className="flex max-h-72 flex-col gap-1 overflow-y-auto">
           {revisions.map((revision) => (
@@ -134,7 +129,7 @@ export function HistoryTool({
                 {WHO[revision.author]} · {what(revision)}
                 {revision.status === "rejected" ? " · 未採用" : ""}
               </span>
-              {revision.status === "applied" && (
+              {revision.status === "applied" && revision.kind === "edit" && (
                 <Button
                   variant="ghost"
                   disabled={working || busy}

@@ -108,7 +108,7 @@ describe.skipIf(!TEST_DATABASE_URL)("history (Postgres)", () => {
     expect((await asr(deck.id)).x).toBe(333);
   });
 
-  it("publishes and deletes for an agent at once, each undone by revert", async () => {
+  it("publishes and deletes for an agent at once, each undone by its opposite", async () => {
     const deck = await fresh();
     const published = await actOnDeck(db, "alice", deck.id, "publish", "agent");
     expect(published.outcome).toBe("applied");
@@ -121,10 +121,14 @@ describe.skipIf(!TEST_DATABASE_URL)("history (Postgres)", () => {
     expect(deleted.outcome).toBe("applied");
     expect(await getDeck(db, "alice", deck.id)).toBeNull();
 
-    // Reverting the delete restores the deck, as a new entry.
+    // A deck action is not reverted: its opposite undoes it.
     const deletedId = (deleted as { revisionId: string }).revisionId;
     expect(await revertRevision(db, "alice", deck.id, deletedId)).toMatchObject(
-      { outcome: "applied", kind: "restore" }
+      { outcome: "conflict" }
+    );
+    expect(await getDeck(db, "alice", deck.id)).toBeNull();
+    expect((await actOnDeck(db, "alice", deck.id, "restore")).outcome).toBe(
+      "applied"
     );
     const back = await getDeck(db, "alice", deck.id);
     expect(back?.published).toBe(true);
@@ -136,31 +140,6 @@ describe.skipIf(!TEST_DATABASE_URL)("history (Postgres)", () => {
       "delete:agent",
       "publish:agent",
     ]);
-  });
-
-  it("lets an agent revert a deck action too, applied at once", async () => {
-    const deck = await fresh();
-    await actOnDeck(db, "alice", deck.id, "publish");
-    const off = await actOnDeck(db, "alice", deck.id, "unpublish");
-    const offId = (off as { revisionId: string }).revisionId;
-    expect(
-      await revertRevision(db, "alice", deck.id, offId, "agent")
-    ).toMatchObject({ outcome: "applied", kind: "publish" });
-    expect((await getDeck(db, "alice", deck.id))!.published).toBe(true);
-    const [latest] = await listRevisions(db, "alice", deck.id);
-    expect(latest).toMatchObject({ kind: "publish", author: "agent" });
-  });
-
-  it("reverts a deck action only while no later one followed", async () => {
-    const deck = await fresh();
-    const first = await actOnDeck(db, "alice", deck.id, "publish");
-    await actOnDeck(db, "alice", deck.id, "unpublish");
-    await actOnDeck(db, "alice", deck.id, "publish");
-    const firstId = (first as { revisionId: string }).revisionId;
-    expect(await revertRevision(db, "alice", deck.id, firstId)).toMatchObject({
-      outcome: "conflict",
-    });
-    expect((await getDeck(db, "alice", deck.id))!.published).toBe(true);
   });
 
   it("refuses another member's deck for every action", async () => {

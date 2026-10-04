@@ -34,8 +34,6 @@ export async function createDeckAction(): Promise<void> {
 function refused(error: unknown): ActionResult {
   if (!(error instanceof DeckError)) throw error;
   switch (error.code) {
-    case "conflict":
-      return { ok: false, error: "簡報剛好在別處更新，請再試一次。" };
     case "invalid_document":
       return { ok: false, error: "名稱含有無法儲存的字元。" };
     default:

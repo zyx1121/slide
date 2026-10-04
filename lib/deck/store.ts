@@ -201,17 +201,23 @@ export async function deckStatus(
 }
 
 /**
- * Applies a JSON Patch written against `baseVersion`, the member's or their
- * agent's, bumps the version and records it, with its inverse, as an entry
- * of the deck's history under its author. Throws DeckError when
- * the deck is missing or not the actor's ("not_found"), the version moved on
- * ("conflict"), or the patch or its result is invalid.
+ * Applies a JSON Patch to the actor's deck, bumps the version and records
+ * it, with its inverse, as an entry of the deck's history under its author.
+ * The patch is either written against `baseVersion` (the editor's saves,
+ * refused as a "conflict" when the deck moved on), or planned on the deck as
+ * it is while its row is held, so nothing can land in between (an agent's
+ * edits and renames, which address shapes by id). Throws DeckError when the
+ * deck is missing or not the actor's ("not_found") or the patch or its
+ * result is invalid; a plan's own errors pass through.
  */
 export async function mutateDeck(
   db: Db,
-  input: { deckId: string; actor: Actor; baseVersion: number; ops: unknown }
+  input: { deckId: string; actor: Actor } & (
+    | { baseVersion: number; ops: unknown }
+    | { plan: (document: DeckDocument) => Operation[] }
+  )
 ): Promise<MutationResult> {
-  const { deckId, actor, baseVersion } = input;
+  const { deckId, actor } = input;
   return db.begin(async (tx) => {
     const [row] = await tx<Pick<DeckRow, "document" | "version">[]>`
       select document, version from decks
@@ -219,14 +225,19 @@ export async function mutateDeck(
       for update
     `;
     if (!row) throw new DeckError("not_found", `no deck ${deckId}`);
-    if (row.version !== baseVersion) {
+    let ops: unknown;
+    if ("plan" in input) {
+      ops = input.plan(row.document);
+    } else if (row.version !== input.baseVersion) {
       throw new DeckError(
         "conflict",
-        `deck ${deckId} is at version ${row.version}; the patch was written against ${baseVersion}`
+        `deck ${deckId} is at version ${row.version}; the patch was written against ${input.baseVersion}`
       );
+    } else {
+      ops = input.ops;
     }
 
-    const result = applyOperations(row.document, input.ops);
+    const result = applyOperations(row.document, ops);
 
     const version = row.version + 1;
     await tx`
@@ -242,7 +253,7 @@ export async function mutateDeck(
         (deck_id, base_version, version, author_kind, author_sub, status,
          patch, inverse, decided_kind, decided_at)
       values
-        (${deckId}, ${baseVersion}, ${version}, ${actor.kind}, ${actor.sub}, 'applied',
+        (${deckId}, ${row.version}, ${version}, ${actor.kind}, ${actor.sub}, 'applied',
          ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))},
          ${actor.kind}, now())
       returning id
@@ -253,10 +264,10 @@ export async function mutateDeck(
 
 /**
  * Renames a deck. The rename is a member's patch like any other edit, so it
- * gets a revision and can be reverted. It does not depend on the rest of the
- * document, so it is written against the deck's current version, and tried
- * again if another write lands in between. Returns false when the deck is
- * missing or someone else's; renaming to the same title changes nothing.
+ * gets a revision and can be reverted. It is planned on the deck as it is
+ * while its row is held, so another write in between cannot refuse it.
+ * Returns false when the deck is missing or someone else's; renaming to the
+ * same title changes nothing.
  */
 export async function renameDeck(
   db: Db,
@@ -265,30 +276,19 @@ export async function renameDeck(
   title: string
 ): Promise<boolean> {
   const value = title.trim();
-  for (let attempt = 1; ; attempt++) {
-    const [row] = await db<Pick<DeckRow, "title" | "version">[]>`
-      select title, version from decks
-      where id = ${id} and owner_sub = ${owner} and deleted_at is null
-    `;
-    if (!row) return false;
-    if (row.title === value) return true;
-    try {
-      await mutateDeck(db, {
-        deckId: id,
-        actor: { kind: "member", sub: owner },
-        baseVersion: row.version,
-        ops: [{ op: "replace", path: "/title", value }],
-      });
-      return true;
-    } catch (error) {
-      if (error instanceof DeckError && error.code === "not_found") {
-        return false;
-      }
-      if (error instanceof DeckError && error.code === "conflict") {
-        if (attempt < 3) continue;
-      }
-      throw error;
-    }
+  try {
+    await mutateDeck(db, {
+      deckId: id,
+      actor: { kind: "member", sub: owner },
+      plan: () => [{ op: "replace", path: "/title", value }],
+    });
+    return true;
+  } catch (error) {
+    if (!(error instanceof DeckError)) throw error;
+    if (error.code === "not_found") return false;
+    // Already that title: there was nothing to change.
+    if (error.message === "the patch changes nothing") return true;
+    throw error;
   }
 }
 

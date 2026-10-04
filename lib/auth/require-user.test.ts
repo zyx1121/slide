@@ -25,10 +25,11 @@ beforeEach(() => {
   jar.clear();
   Object.assign(process.env, {
     APP_URL: "https://slide.example",
-    KEYCLOAK_ISSUER: "https://auth.example/realms/test",
-    KEYCLOAK_CLIENT_ID: "slide",
-    KEYCLOAK_CLIENT_SECRET: "client-secret",
+    OIDC_ISSUER: "https://auth.example/realms/test",
+    OIDC_CLIENT_ID: "slide",
+    OIDC_CLIENT_SECRET: "client-secret",
     SESSION_SECRET: secret,
+    ALLOWED_EMAILS: "Alice@Example.com, bob@example.com",
   });
 });
 
@@ -40,25 +41,42 @@ describe("requireUser", () => {
   it("returns the member of a valid __Host- session", async () => {
     jar.set(
       "__Host-slide_session",
-      await sealSession({ sub: "alice-sub", name: "Alice", email: "" }, secret)
+      await sealSession(
+        { sub: "alice-sub", name: "Alice", email: "alice@example.com" },
+        secret
+      )
     );
     await expect(requireUser()).resolves.toEqual({
       sub: "alice-sub",
       name: "Alice",
-      email: "",
+      email: "alice@example.com",
     });
+  });
+
+  it("signs out a member whose email left the allowlist", async () => {
+    jar.set(
+      "__Host-slide_session",
+      await sealSession(
+        { sub: "carol-sub", name: "Carol", email: "carol@example.com" },
+        secret
+      )
+    );
+    await expect(requireUser()).rejects.toThrow("redirect /auth/login");
   });
 
   it("ignores a plain-named or forged session over https", async () => {
     jar.set(
       "slide_session",
-      await sealSession({ sub: "alice-sub", name: "", email: "" }, secret)
+      await sealSession(
+        { sub: "alice-sub", name: "", email: "alice@example.com" },
+        secret
+      )
     );
     await expect(requireUser()).rejects.toThrow("redirect /auth/login");
     jar.set(
       "__Host-slide_session",
       await sealSession(
-        { sub: "alice-sub", name: "", email: "" },
+        { sub: "alice-sub", name: "", email: "alice@example.com" },
         "f".repeat(32)
       )
     );

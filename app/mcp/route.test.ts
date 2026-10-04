@@ -23,7 +23,7 @@ vi.mock("@/lib/mcp/token", async (original) => ({
 
 const ENV = {
   APP_URL: "https://slide.example.org",
-  KEYCLOAK_ISSUER: "https://auth.example.org/realms/lab",
+  OIDC_ISSUER: "https://auth.example.org/realms/lab",
   SESSION_SECRET: "s".repeat(64),
   MCP_CLIENT_ID: "slide-mcp",
 };

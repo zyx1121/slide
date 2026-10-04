@@ -2,7 +2,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import type { NextRequest } from "next/server";
 
-import { authEnv, type AuthEnv } from "./config";
+import { authEnv, isAllowed, type AuthEnv } from "./config";
 import { seal, unseal } from "./seal";
 
 export const SESSION_SECONDS = 7 * 24 * 60 * 60;
@@ -25,7 +25,7 @@ export function sessionCookie(env: AuthEnv): string {
 }
 
 export type SessionUser = {
-  /** Keycloak subject; every deck query is scoped to it. */
+  /** The provider's subject; every deck query is scoped to it. */
   sub: string;
   name: string;
   email: string;
@@ -39,7 +39,7 @@ type SessionPayload = {
 };
 
 // A browser keeps a cookie of up to 4096 bytes; leave room for its name and
-// attributes. The ID token only makes sign-out skip Keycloak's confirm page.
+// attributes. The ID token only makes sign-out skip a provider's confirm page.
 const MAX_COOKIE_VALUE = 3800;
 
 export async function sealSession(
@@ -76,10 +76,20 @@ export async function unsealSession(
   };
 }
 
+/**
+ * A sealed session, if it is still good: sealed with this secret, unexpired,
+ * and for an email still on the allowlist, so taking an address off the
+ * list signs that member out.
+ */
+async function openSession(token: string | undefined, env: AuthEnv) {
+  if (!token) return null;
+  const session = await unsealSession(token, env.secret);
+  return session && isAllowed(env, session.email) ? session : null;
+}
+
 /** The session carried by a request, for proxy.ts and route handlers. */
 export function readSession(request: NextRequest, env: AuthEnv) {
-  const token = request.cookies.get(sessionCookie(env))?.value;
-  return token ? unsealSession(token, env.secret) : Promise.resolve(null);
+  return openSession(request.cookies.get(sessionCookie(env))?.value, env);
 }
 
 /** Host-only (no Domain), Path=/ and, over https, Secure: what __Host- requires. */
@@ -96,9 +106,10 @@ export function cookieOptions(env: AuthEnv, maxAge: number) {
 /** The signed-in member in a Server Component or Server Function, or null. */
 export async function getSession(): Promise<SessionUser | null> {
   const env = authEnv();
-  const token = (await cookies()).get(sessionCookie(env))?.value;
-  if (!token) return null;
-  const session = await unsealSession(token, env.secret);
+  const session = await openSession(
+    (await cookies()).get(sessionCookie(env))?.value,
+    env
+  );
   return session
     ? { sub: session.sub, name: session.name, email: session.email }
     : null;

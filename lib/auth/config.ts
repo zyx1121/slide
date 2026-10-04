@@ -1,22 +1,29 @@
 import * as client from "openid-client";
 
 export type AuthEnv = {
-  /** The public URL members open; Keycloak redirects back to it. */
+  /** The public URL members open; the provider redirects back to it. */
   appUrl: URL;
+  /** The OpenID Connect provider, such as https://accounts.google.com. */
   issuer: URL;
   clientId: string;
   clientSecret: string;
   /** Encrypts the session and sign-in cookies. */
   secret: string;
+  /** The verified email addresses that may sign in, lowercased. */
+  allowed: ReadonlySet<string>;
 };
 
 const KEYS = [
   "APP_URL",
-  "KEYCLOAK_ISSUER",
-  "KEYCLOAK_CLIENT_ID",
-  "KEYCLOAK_CLIENT_SECRET",
+  "OIDC_ISSUER",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
   "SESSION_SECRET",
+  "ALLOWED_EMAILS",
 ] as const;
+
+/** An email address as the allowlist compares it. */
+export const normalEmail = (email: string) => email.trim().toLowerCase();
 
 /** Reads the sign-in settings; throws when one is missing, so auth fails closed. */
 export function authEnv(env: NodeJS.ProcessEnv = process.env): AuthEnv {
@@ -27,14 +34,25 @@ export function authEnv(env: NodeJS.ProcessEnv = process.env): AuthEnv {
   if (env.SESSION_SECRET!.length < 32) {
     throw new Error("SESSION_SECRET must be at least 32 characters");
   }
+  const allowed = new Set(
+    env.ALLOWED_EMAILS!.split(",").map(normalEmail).filter(Boolean)
+  );
+  if (allowed.size === 0) {
+    throw new Error("ALLOWED_EMAILS must list at least one email address");
+  }
   return {
     appUrl: new URL(env.APP_URL!),
-    issuer: new URL(env.KEYCLOAK_ISSUER!),
-    clientId: env.KEYCLOAK_CLIENT_ID!,
-    clientSecret: env.KEYCLOAK_CLIENT_SECRET!,
+    issuer: new URL(env.OIDC_ISSUER!),
+    clientId: env.OIDC_CLIENT_ID!,
+    clientSecret: env.OIDC_CLIENT_SECRET!,
     secret: env.SESSION_SECRET!,
+    allowed,
   };
 }
+
+/** Whether a session's email may still use the app: the allowlist can shrink. */
+export const isAllowed = (env: AuthEnv, email: string) =>
+  env.allowed.has(normalEmail(email));
 
 export function callbackUrl(env: AuthEnv): URL {
   return new URL("/auth/callback", env.appUrl);

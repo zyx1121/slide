@@ -12,10 +12,11 @@ const SESSION = "__Host-slide_session";
 beforeAll(() => {
   Object.assign(process.env, {
     APP_URL: "https://slide.example",
-    KEYCLOAK_ISSUER: "https://auth.example/realms/test",
-    KEYCLOAK_CLIENT_ID: "slide",
-    KEYCLOAK_CLIENT_SECRET: "client-secret",
+    OIDC_ISSUER: "https://auth.example/realms/test",
+    OIDC_CLIENT_ID: "slide",
+    OIDC_CLIENT_SECRET: "client-secret",
     SESSION_SECRET: secret,
+    ALLOWED_EMAILS: "Alice@Example.com, bob@example.com",
   });
 });
 
@@ -47,7 +48,7 @@ describe("proxy", () => {
 
   it("lets a member with a valid session through", async () => {
     const token = await sealSession(
-      { sub: "alice-sub", name: "Alice", email: "" },
+      { sub: "alice-sub", name: "Alice", email: "alice@example.com" },
       secret
     );
     const response = await proxy(
@@ -60,7 +61,7 @@ describe("proxy", () => {
 
   it("ignores a valid session under the plain name over https", async () => {
     const token = await sealSession(
-      { sub: "alice-sub", name: "Alice", email: "" },
+      { sub: "alice-sub", name: "Alice", email: "alice@example.com" },
       secret
     );
     const response = await proxy(
@@ -71,9 +72,22 @@ describe("proxy", () => {
     expect(response.status).toBe(307);
   });
 
+  it("turns away a session whose email is not on the allowlist", async () => {
+    const token = await sealSession(
+      { sub: "carol-sub", name: "Carol", email: "carol@example.com" },
+      secret
+    );
+    const response = await proxy(
+      new NextRequest("http://internal:3000/", {
+        headers: { cookie: `${SESSION}=${token}` },
+      })
+    );
+    expect(response.status).toBe(307);
+  });
+
   it("treats a forged session as no session", async () => {
     const forged = await sealSession(
-      { sub: "alice-sub", name: "", email: "" },
+      { sub: "alice-sub", name: "", email: "alice@example.com" },
       "f".repeat(32)
     );
     const response = await proxy(

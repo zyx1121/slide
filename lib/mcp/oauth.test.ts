@@ -25,7 +25,7 @@ describe("mcpEnv", () => {
   it("stays off until the MCP client is set", () => {
     const base = {
       APP_URL: "https://slide.example.org",
-      KEYCLOAK_ISSUER: "https://auth.example.org/realms/lab",
+      OIDC_ISSUER: "https://auth.example.org/realms/lab",
       SESSION_SECRET: "s".repeat(32),
     };
     expect(mcpEnv(base as unknown as NodeJS.ProcessEnv)).toBeNull();

@@ -29,7 +29,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Draws** rectangles, rounded rectangles, ellipses, text boxes, pictures, and connectors that stay glued when shapes move, with undo, copy and paste
 - **Types** in place, Chinese input methods included, wrapping lines exactly where PowerPoint does
 - **Hands your agent** what you selected over MCP: the shapes as JSON, the words you marked, and a picture of that part of the slide
-- **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any edit can be reverted on its own
+- **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any edit can be reverted on its own unless a later one changed the same place
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
 - **Presents** full screen, or split across screens: the projector shows only the slides while your screen shows the slide, the next one, your speaker notes (written in the editor or by your agent) and a timer
 - **Publishes** a deck to a read-only link anyone can open and download
@@ -83,7 +83,7 @@ Set these in `.env`; [.env.example](.env.example) documents every one.
 
 ```mermaid
 flowchart LR
-  E[Browser editor] -->|mutations| A[Next.js app]
+  E[Browser editor] -->|server actions, API routes| A[Next.js app]
   G[Your agent] -->|MCP at /mcp| A
   A --> D[(Postgres)]
   A -->|OIDC sign-in| O[Google or another OIDC provider]

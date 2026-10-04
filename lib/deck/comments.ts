@@ -1,4 +1,4 @@
-// Comments on a selection (PLAN.md, v0.3). The member, or an agent, writes
+// Comments on a selection (PLAN.md, Agents). The member, or an agent, writes
 // a comment on slides, shapes or words; anyone replies, resolves or reopens
 // it. Every one of those is a row of its own, kept for good, so a thread is
 // its whole conversation. Every query is scoped to the deck's owner.

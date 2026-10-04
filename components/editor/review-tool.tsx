@@ -5,6 +5,7 @@
 // or all at once; and the deck's recent changes, each revertible on its own.
 // Suggestions are checked for every 10 seconds while the page is visible.
 import { HistoryIcon } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
 
 import { reviewAction, reviseAction } from "@/app/decks/[id]/actions";
@@ -63,6 +64,7 @@ export function ReviewTool({
   /** Shows a suggestion applied, or ends the preview with null. */
   onPreview: (suggestion: Suggestion | null) => void;
 }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [revisions, setRevisions] = useState<Revision[]>([]);
@@ -99,7 +101,7 @@ export function ReviewTool({
       if (!result) problems.push("連線中斷，請再試一次。");
       else if (result.outcome === "applied" && result.kind === "delete") {
         // The deck is gone from the lists; it waits under 最近刪除.
-        window.location.assign("/");
+        router.push("/");
         return;
       } else if (result.outcome === "applied") changed = true;
       else if (result.outcome === "conflict") problems.push(result.message);

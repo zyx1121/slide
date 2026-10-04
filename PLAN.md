@@ -112,6 +112,9 @@ Decided on 2026-10-04: the web app only helps present. Whatever a member can do 
 | Download, publish                       | `export_deck`, `publish_deck`, `unpublish_deck`                                                                         |
 | Review: suggestions, requests, history  | `list_history`, `accept`, `reject`, `revert`                                                                            |
 | Look and point                          | `get_deck`, `render_slide`, `check_deck`, `get_selection`                                                               |
+| Comment on a selection, reply, resolve  | `list_comments`, `add_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`                                    |
+
+A member comments on what they select (slides, shapes, words); comments, replies, resolves and reopens are rows kept for good, so a thread is its whole conversation. The agent reads the open threads, answers each with suggestions, replies naming them, and resolves the thread.
 
 An agent's document edits are suggestions; its publish and delete (and restoring a deck that was public) are requests; either waits until the member, or an agent the member asks, accepts it. Every change is an entry in the deck's history and can be reverted.
 

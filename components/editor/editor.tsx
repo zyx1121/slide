@@ -23,6 +23,7 @@ import {
   type KeyboardEvent,
   useCallback,
   useEffect,
+  useMemo,
   useRef,
   useState,
 } from "react";
@@ -35,6 +36,7 @@ import {
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
+import { CommentsTool } from "@/components/editor/comments-tool";
 import { ReviewTool } from "@/components/editor/review-tool";
 import {
   FillTool,
@@ -76,7 +78,13 @@ import {
   pasteShapes,
 } from "@/lib/editor/clipboard";
 import { type End, lineEndOps, newLine, type Side } from "@/lib/editor/connect";
-import type { Box, Point } from "@/lib/editor/geometry";
+import {
+  type Box,
+  type Point,
+  shapeBounds,
+  unionRects,
+} from "@/lib/editor/geometry";
+import type { Thread } from "@/lib/deck/comments";
 import { guard } from "@/lib/editor/guard";
 import {
   EMPTY_HISTORY,
@@ -719,11 +727,10 @@ export function Editor({
   // What the member has selected, for their agent (get_selection): the
   // shapes on the slide being edited, with the text range being typed in,
   // or the slide in view when nothing is selected. Sent once it settles.
-  const sentSelection = useRef("");
-  useEffect(() => {
+  const selectionInput = useMemo(() => {
     const at = selection.length > 0 || draft ? index : visible;
     const slideNow = doc.slides[at];
-    if (!slideNow) return;
+    if (!slideNow) return null;
     const targets =
       draft && draft.target !== "title" && draft.slide === at
         ? [
@@ -741,15 +748,57 @@ export function Editor({
                 })(),
           ]
         : selection.map((shape) => ({ shape }));
-    const input = { slideId: slideNow.id, targets };
-    const key = JSON.stringify(input);
+    return { slideId: slideNow.id, targets };
+  }, [doc.slides, draft, index, selection, visible]);
+  const sentSelection = useRef("");
+  useEffect(() => {
+    if (!selectionInput) return;
+    const key = JSON.stringify(selectionInput);
     if (key === sentSelection.current) return;
     const timer = setTimeout(() => {
       sentSelection.current = key;
-      void selectAction(deckId, input).catch(() => {});
+      void selectAction(deckId, selectionInput).catch(() => {});
     }, 500);
     return () => clearTimeout(timer);
-  }, [deckId, doc.slides, draft, index, selection, visible]);
+  }, [deckId, selectionInput]);
+
+  // Comments: the panel, the thread to show first, and open threads as pins.
+  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentFocus, setCommentFocus] = useState<string | null>(null);
+  const [threads, setThreads] = useState<Thread[]>([]);
+  const slideNumberOf = useCallback(
+    (slideId: string) => {
+      const at = docRef.current.slides.findIndex((s) => s.id === slideId);
+      return at < 0 ? null : at + 1;
+    },
+    // The document is read through its ref; slide order is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [doc.slides]
+  );
+  const pinsOf = (slideIndex: number) => {
+    const slideNow = (previewDoc ?? doc).slides[slideIndex];
+    if (!slideNow) return [];
+    const byId = new Map(slideNow.shapes.map((shape) => [shape.id, shape]));
+    return threads
+      .filter((thread) => thread.status === "open")
+      .map((thread, n) => ({ thread, n: n + 1 }))
+      .filter(({ thread }) => thread.slideId === slideNow.id)
+      .map(({ thread, n }) => {
+        const bounds = unionRects(
+          thread.targets
+            .map((target) => byId.get(target.shape))
+            .filter((shape) => shape !== undefined)
+            .map((shape) => shapeBounds(shape, byId))
+        );
+        return {
+          id: thread.id,
+          n,
+          body: thread.body,
+          x: bounds ? bounds.x + bounds.w : 1920 - 48,
+          y: bounds ? bounds.y : 48,
+        };
+      });
+  };
 
   const slideOrder = doc.slides.map((slide) => slide.id).join(" ");
   // The page number follows the slide most in view.
@@ -1110,33 +1159,57 @@ export function Editor({
                 data-index={i}
                 className="flex w-full snap-start scroll-mt-16 justify-center"
               >
-                <Canvas
-                  className="w-[calc(100dvw-2rem)]"
-                  slide={!previewing && i === index ? shown : item}
-                  number={i + 1}
-                  template={shownTemplate}
-                  selection={!previewing && i === index ? selection : NONE}
-                  onSelect={(ids) => select(i, ids)}
-                  onMove={(ids, dx, dy) =>
-                    commit(moveOps(docRef.current.slides[i], i, ids, dx, dy), i)
-                  }
-                  onResize={(id: string, box: Box) =>
-                    commit(boxOps(docRef.current.slides[i], i, id, box), i)
-                  }
-                  onGestureStart={flushNudge}
-                  onKeyDown={(event) => onKeyDown(event, i)}
-                  onCopy={(event) => copy(event, i)}
-                  onCut={(event) => cut(event, i)}
-                  onPaste={(event) => paste(event, i)}
-                  text={previewing ? null : canvasText(i)}
-                  onEditText={(target, point) => startEdit(i, target, point)}
-                  tool={tool}
-                  onDrawLine={(start, end) => drawLine(i, start, end)}
-                  onLineEnd={(id, side, end) => moveLineEnd(i, id, side, end)}
-                  onDropFiles={(files, point) =>
-                    void addImages(i, files, point)
-                  }
-                />
+                <div className="relative">
+                  <Canvas
+                    className="w-[calc(100dvw-2rem)]"
+                    slide={!previewing && i === index ? shown : item}
+                    number={i + 1}
+                    template={shownTemplate}
+                    selection={!previewing && i === index ? selection : NONE}
+                    onSelect={(ids) => select(i, ids)}
+                    onMove={(ids, dx, dy) =>
+                      commit(
+                        moveOps(docRef.current.slides[i], i, ids, dx, dy),
+                        i
+                      )
+                    }
+                    onResize={(id: string, box: Box) =>
+                      commit(boxOps(docRef.current.slides[i], i, id, box), i)
+                    }
+                    onGestureStart={flushNudge}
+                    onKeyDown={(event) => onKeyDown(event, i)}
+                    onCopy={(event) => copy(event, i)}
+                    onCut={(event) => cut(event, i)}
+                    onPaste={(event) => paste(event, i)}
+                    text={previewing ? null : canvasText(i)}
+                    onEditText={(target, point) => startEdit(i, target, point)}
+                    tool={tool}
+                    onDrawLine={(start, end) => drawLine(i, start, end)}
+                    onLineEnd={(id, side, end) => moveLineEnd(i, id, side, end)}
+                    onDropFiles={(files, point) =>
+                      void addImages(i, files, point)
+                    }
+                  />
+                  {pinsOf(i).map((pin) => (
+                    <button
+                      key={pin.id}
+                      type="button"
+                      aria-label={`評論 ${pin.n}：${pin.body}`}
+                      title={pin.body}
+                      className="absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-background text-xs text-foreground tabular-nums shadow ring-1 ring-foreground/50 outline-offset-2 focus-visible:outline-2"
+                      style={{
+                        left: `${Math.min(100, Math.max(0, (pin.x / 1920) * 100))}%`,
+                        top: `${Math.min(100, Math.max(0, (pin.y / 1080) * 100))}%`,
+                      }}
+                      onClick={() => {
+                        setCommentFocus(pin.id);
+                        setCommentsOpen(true);
+                      }}
+                    >
+                      {pin.n}
+                    </button>
+                  ))}
+                </div>
               </li>
             ))}
           </ol>
@@ -1344,6 +1417,35 @@ export function Editor({
               onAction={changeSlides}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
+            {selectionInput && (
+              <CommentsTool
+                deckId={deckId}
+                selection={selectionInput}
+                slideNumberOf={slideNumberOf}
+                open={commentsOpen}
+                onOpenChange={(next) => {
+                  setCommentsOpen(next);
+                  if (!next) setCommentFocus(null);
+                }}
+                focus={commentFocus}
+                onJump={(slideId, shapes) => {
+                  const at = docRef.current.slides.findIndex(
+                    (s) => s.id === slideId
+                  );
+                  if (at < 0) return;
+                  const here = new Set(
+                    docRef.current.slides[at].shapes.map((shape) => shape.id)
+                  );
+                  setCommentsOpen(false);
+                  goTo(at);
+                  select(
+                    at,
+                    shapes.filter((id) => here.has(id))
+                  );
+                }}
+                onThreads={setThreads}
+              />
+            )}
             <ReviewTool
               deckId={deckId}
               busy={saving.pending > 0 || draft?.dirty === true || nudging}

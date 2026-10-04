@@ -55,7 +55,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one. The dock's template button switches a deck between the plain template and the WinLab one.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors and styles what you select; the check mark shows the rule check.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
-4. Select shapes and ask your agent to change them. Its edits wait under the history button in the dock (**建議與紀錄**), where you preview, accept or reject each one.
+4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits wait under the history button in the dock (**建議與紀錄**), where you preview, accept or reject each one.
 5. Download a `.pptx` from the dock, or publish the deck from the globe button and share its `/s/…` link.
 
 ## Configure

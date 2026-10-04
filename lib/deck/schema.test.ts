@@ -42,7 +42,8 @@ describe("DeckDocument", () => {
   });
 
   it("takes a known template, or none", () => {
-    const { template: _winlab, ...none } = sampleDocument();
+    const none: Record<string, unknown> = { ...sampleDocument() };
+    delete none.template;
     expect(issuesOf(none)).toEqual([]);
     expect(issuesOf({ ...none, template: "plain" })).toEqual([]);
     expect(issuesOf({ ...none, template: "keynote" })).toHaveLength(1);

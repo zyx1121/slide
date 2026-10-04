@@ -22,10 +22,17 @@ import {
   rejectSuggestion,
   revertRevision,
 } from "../deck/revisions";
-import { getSelection } from "../deck/selection";
+import {
+  addComment,
+  addToThread,
+  type CommentResult,
+  listThreads,
+} from "../deck/comments";
+import { getSelection, Target } from "../deck/selection";
 import {
   blankDocument,
   createDeck,
+  type Deck,
   getDeck,
   listDecks,
   listDeletedDecks,
@@ -48,6 +55,7 @@ import {
   addSlide,
   copySlide,
   deleteShapes,
+  findSlide,
   deleteSlide,
   moveSlide,
   type Planned,
@@ -108,7 +116,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules and get_selection for what the member points at. Document edits (add_shapes, update_shapes, delete_shapes, add_slide, copy_slide, delete_slide, move_slide, rename_deck, set_template) arrive as suggestions; publish_deck and delete_deck as requests; render_slide shows the deck as it is, without pending ones. list_history shows suggestions, requests and every past change; accept, reject and revert act on them, but accept only when the member asked you to. create_deck, import_deck, upload_image (for picture shapes), export_deck, unpublish_deck and restore_deck act at once.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the suggestion, then resolve_comment. Document edits (add_shapes, update_shapes, delete_shapes, add_slide, copy_slide, delete_slide, move_slide, rename_deck, set_template) arrive as suggestions; publish_deck and delete_deck as requests; render_slide shows the deck as it is, without pending ones. list_history shows suggestions, requests and every past change; accept, reject and revert act on them, but accept only when the member asked you to. create_deck, import_deck, upload_image (for picture shapes), export_deck, unpublish_deck and restore_deck act at once.",
     }
   );
   const { db, sub } = context;
@@ -254,12 +262,78 @@ export function createServer(context: ToolContext): McpServer {
     }
   );
 
+  /**
+   * A PNG of part of a slide: the shapes named, with some room around them,
+   * or the whole slide; null while rendering is busy.
+   */
+  const cropOf = async (deck: Deck, index: number, shapeIds: string[]) => {
+    const page = deck.document.slides[index];
+    const byId = new Map(page.shapes.map((shape) => [shape.id, shape]));
+    const bounds = unionRects(
+      shapeIds
+        .map((id) => byId.get(id))
+        .filter((shape) => shape !== undefined)
+        .map((shape) => shapeBounds(shape, byId))
+    );
+    const margin = 40;
+    const crop = bounds
+      ? {
+          x: Math.max(0, bounds.x - margin),
+          y: Math.max(0, bounds.y - margin),
+          w:
+            Math.min(1920, bounds.x + bounds.w + margin) -
+            Math.max(0, bounds.x - margin),
+          h:
+            Math.min(1080, bounds.y + bounds.h + margin) -
+            Math.max(0, bounds.y - margin),
+        }
+      : { x: 0, y: 0, w: 1920, h: 1080 };
+    const assets = await slideAssetUris(db, sub, page);
+    const template = templateOf(deck.document).id;
+    const svg = renderSlideSvg(page, {
+      slideNumber: index + 1,
+      template,
+      background: backgroundDataUri(template),
+      assetHref: (sha256) => assets.get(sha256) ?? null,
+    }).replace(
+      /^<svg ([^>]*?)viewBox="0 0 1920 1080" width="1920" height="1080"/,
+      `<svg $1viewBox="${crop.x} ${crop.y} ${Math.max(1, crop.w)} ${Math.max(1, crop.h)}" width="${Math.max(1, crop.w)}" height="${Math.max(1, crop.h)}"`
+    );
+    try {
+      const png = await renderPngAsync(
+        svg,
+        Math.round(Math.min(1280, Math.max(320, crop.w)))
+      );
+      return png.toString("base64");
+    } catch (error) {
+      if (!(error instanceof RenderBusyError)) throw error;
+      return null;
+    }
+  };
+
+  /** Targets as they stand now: each shape's JSON, and the words selected. */
+  const resolveTargets = (
+    page: Deck["document"]["slides"][number],
+    targets: Target[]
+  ) => {
+    const byId = new Map(page.shapes.map((shape) => [shape.id, shape]));
+    return targets.map((target) => {
+      const shape = byId.get(target.shape);
+      if (!shape) return { shape: target.shape, gone: true };
+      const words =
+        target.text && holdsText(shape) && shape.text
+          ? plainText(shape.text, target.text.from, target.text.to)
+          : undefined;
+      return { shape, ...(target.text ? { text: target.text, words } : {}) };
+    });
+  };
+
   server.registerTool(
     "get_selection",
     {
       title: "Get the member's selection",
       description:
-        "What the member has selected in the editor right now: the deck, the slide, and the selected shapes as JSON (with the selected words when part of a text is selected), plus a PNG of that part of the slide. With nothing selected, the slide in view. Edit the shapes by their ids; the selection may change while you work.",
+        "What the member has selected in the editor right now: the deck, the slide, and the selected shapes as JSON (with the selected words when part of a text is selected), the open comments on them, plus a PNG of that part of the slide. With nothing selected, the slide in view. Edit the shapes by their ids; the selection may change while you work.",
       annotations: { readOnlyHint: true },
     },
     async () => {
@@ -273,76 +347,41 @@ export function createServer(context: ToolContext): McpServer {
       const page = deck?.document.slides[index];
       if (!deck || !page)
         return failure("The selected slide is no longer there.");
-      const byId = new Map(page.shapes.map((shape) => [shape.id, shape]));
-      const targets = selected.targets
-        .map((target) => {
-          const shape = byId.get(target.shape);
-          if (!shape) return null;
-          const words =
-            target.text && holdsText(shape) && shape.text
-              ? plainText(shape.text, target.text.from, target.text.to)
-              : undefined;
-          return {
-            shape,
-            ...(target.text ? { text: target.text, words } : {}),
-          };
-        })
-        .filter((target) => target !== null);
-
-      // The picture: the selected shapes with some room around them, or the
-      // whole slide.
-      const bounds = unionRects(
-        targets.map(({ shape }) => shapeBounds(shape, byId))
+      const targets = resolveTargets(page, selected.targets).filter(
+        (target) => !("gone" in target)
       );
-      const margin = 40;
-      const crop = bounds
-        ? {
-            x: Math.max(0, bounds.x - margin),
-            y: Math.max(0, bounds.y - margin),
-            w:
-              Math.min(1920, bounds.x + bounds.w + margin) -
-              Math.max(0, bounds.x - margin),
-            h:
-              Math.min(1080, bounds.y + bounds.h + margin) -
-              Math.max(0, bounds.y - margin),
-          }
-        : { x: 0, y: 0, w: 1920, h: 1080 };
-      const assets = await slideAssetUris(db, sub, page);
-      const template = templateOf(deck.document).id;
-      const svg = renderSlideSvg(page, {
-        slideNumber: index + 1,
-        template,
-        background: backgroundDataUri(template),
-        assetHref: (sha256) => assets.get(sha256) ?? null,
-      }).replace(
-        /^<svg ([^>]*?)viewBox="0 0 1920 1080" width="1920" height="1080"/,
-        `<svg $1viewBox="${crop.x} ${crop.y} ${Math.max(1, crop.w)} ${Math.max(1, crop.h)}" width="${Math.max(1, crop.w)}" height="${Math.max(1, crop.h)}"`
+      // Open comments on this slide that touch what is selected (all of the
+      // slide's when nothing is).
+      const chosen = new Set(selected.targets.map((target) => target.shape));
+      const comments = (
+        await listThreads(db, sub, deck.id, { status: "open" })
+      ).filter(
+        (thread) =>
+          thread.slideId === page.id &&
+          (chosen.size === 0 ||
+            thread.targets.length === 0 ||
+            thread.targets.some((target) => chosen.has(target.shape)))
       );
       const summary = {
         deck: { id: deck.id, title: deck.title, version: deck.version },
         slide: { number: index + 1, id: page.id, title: page.title },
         targets,
+        comments,
         selectedAt: selected.updatedAt.toISOString(),
       };
-      try {
-        const png = await renderPngAsync(
-          svg,
-          Math.round(Math.min(1280, Math.max(320, crop.w)))
-        );
-        return {
-          content: [
-            { type: "text" as const, text: JSON.stringify(summary, null, 2) },
-            {
-              type: "image" as const,
-              data: png.toString("base64"),
-              mimeType: "image/png",
-            },
-          ],
-        };
-      } catch (error) {
-        if (!(error instanceof RenderBusyError)) throw error;
-        return text(summary);
-      }
+      const png = await cropOf(
+        deck,
+        index,
+        selected.targets.map((target) => target.shape)
+      );
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(summary, null, 2) },
+          ...(png
+            ? [{ type: "image" as const, data: png, mimeType: "image/png" }]
+            : []),
+        ],
+      };
     }
   );
 
@@ -797,6 +836,188 @@ export function createServer(context: ToolContext): McpServer {
       },
     },
     async ({ deck_id, entry }) => review("revert", deck_id, entry)
+  );
+
+  // ----------------------------------------------------------- comments
+
+  /** What a comment write answers the agent. */
+  const commented = (result: CommentResult, deck_id: string) => {
+    switch (result.outcome) {
+      case "added":
+        return text({ status: "added", id: result.id });
+      case "unchanged":
+        return text({ status: "unchanged" });
+      case "gone":
+        return failure(`No such comment or deck ${deck_id}.`);
+      case "invalid":
+        return failure(result.message);
+    }
+  };
+
+  server.registerTool(
+    "list_comments",
+    {
+      title: "List comments",
+      description:
+        "The deck's comment threads, oldest first (open ones unless status says otherwise): each with its slide number, the shapes it is on as they stand now (with the words when it is on part of a text), its replies, resolves and reopens. With images, a PNG of each thread's shapes. The member comments in batches; answer each with your edits (as suggestions), then reply_comment naming the suggestion and resolve_comment.",
+      inputSchema: {
+        deck_id: DeckId,
+        status: z.enum(["open", "resolved", "all"]).optional(),
+        images: z.boolean().optional(),
+      },
+      annotations: { readOnlyHint: true },
+    },
+    async ({ deck_id, status, images }) => {
+      const deck = await getDeck(db, sub, deck_id);
+      if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
+      const threads = await listThreads(db, sub, deck_id, {
+        status: status === "all" ? undefined : (status ?? "open"),
+      });
+      const content: (
+        | { type: "text"; text: string }
+        | { type: "image"; data: string; mimeType: string }
+      )[] = [];
+      const listed = [];
+      for (const thread of threads) {
+        const index = deck.document.slides.findIndex(
+          (slide) => slide.id === thread.slideId
+        );
+        const page = deck.document.slides[index];
+        listed.push({
+          ...thread,
+          slide: page ? { number: index + 1, title: page.title } : null,
+          targets: page ? resolveTargets(page, thread.targets) : [],
+        });
+        if (images && page && content.length < 40) {
+          const png = await cropOf(
+            deck,
+            index,
+            thread.targets.map((target) => target.shape)
+          );
+          if (png) {
+            content.push({ type: "text", text: `Comment ${thread.id}:` });
+            content.push({ type: "image", data: png, mimeType: "image/png" });
+          }
+        }
+      }
+      return {
+        content: [
+          { type: "text" as const, text: JSON.stringify(listed, null, 2) },
+          ...content,
+        ],
+      };
+    }
+  );
+
+  server.registerTool(
+    "add_comment",
+    {
+      title: "Comment",
+      description:
+        "Starts a comment thread on a slide, and on shapes of it (each optionally with a text range: from and to as { p: paragraph, o: offset }), as the editor's comments do.",
+      inputSchema: {
+        deck_id: DeckId,
+        slide: SlideRef,
+        targets: z.array(Target).max(200).optional(),
+        body: z.string().trim().min(1).max(5000),
+      },
+    },
+    async ({ deck_id, slide, targets, body }) => {
+      const deck = await getDeck(db, sub, deck_id);
+      if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
+      let slideId: string;
+      try {
+        slideId = findSlide(deck.document, slide).slide.id;
+      } catch (error) {
+        if (error instanceof WriteError) return failure(error.message);
+        throw error;
+      }
+      return commented(
+        await addComment(
+          db,
+          sub,
+          deck_id,
+          { slideId, targets: targets ?? [], body },
+          "agent"
+        ),
+        deck_id
+      );
+    }
+  );
+
+  const CommentId = z
+    .string()
+    .regex(/^[0-9]{1,18}$/)
+    .describe("A thread's id from list_comments");
+
+  server.registerTool(
+    "reply_comment",
+    {
+      title: "Reply to a comment",
+      description:
+        "Replies in a thread; entry names the suggestion or change (from list_history or a suggesting tool's answer) that answers it.",
+      inputSchema: {
+        deck_id: DeckId,
+        comment: CommentId,
+        body: z.string().trim().min(1).max(5000),
+        entry: EntryId.optional(),
+      },
+    },
+    async ({ deck_id, comment, body, entry }) =>
+      commented(
+        await addToThread(
+          db,
+          sub,
+          deck_id,
+          comment,
+          { kind: "reply", body, entryId: entry },
+          "agent"
+        ),
+        deck_id
+      )
+  );
+
+  server.registerTool(
+    "resolve_comment",
+    {
+      title: "Resolve a comment",
+      description:
+        "Marks a thread resolved; it stays in the record and can be reopened.",
+      inputSchema: { deck_id: DeckId, comment: CommentId },
+    },
+    async ({ deck_id, comment }) =>
+      commented(
+        await addToThread(
+          db,
+          sub,
+          deck_id,
+          comment,
+          { kind: "resolve" },
+          "agent"
+        ),
+        deck_id
+      )
+  );
+
+  server.registerTool(
+    "reopen_comment",
+    {
+      title: "Reopen a comment",
+      description: "Opens a resolved thread again.",
+      inputSchema: { deck_id: DeckId, comment: CommentId },
+    },
+    async ({ deck_id, comment }) =>
+      commented(
+        await addToThread(
+          db,
+          sub,
+          deck_id,
+          comment,
+          { kind: "reopen" },
+          "agent"
+        ),
+        deck_id
+      )
   );
 
   return server;

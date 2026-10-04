@@ -25,6 +25,9 @@ export const PARITY: Record<string, readonly string[]> = {
   reviseAction: ["accept", "reject", "revert"],
   // The member points at things; the agent reads what they point at.
   selectAction: ["get_selection"],
+  commentsAction: ["list_comments"],
+  commentAction: ["add_comment"],
+  threadAction: ["reply_comment", "resolve_comment", "reopen_comment"],
   // app/api
   "POST /api/assets": ["upload_image"],
   "GET /api/assets/[sha256]": ["get_image"],

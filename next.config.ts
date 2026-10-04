@@ -28,10 +28,13 @@ const nextConfig: NextConfig = {
   },
   experimental: {
     // Next copies a request body for the proxy before it runs, up to this
-    // size (10 MB by default), whoever sends it. Only Server Actions bring a
-    // body through the proxy (uploads, MCP and its OAuth front are outside
-    // its matcher), and Next refuses an action body over 1 MB anyway.
-    proxyClientMaxBodySize: "1mb",
+    // size (10 MB by default), whoever sends it, and hands the copy on. Only
+    // Server Actions bring a body through the proxy (uploads, MCP and its
+    // OAuth front are outside its matcher, see proxy.test.ts), and Next
+    // refuses an action body over 1 MiB anyway. 2 MB, not 1: a copy cut
+    // short still holds over 1 MiB, so an oversized action fails on Next's
+    // own size check ("Body exceeded 1 MB limit"), not as a broken body.
+    proxyClientMaxBodySize: "2mb",
   },
   // resvg is a native module; load it from node_modules at run time.
   serverExternalPackages: ["@resvg/resvg-js"],

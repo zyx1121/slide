@@ -29,7 +29,7 @@ import { deckStatus, getDeck, mutateDeck } from "@/lib/deck/store";
 
 export type EditResult =
   | { ok: true; version: number }
-  | { ok: false; code: DeckErrorCode | "malformed"; currentVersion?: number };
+  | { ok: false; code: DeckErrorCode | "malformed" };
 
 /** Applies one patch from the editor, written against `baseVersion`. */
 export async function editDeckAction(
@@ -51,11 +51,7 @@ export async function editDeckAction(
     return { ok: true, version: result.version };
   } catch (error) {
     if (!(error instanceof DeckError)) throw error;
-    return {
-      ok: false,
-      code: error.code,
-      currentVersion: error.details.currentVersion,
-    };
+    return { ok: false, code: error.code };
   }
 }
 
@@ -99,14 +95,10 @@ export async function publishDeckAction(
  */
 export async function historyAction(
   deckId: unknown
-): Promise<{ revisions: Revision[]; version: number } | null> {
+): Promise<Revision[] | null> {
   const user = await requireUser();
   if (typeof deckId !== "string") return null;
-  const [revisions, deck] = await Promise.all([
-    listRevisions(sql, user.sub, deckId, 30),
-    getDeck(sql, user.sub, deckId),
-  ]);
-  return deck && { revisions, version: deck.version };
+  return listRevisions(sql, user.sub, deckId, 30);
 }
 
 /**

@@ -1,7 +1,7 @@
 // Edits to the slide list: a blank slide, a copy of one, moving and
 // deleting. Each is one patch, so one undo step, guarded like every edit.
 import type { Operation } from "../deck/patch";
-import type { Slide } from "../deck/schema";
+import type { DeckDocument, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { pasteShapes } from "./clipboard";
 
@@ -48,6 +48,20 @@ export function notesOps(
   return [
     { op: slide.notes === undefined ? "add" : "replace", path, value: notes },
   ];
+}
+
+/**
+ * Where the slide at position `index` of `before` is in `after`: the same
+ * slide, by id, wherever it went; else the same position, within the deck.
+ */
+export function followSlide(
+  before: DeckDocument,
+  after: DeckDocument,
+  index: number
+): number {
+  const id = before.slides[index]?.id;
+  const found = id ? after.slides.findIndex((slide) => slide.id === id) : -1;
+  return found >= 0 ? found : Math.min(index, after.slides.length - 1);
 }
 
 /** Puts a slide at position `at` (0 first). */

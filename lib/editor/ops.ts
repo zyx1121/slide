@@ -1,6 +1,6 @@
 // JSON Patch operations for editor gestures. A gesture becomes one patch for
 // mutateDeck, addressed by the shapes' positions in the document it was made
-// against; the base version guarantees those positions still hold.
+// against; guard() pins those positions to the shapes' ids.
 import type { Operation } from "../deck/patch";
 import type { Shape, Slide } from "../deck/schema";
 import { sitePoint } from "../render/connector";

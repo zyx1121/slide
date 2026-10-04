@@ -19,7 +19,6 @@ import { type ReactNode, useLayoutEffect, useRef } from "react";
 
 import { SLIDE_HEIGHT, SLIDE_WIDTH } from "@/lib/deck/schema";
 import type { Rect } from "@/lib/editor/geometry";
-import { cn } from "@/lib/utils";
 
 /** Room kept clear at the viewport's edges: the corners above, the dock below. */
 const CLEAR = { top: 64, bottom: 88, left: 16, right: 16 };
@@ -43,7 +42,6 @@ export function SlideOverlay({
   slide,
   region,
   label,
-  className,
   children,
 }: {
   /** The slide's element on screen; nothing shows without it. */
@@ -51,7 +49,6 @@ export function SlideOverlay({
   /** What it floats next to, in slide px; nothing shows without it. */
   region: Rect | null;
   label: string;
-  className?: string;
   children: ReactNode;
 }) {
   const floating = useRef<HTMLDivElement>(null);
@@ -113,10 +110,7 @@ export function SlideOverlay({
       data-surface="tinted"
       // Hidden until placed, so it never flashes at the top left corner.
       style={{ position: "fixed", left: 0, top: 0, visibility: "hidden" }}
-      className={cn(
-        "z-40 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 overflow-x-auto rounded-2xl border p-1 shadow-sm",
-        className
-      )}
+      className="z-40 flex max-w-[calc(100vw-2rem)] items-center gap-0.5 overflow-x-auto rounded-2xl border p-1 shadow-sm"
       // Pointer presses here are the menu's, not the slide's below it.
       onPointerDown={(event) => event.stopPropagation()}
     >

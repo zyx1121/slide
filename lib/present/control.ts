@@ -103,21 +103,6 @@ export function act(show: Show, count: number, action: Action): Show {
   }
 }
 
-/**
- * The position of the slide shown after the deck changed elsewhere: the
- * same slide, by id, wherever it went; else the same position, within the
- * deck.
- */
-export function follow(
-  before: DeckDocument,
-  after: DeckDocument,
-  index: number
-): number {
-  const id = before.slides[index]?.id;
-  const found = id ? after.slides.findIndex((slide) => slide.id === id) : -1;
-  return found >= 0 ? found : Math.min(index, after.slides.length - 1);
-}
-
 /** The channel a deck's presenter view and projection windows share. */
 export const channelName = (deckId: string) => `slide-present:${deckId}`;
 
@@ -127,7 +112,7 @@ export type Message =
   /** The presenter view says what to show. */
   | { type: "show"; show: Show }
   /** The presenter view hands on a deck changed elsewhere. */
-  | { type: "deck"; document: DeckDocument; version: number }
+  | { type: "deck"; document: DeckDocument }
   /** A key pressed in a projection window, for the presenter view to act on. */
   | { type: "act"; action: Action }
   /** The presentation ended. */

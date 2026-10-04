@@ -7,6 +7,7 @@ import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { historyAction, revertAction } from "@/app/decks/[id]/actions";
+import { WHO } from "@/components/editor/who";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -19,16 +20,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import type { Revision } from "@/lib/deck/revisions";
+import { formatDateTime } from "@/lib/format";
 
 const POLL_MS = 10_000;
 
-const time = (date: Date | string) =>
-  new Date(date).toLocaleString("zh-TW", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
+const time = (date: Date | string) => formatDateTime(new Date(date));
 
 const ACTIONS: Record<Exclude<Revision["kind"], "edit">, string> = {
   publish: "公開分享",
@@ -40,8 +36,6 @@ const ACTIONS: Record<Exclude<Revision["kind"], "edit">, string> = {
 /** What an entry does, in a few words. */
 const what = (entry: Revision) =>
   entry.kind === "edit" ? `${entry.changes} 處修改` : ACTIONS[entry.kind];
-
-const WHO = { member: "你", agent: "代理程式" } as const;
 
 const MESSAGES: Record<string, string> = {
   already: "這一筆的結果已經不在了，不用還原。",
@@ -66,7 +60,7 @@ export function HistoryTool({
 
   const load = useCallback(async () => {
     const history = await historyAction(deckId).catch(() => null);
-    if (history) setRevisions(history.revisions);
+    if (history) setRevisions(history);
   }, [deckId]);
 
   // Kept current while open, since an agent may be changing the deck.

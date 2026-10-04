@@ -12,6 +12,7 @@ import {
   commentsAction,
   threadAction,
 } from "@/app/decks/[id]/actions";
+import { WHO } from "@/components/editor/who";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -26,18 +27,11 @@ import {
 } from "@/components/ui/tooltip";
 import type { Thread } from "@/lib/deck/comments";
 import type { Target } from "@/lib/deck/selection";
+import { formatDateTime } from "@/lib/format";
 
 const POLL_MS = 10_000;
 
-const time = (date: Date | string) =>
-  new Date(date).toLocaleString("zh-TW", {
-    month: "numeric",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-
-const WHO = { member: "你", agent: "代理程式" } as const;
+const time = (date: Date | string) => formatDateTime(new Date(date));
 
 /** What a comment would be on, in a few words. */
 function anchorLabel(slideNumber: number, targets: Target[]): string {

@@ -222,8 +222,7 @@ export async function mutateDeck(
     if (row.version !== baseVersion) {
       throw new DeckError(
         "conflict",
-        `deck ${deckId} is at version ${row.version}; the patch was written against ${baseVersion}`,
-        { currentVersion: row.version }
+        `deck ${deckId} is at version ${row.version}; the patch was written against ${baseVersion}`
       );
     }
 

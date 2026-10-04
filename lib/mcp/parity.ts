@@ -38,7 +38,6 @@ export const PARITY: Record<string, readonly string[]> = {
   "GET /api/assets/[sha256]": ["get_image"],
   "POST /api/decks/import": ["import_deck"],
   "GET /api/decks/[id]/export": ["export_deck"],
-  "GET /api/decks/[id]/slides/[n]": ["render_slide"],
 };
 
 /** Routes that are not a member's actions. */

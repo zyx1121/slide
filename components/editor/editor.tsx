@@ -147,6 +147,7 @@ import {
   blankSlide,
   deleteSlideOps,
   duplicateSlide,
+  followSlide,
   insertSlideOps,
   moveSlideOps,
   notesOps,
@@ -192,13 +193,6 @@ const TEXT_CHANGES = new Set<StyleChange["kind"]>([
   "bullet",
   "level",
 ]);
-
-/** Where the slide at position `i` of `before` is in `after`, by its id. */
-function followSlide(before: DeckDocument, after: DeckDocument, i: number) {
-  const id = before.slides[i]?.id;
-  const at = id ? after.slides.findIndex((slide) => slide.id === id) : -1;
-  return at >= 0 ? at : Math.min(i, after.slides.length - 1);
-}
 
 /** The ids of every shape in a document. */
 function shapeIds(document: DeckDocument): Set<string> {

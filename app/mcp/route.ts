@@ -9,8 +9,9 @@ import { createServer, MCP_IMPORT_MAX_BYTES } from "@/lib/mcp/server";
 export const dynamic = "force-dynamic";
 
 /** The largest request /mcp reads: a base64 .pptx at its cap, and room. */
-const MCP_BODY_MAX_BYTES =
-  Math.ceil((MCP_IMPORT_MAX_BYTES * 4) / 3) + 64 * 1024;
+// Base64 is 4/3 of the file; 3 % more covers line breaks every 76
+// characters, as the base64 command writes them, and the JSON-RPC around it.
+const MCP_BODY_MAX_BYTES = Math.ceil(((MCP_IMPORT_MAX_BYTES * 4) / 3) * 1.03);
 export const runtime = "nodejs";
 
 /**

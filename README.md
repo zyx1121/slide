@@ -29,7 +29,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Draws** rectangles, rounded rectangles, ellipses, text boxes, pictures, and connectors that stay glued when shapes move, with undo, copy and paste
 - **Types** in place, Chinese input methods included, wrapping lines exactly where PowerPoint does
 - **Hands your agent** what you selected over MCP: the shapes as JSON, the words you marked, and a picture of that part of the slide
-- **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any of them can be reverted on its own
+- **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any edit can be reverted on its own
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
 - **Presents** full screen, or split across screens: the projector shows only the slides while your screen shows the slide, the next one, your speaker notes (written in the editor or by your agent) and a timer
 - **Publishes** a deck to a read-only link anyone can open and download
@@ -56,7 +56,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors, and a menu next to what you select styles it.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
-4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits show up at once; the history button in the dock (**紀錄**) lists every change, yours and your agent's, and reverts any of them.
+4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits show up at once; the history button in the dock (**紀錄**) lists every change, yours and your agent's, and reverts any edit.
 5. Download a `.pptx` from the dock, or publish the deck from the globe button and share its `/s/…` link.
 
 ## Configure
@@ -73,6 +73,9 @@ Set these in `.env`; [.env.example](.env.example) documents every one.
 | `ALLOWED_EMAILS`                                            | comma-separated verified email addresses that may sign in               | required            |
 | `SESSION_SECRET`                                            | encrypts the session cookie, 32 characters or more                      | required            |
 | `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | where traces and error logs go, over OTLP/HTTP JSON                     | off                 |
+| `OTEL_SERVICE_NAME`                                         | the service name on those traces                                        | `slide`             |
+| `ASSETS_DIR`                                                | where a run from source keeps uploaded pictures (compose uses a volume) | `./data/assets`     |
+| `MIGRATIONS_DIR`                                            | where the migrate role reads its SQL files                              | `./migrations`      |
 | `SLIDE_VERSION`                                             | the image tag compose runs                                              | `latest`            |
 | `SLIDE_BIND`, `SLIDE_PORT`                                  | where the web port is published                                         | `127.0.0.1`, `3000` |
 
@@ -86,7 +89,7 @@ flowchart LR
   A -->|OIDC sign-in| O[Google or another OIDC provider]
 ```
 
-One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider (Google on slide.zyx.tw), and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's own OAuth authorization server: the member signs in as on the web, allows the agent on a consent page, and the agent gets a one-hour access token and a rotating refresh token, stored only as hashes; `/mcp` acts as that member while the grant stands and the member stays on the allowlist. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit applies at once like the member's, and any revision can be reverted on its own. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
+One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider such as Google, and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's own OAuth authorization server: the member signs in as on the web, allows the agent on a consent page, and the agent gets a one-hour access token and a rotating refresh token, stored only as hashes; `/mcp` acts as that member while the grant stands and the member stays on the allowlist. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit applies at once like the member's, and any edit can be reverted on its own. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
 
 ## Develop
 

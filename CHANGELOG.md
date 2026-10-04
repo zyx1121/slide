@@ -1,5 +1,72 @@
 # Changelog
 
+## 0.1.0 (2026-10-04)
+
+
+### Features
+
+* add images to slides ([#45](https://github.com/zyx1121/slide.winlab.tw/issues/45)) ([35c59a6](https://github.com/zyx1121/slide.winlab.tw/commit/35c59a62674c8eabe3042e66124c4341604460f5))
+* add MCP write tools that land as suggestions ([#60](https://github.com/zyx1121/slide.winlab.tw/issues/60)) ([e081781](https://github.com/zyx1121/slide.winlab.tw/commit/e0817817632b08b2196b169763a80035461454eb))
+* add, duplicate, delete and reorder slides in the editor ([#64](https://github.com/zyx1121/slide.winlab.tw/issues/64)) ([48294f9](https://github.com/zyx1121/slide.winlab.tw/commit/48294f99840f5f08ac6ffa069f9ed18d38e502a8))
+* bent arrows, summing junctions and flipped presets ([#84](https://github.com/zyx1121/slide.winlab.tw/issues/84)) ([ff935a6](https://github.com/zyx1121/slide.winlab.tw/commit/ff935a62bdf807a8ee4c6bfbca986cbd0fcfc5cd))
+* check a deck against WinLab rules ([#48](https://github.com/zyx1121/slide.winlab.tw/issues/48)) ([00f96e5](https://github.com/zyx1121/slide.winlab.tw/commit/00f96e58ab121138b5c5866cb36a0b147fbd89c2))
+* create, rename and delete decks on the home page ([#29](https://github.com/zyx1121/slide.winlab.tw/issues/29)) ([eec3c75](https://github.com/zyx1121/slide.winlab.tw/commit/eec3c7572af08f0460bb103e59924e9ee4d27ee9))
+* define the deck document and the single mutation path ([#22](https://github.com/zyx1121/slide.winlab.tw/issues/22)) ([6b5f5ca](https://github.com/zyx1121/slide.winlab.tw/commit/6b5f5cabec7f709754603d81de8d32d7a8c84d2f))
+* draw connectors and glue their ends to shapes ([#44](https://github.com/zyx1121/slide.winlab.tw/issues/44)) ([e320377](https://github.com/zyx1121/slide.winlab.tw/commit/e32037799bb14ebd190933c4ca2361ee9276efa8))
+* edit text in shapes, text boxes and the title ([#43](https://github.com/zyx1121/slide.winlab.tw/issues/43)) ([68f60a0](https://github.com/zyx1121/slide.winlab.tw/commit/68f60a045fb78009928d9bed5fb94506384915f5))
+* export a deck to .pptx ([#46](https://github.com/zyx1121/slide.winlab.tw/issues/46)) ([0fe6408](https://github.com/zyx1121/slide.winlab.tw/commit/0fe640826de8eea283f2ed857d863fbf42080775))
+* import a freeform of one straight segment as a line ([#73](https://github.com/zyx1121/slide.winlab.tw/issues/73)) ([08f5eeb](https://github.com/zyx1121/slide.winlab.tw/commit/08f5eebffe93efd90267769ae5851a2e71ae1ff9))
+* import an uploaded .pptx into a deck ([#49](https://github.com/zyx1121/slide.winlab.tw/issues/49)) ([491472b](https://github.com/zyx1121/slide.winlab.tw/commit/491472b89de697fbf5e8e4b2d8ef0bd8b402a803))
+* import arrows, brackets and other presets as shapes ([#67](https://github.com/zyx1121/slide.winlab.tw/issues/67)) ([5776a73](https://github.com/zyx1121/slide.winlab.tw/commit/5776a736936ec18818011a910d71629850e286b1))
+* import rectangles filled with a picture, such as equations, as pictures ([#82](https://github.com/zyx1121/slide.winlab.tw/issues/82)) ([36ba58b](https://github.com/zyx1121/slide.winlab.tw/commit/36ba58b06347601d43c8eddc0eea580f31e71db1))
+* import tables as a rectangle per cell ([#72](https://github.com/zyx1121/slide.winlab.tw/issues/72)) ([05cd621](https://github.com/zyx1121/slide.winlab.tw/commit/05cd621bd24221c29627de9588a948b1437fafdb))
+* keep bullet characters ([#83](https://github.com/zyx1121/slide.winlab.tw/issues/83)) ([5e658be](https://github.com/zyx1121/slide.winlab.tw/commit/5e658be3b056f66d0ccd90812d9814668bad10e8))
+* keep freeforms as shapes through import, rendering and export ([#74](https://github.com/zyx1121/slide.winlab.tw/issues/74)) ([95eb8c2](https://github.com/zyx1121/slide.winlab.tw/commit/95eb8c2ad5075af5d485b1a39db11d3d55eef71b))
+* keep line spacing and space around paragraphs ([#81](https://github.com/zyx1121/slide.winlab.tw/issues/81)) ([2438456](https://github.com/zyx1121/slide.winlab.tw/commit/2438456a9c3fa0ee14fcffafbc83e59426a84162))
+* keep picture crops through import, rendering and export ([#66](https://github.com/zyx1121/slide.winlab.tw/issues/66)) ([762475f](https://github.com/zyx1121/slide.winlab.tw/commit/762475f6b417f0831ef153025b18e41f9bdd735e))
+* keep pictures padded inside their frames ([#78](https://github.com/zyx1121/slide.winlab.tw/issues/78)) ([0baa810](https://github.com/zyx1121/slide.winlab.tw/commit/0baa810c9822432da73740a6c7bda3afbe00a200))
+* keep text that does not wrap, as PowerPoint's wrap="none" ([#76](https://github.com/zyx1121/slide.winlab.tw/issues/76)) ([757f458](https://github.com/zyx1121/slide.winlab.tw/commit/757f458c9702c586bc338a39c2ae73ae079d9323))
+* let the slide fill the editor with tools floating over it ([#35](https://github.com/zyx1121/slide.winlab.tw/issues/35)) ([31ebf81](https://github.com/zyx1121/slide.winlab.tw/commit/31ebf81a196e7d7e7a6bf0ca493e549adf4b342d))
+* move, resize, and arrange shapes in the editor ([#30](https://github.com/zyx1121/slide.winlab.tw/issues/30)) ([4ee69ab](https://github.com/zyx1121/slide.winlab.tw/commit/4ee69ab725d4408d09389f8387caf1e63270ce7a))
+* publish a deck to a public URL ([#47](https://github.com/zyx1121/slide.winlab.tw/issues/47)) ([bfbac17](https://github.com/zyx1121/slide.winlab.tw/commit/bfbac175394e2aa17d2c18cd8afef6f2d4787e46))
+* read imported decks in a worker thread with its own limits ([#69](https://github.com/zyx1121/slide.winlab.tw/issues/69)) ([88cd192](https://github.com/zyx1121/slide.winlab.tw/commit/88cd1929b377ef3e45bd426576f203f8bb262e49))
+* render a deck document to svg and png ([#24](https://github.com/zyx1121/slide.winlab.tw/issues/24)) ([9624adc](https://github.com/zyx1121/slide.winlab.tw/commit/9624adcb21a1e2d8333dca9378428e7d98261c34))
+* review agent suggestions and revert any change ([#61](https://github.com/zyx1121/slide.winlab.tw/issues/61)) ([c2ab975](https://github.com/zyx1121/slide.winlab.tw/commit/c2ab975fc0e01dbcee125aa3a711ba5f9e21e8fe))
+* send traces and error logs to Sensorium over OpenTelemetry ([#86](https://github.com/zyx1121/slide.winlab.tw/issues/86)) ([8385917](https://github.com/zyx1121/slide.winlab.tw/commit/83859176f8af5d225b7551a4bd14c647fb76c454))
+* serve MCP at /mcp with Keycloak OAuth and read tools ([#58](https://github.com/zyx1121/slide.winlab.tw/issues/58)) ([b92ead1](https://github.com/zyx1121/slide.winlab.tw/commit/b92ead1e761a0049fe4ef8ad0aad5164cc0a450a))
+* show the member's selection to their agent ([#62](https://github.com/zyx1121/slide.winlab.tw/issues/62)) ([331fb70](https://github.com/zyx1121/slide.winlab.tw/commit/331fb7062004cc6462b61309b5a6a7cff94c2065))
+* show tools for the selected object in the dock ([#40](https://github.com/zyx1121/slide.winlab.tw/issues/40)) ([0a8b623](https://github.com/zyx1121/slide.winlab.tw/commit/0a8b62368a8b6773b71442f36b50afcdbe0973c1))
+* sign in with keycloak and gate pages on the session ([#23](https://github.com/zyx1121/slide.winlab.tw/issues/23)) ([ea5b186](https://github.com/zyx1121/slide.winlab.tw/commit/ea5b1866d7e4be4308f192f5e04c5d7dfa93790c))
+* span slides across the viewport with 1 rem gutters ([#38](https://github.com/zyx1121/slide.winlab.tw/issues/38)) ([574be47](https://github.com/zyx1121/slide.winlab.tw/commit/574be47f18373f0cb2494f13c1221bd075977c77))
+* stack the slides on one scrolling page ([#37](https://github.com/zyx1121/slide.winlab.tw/issues/37)) ([0b88ca1](https://github.com/zyx1121/slide.winlab.tw/commit/0b88ca1973104779a745727bf4c3cb9dcb0e86d2))
+* take text PowerPoint shrank to fit at the size it drew it ([#85](https://github.com/zyx1121/slide.winlab.tw/issues/85)) ([efe5ae9](https://github.com/zyx1121/slide.winlab.tw/commit/efe5ae90ef87ba64b1cbb9d1f6fda54638f218f6))
+* undo, redo, copy, and paste in the editor ([#31](https://github.com/zyx1121/slide.winlab.tw/issues/31)) ([8f34540](https://github.com/zyx1121/slide.winlab.tw/commit/8f345402a9ccb63a809de2c4facfd2f9d2eb6e81))
+
+
+### Bug fixes
+
+* align imported paragraphs by their list style's level ([#75](https://github.com/zyx1121/slide.winlab.tw/issues/75)) ([724752e](https://github.com/zyx1121/slide.winlab.tw/commit/724752e6f78cdfdd6323a05ed5b0a17e94ace08c))
+* answer 405 to GET and DELETE on /mcp ([#90](https://github.com/zyx1121/slide.winlab.tw/issues/90)) ([1d5998e](https://github.com/zyx1121/slide.winlab.tw/commit/1d5998e9530eedb635411184d9d9db4033f6d494))
+* draw curly quotes one em wide in the CJK font, as PowerPoint does ([#70](https://github.com/zyx1121/slide.winlab.tw/issues/70)) ([f82b900](https://github.com/zyx1121/slide.winlab.tw/commit/f82b90082f8993ba8f9f3f3c2dfb670316442d09))
+* draw curly quotes wide only in Chinese runs, and mark runs by text ([#80](https://github.com/zyx1121/slide.winlab.tw/issues/80)) ([db947ca](https://github.com/zyx1121/slide.winlab.tw/commit/db947cae18ddde0f88d9ab91dff47a9a982d8071))
+* draw no bullet or number on an empty paragraph ([#79](https://github.com/zyx1121/slide.winlab.tw/issues/79)) ([89ba54d](https://github.com/zyx1121/slide.winlab.tw/commit/89ba54d2176b3e327055356d797ffd80075822ea))
+* keep an undo whose save was lost, and say when nothing was ([#52](https://github.com/zyx1121/slide.winlab.tw/issues/52)) ([c8c5025](https://github.com/zyx1121/slide.winlab.tw/commit/c8c502542a4ef02651c329575c17f998b9f01b8e))
+* match PowerPoint's line pitch, justification, title autofit and emoji ([#55](https://github.com/zyx1121/slide.winlab.tw/issues/55)) ([e5e7538](https://github.com/zyx1121/slide.winlab.tw/commit/e5e75382f36151a7b1583361b975b433a5012c72))
+* pick the shapes inside a hollow frame, not the frame ([#77](https://github.com/zyx1121/slide.winlab.tw/issues/77)) ([1c79678](https://github.com/zyx1121/slide.winlab.tw/commit/1c79678f6ba383e52438092e3bd5fdbe880ecfdc))
+* say why a stored deck that breaks the schema cannot be edited ([#51](https://github.com/zyx1121/slide.winlab.tw/issues/51)) ([054c797](https://github.com/zyx1121/slide.winlab.tw/commit/054c7972adb21c43e4fa44a8ead4ab93a12a1dc2))
+* show cjk member names family name first ([#26](https://github.com/zyx1121/slide.winlab.tw/issues/26)) ([9760b8e](https://github.com/zyx1121/slide.winlab.tw/commit/9760b8e8a61c2dee9ec206b53bc7209b0fc894d8))
+* size imported shape text from the presentation and master defaults ([#65](https://github.com/zyx1121/slide.winlab.tw/issues/65)) ([bfca576](https://github.com/zyx1121/slide.winlab.tw/commit/bfca576adde0d85f7919044b111ad83d778f88d3))
+* stop the editor flashing on edits and trim its chrome ([#41](https://github.com/zyx1121/slide.winlab.tw/issues/41)) ([fa429cb](https://github.com/zyx1121/slide.winlab.tw/commit/fa429cb538833c346c10442dea9a4d553179a118))
+* store an imported deck's pictures only once the whole file is read ([#68](https://github.com/zyx1121/slide.winlab.tw/issues/68)) ([a14dc5d](https://github.com/zyx1121/slide.winlab.tw/commit/a14dc5d21c37163b022b35ca4edb2eb5d6ac9d1c))
+* tint and shade imported colors in linear light, as PowerPoint does ([#71](https://github.com/zyx1121/slide.winlab.tw/issues/71)) ([1f85db3](https://github.com/zyx1121/slide.winlab.tw/commit/1f85db33e2cd47bf3b3242cdc69b1cbd9d382f73))
+
+
+### Performance
+
+* render slides off the request thread, with limits ([#50](https://github.com/zyx1121/slide.winlab.tw/issues/50)) ([bd61981](https://github.com/zyx1121/slide.winlab.tw/commit/bd619811a9569b084e14ecaf418083ac9f2a6b37))
+
+## Changelog
+
 All notable changes to this project are documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Every entry above this line is generated by [Release Please](https://github.com/googleapis/release-please) from the Conventional Commit titles merged into `main`, so editing one by hand only lasts until the next release pull request.

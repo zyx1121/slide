@@ -9,15 +9,11 @@ import { sql } from "@/lib/db";
 import { DeckError, type DeckErrorCode } from "@/lib/deck/errors";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
-  acceptSuggestion,
   actOnDeck,
   listRevisions,
-  listSuggestions,
   type Outcome,
-  rejectSuggestion,
   revertRevision,
   type Revision,
-  type Suggestion,
 } from "@/lib/deck/revisions";
 import {
   addComment,
@@ -29,7 +25,7 @@ import {
   type Thread,
 } from "@/lib/deck/comments";
 import { saveSelection, SelectionInput } from "@/lib/deck/selection";
-import { getDeck, mutateDeck } from "@/lib/deck/store";
+import { deckStatus, getDeck, mutateDeck } from "@/lib/deck/store";
 
 export type EditResult =
   | { ok: true; version: number }
@@ -97,43 +93,49 @@ export async function publishDeckAction(
   return deck && { published: deck.published, publicId: deck.publicId };
 }
 
-/** The deck's pending suggestions and its recent history. */
-export async function reviewAction(
+/**
+ * The deck's recent history and its version now, so the editor can tell
+ * when someone else, such as the member's agent, changed it.
+ */
+export async function historyAction(
   deckId: unknown
-): Promise<{ suggestions: Suggestion[]; revisions: Revision[] } | null> {
+): Promise<{ revisions: Revision[]; version: number } | null> {
   const user = await requireUser();
   if (typeof deckId !== "string") return null;
-  const [suggestions, revisions] = await Promise.all([
-    listSuggestions(sql, user.sub, deckId),
+  const [revisions, deck] = await Promise.all([
     listRevisions(sql, user.sub, deckId, 30),
+    getDeck(sql, user.sub, deckId),
   ]);
-  return { suggestions, revisions };
+  return deck && { revisions, version: deck.version };
+}
+
+/**
+ * The deck's version now and whether it is published, for the editor to
+ * follow changes made elsewhere; null when it is not the member's or was
+ * deleted.
+ */
+export async function deckStatusAction(deckId: unknown): Promise<{
+  version: number;
+  published: boolean;
+  publicId: string | null;
+} | null> {
+  const user = await requireUser();
+  if (typeof deckId !== "string") return null;
+  return deckStatus(sql, user.sub, deckId);
 }
 
 const isId = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9]{1,18}$/.test(value);
 
-/** Accepts or rejects a suggestion, or reverts an applied revision. */
-export async function reviseAction(
+/** Reverts one applied entry of the deck's history, as a new entry. */
+export async function revertAction(
   deckId: unknown,
-  revisionId: unknown,
-  action: unknown
-): Promise<Outcome | { outcome: "rejected" }> {
+  revisionId: unknown
+): Promise<Outcome> {
   const user = await requireUser();
   if (typeof deckId !== "string" || !isId(revisionId))
     return { outcome: "gone" };
-  if (action === "accept") {
-    return acceptSuggestion(sql, user.sub, deckId, revisionId);
-  }
-  if (action === "reject") {
-    return (await rejectSuggestion(sql, user.sub, deckId, revisionId))
-      ? { outcome: "rejected" }
-      : { outcome: "gone" };
-  }
-  if (action === "revert") {
-    return revertRevision(sql, user.sub, deckId, revisionId);
-  }
-  return { outcome: "gone" };
+  return revertRevision(sql, user.sub, deckId, revisionId);
 }
 
 /** Stores what the member selected, for their agent (get_selection). */

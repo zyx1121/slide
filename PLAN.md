@@ -42,14 +42,14 @@ The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` im
 | --------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | deck      | owner, title (mirrors the document's), published flag, random public id, version, document                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | document  | a title and slides; each slide has a title (template placeholder) and shapes, back to front. A shape has a stable id, a kind (`rect`, `roundRect`, `ellipse`, `preset` for other PowerPoint presets, `freeform` for a custom outline, `text`, `line`, `image`), a box (x, y, w, h, rotation) in px on a 1920 x 1080 canvas, fill and stroke, and text as paragraphs of runs. A connector has a route (`straight`, `elbow`, `curved`) and two ends, each a point or a shape and site (0 top, 1 left, 2 bottom, 3 right) |
-| revision  | deck, base version, the version it produced, author (member or agent), status (`applied`, `suggested`, `rejected`), a JSON Patch and its inverse                                                                                                                                                                                                                                                                                                                                                                       |
+| revision  | deck, base version, the version it produced, author (member or agent), kind (`edit`, `publish`, `unpublish`, `delete`, `restore`), status (`applied`; `rejected` for suggestions from before v0.3), a JSON Patch and its inverse                                                                                                                                                                                                                                                                                       |
 | selection | one per member: deck, slide, targets (shape id, optional text range)                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | asset     | image bytes, stored once by sha256 on a volume; PNG, JPEG or GIF up to 10 MB, checked by their bytes. Every member who uploads the same bytes owns them, and only owners may read them or have them drawn                                                                                                                                                                                                                                                                                                              |
 
 ### Rules
 
 1. Every write, from the editor or from MCP, goes through one mutation path: validate against the schema, check the base version, store a revision.
-2. Agent writes land as suggestions. The member accepts or rejects each one in the editor, and any applied revision can be reverted on its own.
+2. Agent writes apply at once, like the member's (since v0.3; before, they were suggestions to accept). Every change is a revision, and any applied revision can be reverted on its own.
 3. A shape keeps its id for life. Tools address shapes by id, never by position. The editor's patches address positions, so each carries RFC 6902 `test` operations on the ids it touches and is refused whole if they no longer match. Patches may use add, remove, replace, move and test; copy is refused, since it could double the document with every operation.
 4. One renderer: the document renders to SVG for the editor, the public page, and MCP snapshots (rasterized to PNG on the server). Text is laid out by our own line breaker with bundled font files, so the browser and the server wrap lines the same way.
 5. A connector stores which shape and site each end attaches to. Its geometry is recomputed whenever either end moves, and export writes the routed geometry, because PowerPoint draws the stored geometry until a shape moves.
@@ -67,8 +67,8 @@ Text is edited where it is drawn. The renderer draws the draft as it is typed, a
 | `list_decks`, `get_deck`                       | read the member's decks                                              |
 | `render_slide`                                 | return a slide as PNG so the agent can check its own work            |
 | `get_selection`                                | return what the member selected: targets, their JSON, and a PNG crop |
-| `add_shapes`, `update_shapes`, `delete_shapes` | edit shapes, as suggestions                                          |
-| `add_slide`, `delete_slide`, `move_slide`      | edit slides, as suggestions                                          |
+| `add_shapes`, `update_shapes`, `delete_shapes` | edit shapes                                                          |
+| `add_slide`, `delete_slide`, `move_slide`      | edit slides                                                          |
 | `check_deck`                                   | return rule violations with slide and shape ids                      |
 
 ### Rule check
@@ -80,7 +80,7 @@ Text is edited where it is drawn. The renderer draws the draft as it is typed, a
 1. Editor: shapes, glued connectors, text, images, and basic operations (drag, snap, multi-select, copy and paste, undo, z-order)
 2. Selection for agents
 3. Rule check
-4. Suggestion mode and version history
+4. Version history (suggestion mode until v0.3)
 5. `.pptx` export and import, publish to a public URL
 
 Later: comments for agents, drafts from sources (paper PDF, transcript, README), a diagram library, live agent presence, shared decks, tables, groups, freeform shapes.
@@ -110,13 +110,13 @@ Decided on 2026-10-04: the web app only helps present. Whatever a member can do 
 | Edit shapes and slides, switch template | `add_shapes`, `update_shapes`, `delete_shapes`, `add_slide`, `copy_slide`, `delete_slide`, `move_slide`, `set_template` |
 | Pictures                                | `upload_image`, `get_image`                                                                                             |
 | Download, publish                       | `export_deck`, `publish_deck`, `unpublish_deck`                                                                         |
-| Review: suggestions, requests, history  | `list_history`, `accept`, `reject`, `revert`                                                                            |
+| History                                 | `list_history`, `revert`                                                                                                |
 | Look and point                          | `get_deck`, `render_slide`, `check_deck`, `get_selection`                                                               |
 | Comment on a selection, reply, resolve  | `list_comments`, `add_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`                                    |
 
-A member comments on what they select (slides, shapes, words); comments, replies, resolves and reopens are rows kept for good, so a thread is its whole conversation. The agent reads the open threads, answers each with suggestions, replies naming them, and resolves the thread.
+A member comments on what they select (slides, shapes, words); comments, replies, resolves and reopens are rows kept for good, so a thread is its whole conversation. The agent reads the open threads, answers each with edits, replies naming the entry that answers it, and resolves the thread.
 
-An agent's document edits are suggestions; its publish and delete (and restoring a deck that was public) are requests; either waits until the member, or an agent the member asks, accepts it. Every change is an entry in the deck's history and can be reverted.
+Decided on 2026-10-04, later the same day: no suggestions, requests or accepting. An agent's edits and deck actions (publish and delete included) apply at once, like the member's. Every change is an entry in the deck's history, and revert undoes any one; a deleted deck can be restored. The editor picks up changes made elsewhere within 3 s, and a save that meets a deck that moved on is replayed on it when it still fits.
 
 ## Evidence
 

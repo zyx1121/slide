@@ -1,6 +1,7 @@
 // The single write path for decks (PLAN.md, Rules 1 to 3). Every read and
 // write is scoped to the member who owns the deck; an agent acts for its
-// member and its writes land as suggestions.
+// member. Every write, the member's or an agent's, applies at once and is
+// recorded in the deck's history, where it can be reverted.
 import type postgres from "postgres";
 
 import { newId } from "../ids";
@@ -41,8 +42,8 @@ export type DeckSummary = Pick<
 };
 
 export type MutationResult = {
-  status: "applied" | "suggested";
-  /** The deck's version after the write; unchanged for a suggestion. */
+  status: "applied";
+  /** The deck's version after the write. */
   version: number;
   revisionId: string;
 };
@@ -172,9 +173,37 @@ export async function getPublishedDeck(
 }
 
 /**
- * Applies a JSON Patch written against `baseVersion`. A member's patch is
- * applied and bumps the version; an agent's patch is checked the same way and
- * stored as a suggestion, leaving the deck unchanged. Throws DeckError when
+ * A member's live deck's version and whether it is published, cheaply,
+ * without its document; null when there is no such deck.
+ */
+export async function deckStatus(
+  db: Db,
+  owner: string,
+  id: string
+): Promise<{
+  version: number;
+  published: boolean;
+  publicId: string | null;
+} | null> {
+  const [row] = await db<
+    Pick<DeckRow, "version" | "published" | "public_id">[]
+  >`
+    select version, published, public_id from decks
+    where id = ${id} and owner_sub = ${owner} and deleted_at is null
+  `;
+  return row
+    ? {
+        version: row.version,
+        published: row.published,
+        publicId: row.public_id,
+      }
+    : null;
+}
+
+/**
+ * Applies a JSON Patch written against `baseVersion`, the member's or their
+ * agent's, bumps the version and records it, with its inverse, as an entry
+ * of the deck's history under its author. Throws DeckError when
  * the deck is missing or not the actor's ("not_found"), the version moved on
  * ("conflict"), or the patch or its result is invalid.
  */
@@ -200,22 +229,6 @@ export async function mutateDeck(
 
     const result = applyOperations(row.document, input.ops);
 
-    if (actor.kind === "agent") {
-      const [revision] = await tx<{ id: string }[]>`
-        insert into revisions
-          (deck_id, base_version, author_kind, author_sub, status, patch)
-        values
-          (${deckId}, ${baseVersion}, 'agent', ${actor.sub}, 'suggested',
-           ${tx.json(asJson(result.operations))})
-        returning id
-      `;
-      return {
-        status: "suggested",
-        version: row.version,
-        revisionId: String(revision.id),
-      };
-    }
-
     const version = row.version + 1;
     await tx`
       update decks
@@ -227,10 +240,12 @@ export async function mutateDeck(
     `;
     const [revision] = await tx<{ id: string }[]>`
       insert into revisions
-        (deck_id, base_version, version, author_kind, author_sub, status, patch, inverse)
+        (deck_id, base_version, version, author_kind, author_sub, status,
+         patch, inverse, decided_kind, decided_at)
       values
-        (${deckId}, ${baseVersion}, ${version}, 'member', ${actor.sub}, 'applied',
-         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))})
+        (${deckId}, ${baseVersion}, ${version}, ${actor.kind}, ${actor.sub}, 'applied',
+         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))},
+         ${actor.kind}, now())
       returning id
     `;
     return { status: "applied", version, revisionId: String(revision.id) };

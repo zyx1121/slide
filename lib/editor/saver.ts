@@ -2,13 +2,23 @@
 // then saved one at a time, each against the version the previous save left.
 //
 // The local document must never drift from the server's: a patch is only
-// meaningful against the document it was made on. So when the server refuses
-// a save, or the save fails, the queue stops taking edits, drops the ones
-// waiting (they were made on a document the server does not have) and loads
-// the deck again. If that load fails too, edits stay blocked until a load
-// succeeds; nothing is sent from a document the server never saw.
-import type { Operation } from "../deck/patch";
+// meaningful against the document it was made on. When a save meets a deck
+// that moved on (the member's agent edits it at the same time), the deck is
+// loaded again and the edits waiting, with any made meanwhile, are replayed
+// on it: each patch carries id tests, and is re-pointed at the slides and
+// shapes they name wherever they are now (retarget.ts), so it lands on the
+// same ones or is refused; one with nothing left to do is skipped. The editor takes
+// the result without stopping what the member is doing (onRebase), and the
+// saves go on, even after the editor closed. When the edits cannot be
+// replayed, or the server refuses a save, or the save fails, the queue stops
+// taking edits, drops the ones waiting (they were made on a document the
+// server does not have) and loads the deck again (onReload). If that load
+// fails too, edits stay blocked until a load succeeds; nothing is sent from a
+// document the server never saw.
+import { DeckError } from "../deck/errors";
+import { applyOperations, type Operation } from "../deck/patch";
 import type { DeckDocument } from "../deck/schema";
+import { retarget } from "./retarget";
 
 export type SendResult =
   | { ok: true; version: number }
@@ -35,6 +45,12 @@ export type SaverOptions = {
    * from the local one, so a lost answer that lost no edit says so.
    */
   onReload: (document: DeckDocument) => boolean | void;
+  /**
+   * Brings in the server's document with the local edits still waiting
+   * already on it (or, from refresh, a document changed elsewhere while
+   * nothing was waiting): the editor keeps what the member is doing.
+   */
+  onRebase: (document: DeckDocument) => void;
   onChange: (state: SaverState) => void;
   /** How long to wait before loading again while blocked, in ms. */
   retryDelay?: number;
@@ -48,12 +64,43 @@ const MESSAGES = {
   blocked: "連不上伺服器，修改暫停。重新連上後會自動載入。",
 } as const;
 
+/**
+ * Patches applied in turn to a document, each re-pointed at what it was made
+ * for, without those that have nothing left to do there; null when one of
+ * them no longer fits.
+ */
+function replay(
+  document: DeckDocument,
+  patches: Operation[][]
+): { document: DeckDocument; patches: Operation[][] } | null {
+  let current = document;
+  const kept: Operation[][] = [];
+  for (const patch of patches) {
+    try {
+      const moved = retarget(current, patch);
+      current = applyOperations(current, moved).document;
+      kept.push(moved);
+    } catch (error) {
+      if (
+        error instanceof DeckError &&
+        error.message === "the patch changes nothing"
+      ) {
+        continue;
+      }
+      return null;
+    }
+  }
+  return { document: current, patches: kept };
+}
+
 export function createSaver(options: SaverOptions) {
   let version = options.version;
   let phase: SaverState["phase"] = "ready";
   let message: string | null = null;
   let queue: Operation[][] = [];
   let sending = false;
+  /** Loading the deck to replay the waiting edits on; saves wait meanwhile. */
+  let rebasing = false;
   let retryTimer: ReturnType<typeof setTimeout> | undefined;
   let disposed = false;
 
@@ -93,7 +140,7 @@ export function createSaver(options: SaverOptions) {
   }
 
   async function pump() {
-    if (sending || phase !== "ready" || queue.length === 0) return;
+    if (sending || rebasing || phase !== "ready" || queue.length === 0) return;
     sending = true;
     const ops = queue.shift()!;
     notify();
@@ -106,6 +153,39 @@ export function createSaver(options: SaverOptions) {
       // Saves go on after the editor closes, so leaving keeps its edits.
       void pump();
       return;
+    }
+    // A deck that moved on: replay this edit and the ones queued behind
+    // it, and any the member makes meanwhile, on it. This goes on after the
+    // editor closed too, so leaving right after an agent's edit keeps the
+    // member's.
+    if (result?.ok === false && result.code === "conflict") {
+      queue.unshift(ops);
+      rebasing = true;
+      notify();
+      const loaded = await options.load().catch(() => null);
+      rebasing = false;
+      const replayed = loaded && replay(loaded.document, queue);
+      if (loaded && replayed) {
+        version = loaded.version;
+        queue = replayed.patches;
+        if (!disposed) options.onRebase(replayed.document);
+        message = null;
+        notify();
+        void pump();
+        return;
+      }
+      if (loaded) {
+        // They no longer fit: drop them and show the deck as it is now,
+        // from the load already made.
+        queue = [];
+        if (disposed) return;
+        version = loaded.version;
+        options.onReload(loaded.document);
+        message = MESSAGES.conflict;
+        notify();
+        void pump();
+        return;
+      }
     }
     // Everything still queued was made on top of the refused edit.
     queue = [];
@@ -124,6 +204,8 @@ export function createSaver(options: SaverOptions) {
 
   return {
     state,
+    /** The server version the next save is written against. */
+    version: () => version,
     /** Queues a patch already applied locally. False when edits are paused. */
     save(ops: Operation[]): boolean {
       if (phase !== "ready") return false;
@@ -133,15 +215,30 @@ export function createSaver(options: SaverOptions) {
       return true;
     },
     /**
-     * Loads the deck again after a change made elsewhere on purpose (an
-     * accepted suggestion, a revert), without a message. Only when nothing
-     * is waiting to be saved.
+     * Takes a change made elsewhere (a revert, the member's agent), without
+     * a message and without stopping anything: only when nothing is waiting
+     * to be saved and `idle` says the member is not in the middle of an
+     * edit, both before and after the load.
      */
-    async refresh(): Promise<boolean> {
-      if (phase !== "ready" || queue.length > 0 || sending) return false;
-      phase = "reloading";
+    async refresh(idle: () => boolean = () => true): Promise<boolean> {
+      const quiet = () =>
+        phase === "ready" &&
+        !sending &&
+        !rebasing &&
+        queue.length === 0 &&
+        idle();
+      if (!quiet()) return false;
+      const loaded = await options.load().catch(() => null);
+      // Edits are not paused meanwhile: one made since was made on the
+      // document shown, and its save will meet the newer version and be
+      // replayed on it. So the load is only taken if nothing happened.
+      if (disposed || !loaded || !quiet() || loaded.version <= version) {
+        return false;
+      }
+      version = loaded.version;
+      options.onRebase(loaded.document);
+      message = null;
       notify();
-      await reload("quiet");
       return true;
     },
     /** Loads the deck again now, from the blocked state. */

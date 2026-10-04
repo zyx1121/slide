@@ -32,12 +32,13 @@ import {
   editDeckAction,
   loadDeckAction,
   publishDeckAction,
+  deckStatusAction,
   selectAction,
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
-import { ReviewTool } from "@/components/editor/review-tool";
+import { HistoryTool } from "@/components/editor/history-tool";
 import {
   FillTool,
   LineTools,
@@ -66,7 +67,6 @@ import { compare } from "fast-json-patch";
 import Link from "next/link";
 
 import { DeckError } from "@/lib/deck/errors";
-import type { Suggestion } from "@/lib/deck/revisions";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
@@ -89,6 +89,7 @@ import { guard } from "@/lib/editor/guard";
 import {
   EMPTY_HISTORY,
   type History,
+  historyAfterRebase,
   historyAfterReload,
   record,
   redo,
@@ -179,6 +180,8 @@ const HELP = [
 const NUDGE = 2;
 /** How long nudges gather before they are saved as one edit, in ms. */
 const NUDGE_SAVE_DELAY = 500;
+/** How often the editor looks for changes made elsewhere, in ms. */
+const REMOTE_POLL_MS = 3000;
 /** How long typing pauses before it is saved as one edit, in ms. */
 const TEXT_SAVE_DELAY = 800;
 
@@ -191,6 +194,20 @@ const TEXT_CHANGES = new Set<StyleChange["kind"]>([
   "level",
 ]);
 
+/** Where the slide at position `i` of `before` is in `after`, by its id. */
+function followSlide(before: DeckDocument, after: DeckDocument, i: number) {
+  const id = before.slides[i]?.id;
+  const at = id ? after.slides.findIndex((slide) => slide.id === id) : -1;
+  return at >= 0 ? at : Math.min(i, after.slides.length - 1);
+}
+
+/** The ids of every shape in a document. */
+function shapeIds(document: DeckDocument): Set<string> {
+  return new Set(
+    document.slides.flatMap((slide) => slide.shapes.map((shape) => shape.id))
+  );
+}
+
 /**
  * The save queue for one editor (lib/editor/saver.ts) and its state. Leaving
  * with edits still on their way asks first.
@@ -198,7 +215,8 @@ const TEXT_CHANGES = new Set<StyleChange["kind"]>([
 function useSaver(
   deckId: string,
   initialVersion: number,
-  onReload: (document: DeckDocument) => boolean | void
+  onReload: (document: DeckDocument) => boolean | void,
+  onRebase: (document: DeckDocument) => void
 ) {
   const [state, setState] = useState<SaverState>({
     accepting: true,
@@ -212,6 +230,7 @@ function useSaver(
       send: (version, ops) => editDeckAction(deckId, version, ops),
       load: () => loadDeckAction(deckId),
       onReload,
+      onRebase,
       onChange: setState,
     })
   );
@@ -272,14 +291,6 @@ export function Editor({
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [notice, setNotice] = useState(initialNotice);
-  // A suggestion shown applied, read only, until the preview ends.
-  const [previewDoc, setPreviewState] = useState<DeckDocument | null>(null);
-  const previewing = previewDoc !== null;
-  const previewRef = useRef(false);
-  const setPreviewDoc = (next: DeckDocument | null) => {
-    previewRef.current = next !== null;
-    setPreviewState(next);
-  };
 
   /** An edit that could not be applied here; it never reached the server. */
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -318,11 +329,18 @@ export function Editor({
     unsavedMove.current = null;
     historyRef.current = next;
     setHistoryState(next);
+    const before = docRef.current;
     docRef.current = fresh;
     setDoc(fresh);
-    setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
-    setVisibleIndex((i) => Math.min(i, fresh.slides.length - 1));
-    setSelection([]);
+    setSlideIndex((i) => followSlide(before, fresh, i));
+    setVisibleIndex((i) => followSlide(before, fresh, i));
+    // Shapes still there stay selected: a change from elsewhere, such as the
+    // member's agent, should not take away what the member was pointing at.
+    const present = shapeIds(fresh);
+    setSelection((ids) => {
+      const kept = ids.filter((id) => present.has(id));
+      return kept.length === ids.length ? ids : kept;
+    });
     clearTimeout(nudgeTimer.current);
     nudgeRef.current = { dx: 0, dy: 0 };
     setNudge(nudgeRef.current);
@@ -332,7 +350,83 @@ export function Editor({
     setDraftState(null);
     return changed;
   }, []);
-  const { saver, state: saving } = useSaver(deckId, initialVersion, reload);
+  // The server's document with the member's waiting edits already on it, or
+  // a change made elsewhere while they were idle. What the member is in the
+  // middle of stays: the text being typed, nudges gathering and the
+  // selection. Undo steps address slides and shapes by position, so they
+  // stay only while nothing moved. Only text whose box is gone ends, and
+  // says so.
+  const rebase = useCallback((fresh: DeckDocument) => {
+    const before = docRef.current;
+    const history = historyAfterRebase(historyRef.current, before, fresh);
+    if (history !== historyRef.current) {
+      unsavedMove.current = null;
+      historyRef.current = history;
+      setHistoryState(history);
+    }
+    docRef.current = fresh;
+    setDoc(fresh);
+    setSlideIndex((i) => followSlide(before, fresh, i));
+    setVisibleIndex((i) => followSlide(before, fresh, i));
+    const present = shapeIds(fresh);
+    setSelection((ids) => {
+      const kept = ids.filter((id) => present.has(id));
+      return kept.length === ids.length ? ids : kept;
+    });
+    const draft = draftRef.current;
+    if (!draft) return;
+    const at = fresh.slides.findIndex((slide) => slide.id === draft.slideId);
+    const there =
+      at >= 0 && (draft.target === TITLE_ID || present.has(draft.target));
+    if (!there) {
+      clearTimeout(draftTimer.current);
+      draftRef.current = null;
+      setDraftState(null);
+      setRefusal("你正在打字的文字方塊被刪掉了，剛打的字沒有存到。");
+    } else if (at !== draft.slide) {
+      draftRef.current = { ...draft, slide: at };
+      setDraftState(draftRef.current);
+    }
+  }, []);
+  const { saver, state: saving } = useSaver(
+    deckId,
+    initialVersion,
+    reload,
+    rebase
+  );
+
+  // The deck as the server has it: whether it is still there and published.
+  const [publication, setPublication] = useState({
+    published: initialPublished,
+    publicId: initialPublicId,
+  });
+  const [deleted, setDeleted] = useState(false);
+
+  // Changes made elsewhere (the member's agent, another tab) come in while
+  // the member is not in the middle of an edit: text being typed, nudges
+  // gathering or saves on their way wait for the next look, and the saver
+  // checks again once the deck is loaded.
+  useEffect(() => {
+    const idle = () =>
+      !draftRef.current && !nudgeRef.current.dx && !nudgeRef.current.dy;
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible" || !idle()) return;
+      void deckStatusAction(deckId)
+        .then((server) => {
+          setDeleted(server === null);
+          if (server === null) return;
+          setPublication((now) =>
+            now.published === server.published &&
+            now.publicId === server.publicId
+              ? now
+              : { published: server.published, publicId: server.publicId }
+          );
+          if (server.version > saver.version()) return saver.refresh(idle);
+        })
+        .catch(() => {});
+    }, REMOTE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [deckId, saver]);
   // Once every edit is saved, no undo or redo can be lost any more.
   useEffect(() => {
     if (saving.pending === 0) unsavedMove.current = null;
@@ -353,7 +447,7 @@ export function Editor({
   const commit = useCallback(
     (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
-      if (invalid !== null || previewRef.current) return "paused";
+      if (invalid !== null) return "paused";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -780,7 +874,7 @@ export function Editor({
     [doc.slides]
   );
   const pinsOf = (slideIndex: number) => {
-    const slideNow = (previewDoc ?? doc).slides[slideIndex];
+    const slideNow = doc.slides[slideIndex];
     if (!slideNow) return [];
     const byId = new Map(slideNow.shapes.map((shape) => [shape.id, shape]));
     return threads
@@ -1127,12 +1221,15 @@ export function Editor({
   };
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
-  const paused = !saving.accepting || invalid !== null || previewing;
-  // A suggestion being previewed may change the template too.
-  const shownTemplate = templateOf(previewDoc ?? doc).id;
+  const paused = !saving.accepting || invalid !== null || deleted;
+  const shownTemplate = templateOf(doc).id;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
-  const problem = invalid ?? refusal ?? saving.message;
+  const problem =
+    invalid ??
+    (deleted ? "這份簡報已經刪除了，可以在首頁的「最近刪除」還原。" : null) ??
+    refusal ??
+    saving.message;
   const status =
     saving.phase === "reloading"
       ? "載入最新版本…"
@@ -1155,7 +1252,7 @@ export function Editor({
           className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
         >
           <ol className="flex flex-col items-center gap-4 pt-16 pb-28">
-            {(previewDoc ?? doc).slides.map((item, i) => (
+            {doc.slides.map((item, i) => (
               <li
                 key={item.id}
                 ref={(element) => {
@@ -1167,10 +1264,10 @@ export function Editor({
                 <div className="relative">
                   <Canvas
                     className="w-full"
-                    slide={!previewing && i === index ? shown : item}
+                    slide={i === index ? shown : item}
                     number={i + 1}
                     template={shownTemplate}
-                    selection={!previewing && i === index ? selection : NONE}
+                    selection={i === index ? selection : NONE}
                     onSelect={(ids) => select(i, ids)}
                     onMove={(ids, dx, dy) =>
                       commit(
@@ -1186,7 +1283,7 @@ export function Editor({
                     onCopy={(event) => copy(event, i)}
                     onCut={(event) => cut(event, i)}
                     onPaste={(event) => paste(event, i)}
-                    text={previewing ? null : canvasText(i)}
+                    text={canvasText(i)}
                     onEditText={(target, point) => startEdit(i, target, point)}
                     tool={tool}
                     onDrawLine={(start, end) => drawLine(i, start, end)}
@@ -1238,21 +1335,6 @@ export function Editor({
         {/* The dock floats at the bottom center, as Plump's does; only the bar
           and the notice take pointer events, the rest stays the canvas's. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-2">
-          {previewing && (
-            <div
-              role="status"
-              data-slot="floating-notice"
-              data-surface="tinted"
-              className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
-            >
-              <p className="text-xs">
-                正在預覽建議套用後的樣子，這時不能編輯。
-              </p>
-              <Button variant="ghost" onClick={() => setPreviewDoc(null)}>
-                結束預覽
-              </Button>
-            </div>
-          )}
           {notice && !problem && (
             <div
               role="status"
@@ -1274,10 +1356,15 @@ export function Editor({
               className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
             >
               <p className="text-xs text-destructive">{problem}</p>
-              {saving.phase === "blocked" && (
+              {saving.phase === "blocked" && !deleted && (
                 <Button variant="ghost" onClick={() => saver.retry()}>
                   重新載入
                 </Button>
+              )}
+              {deleted && (
+                <Link href="/" className={buttonVariants({ variant: "ghost" })}>
+                  所有簡報
+                </Link>
               )}
             </div>
           )}
@@ -1451,27 +1538,11 @@ export function Editor({
                 onThreads={setThreads}
               />
             )}
-            <ReviewTool
+            <HistoryTool
               deckId={deckId}
               busy={saving.pending > 0 || draft?.dirty === true || nudging}
               onChanged={async () => {
                 await saver.refresh();
-              }}
-              onPreview={(suggestion: Suggestion | null) => {
-                if (!suggestion) {
-                  setPreviewDoc(null);
-                  return;
-                }
-                endEdit();
-                try {
-                  setPreviewDoc(
-                    applyOperations(docRef.current, suggestion.patch).document
-                  );
-                  setRefusal(null);
-                } catch {
-                  setPreviewDoc(null);
-                  setRefusal("這個建議套不上目前的簡報。");
-                }
               }}
             />
             <CheckTool
@@ -1487,8 +1558,8 @@ export function Editor({
             </p>
             <PublishTool
               deckId={deckId}
-              initialPublished={initialPublished}
-              initialPublicId={initialPublicId}
+              publication={publication}
+              onPublication={setPublication}
             />
             <Popover>
               <Tooltip>
@@ -1640,17 +1711,17 @@ function DockLink({
  */
 function PublishTool({
   deckId,
-  initialPublished,
-  initialPublicId,
+  publication: state,
+  onPublication: setState,
 }: {
   deckId: string;
-  initialPublished: boolean;
-  initialPublicId: string | null;
+  /** Kept by the editor, which also follows changes made elsewhere. */
+  publication: { published: boolean; publicId: string | null };
+  onPublication: (next: {
+    published: boolean;
+    publicId: string | null;
+  }) => void;
 }) {
-  const [state, setState] = useState({
-    published: initialPublished,
-    publicId: initialPublicId,
-  });
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
   const url =

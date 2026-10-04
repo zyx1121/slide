@@ -183,7 +183,7 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     expect(count).toBe(1);
   });
 
-  it("stores an agent's patch as a suggestion and leaves the deck as it was", async () => {
+  it("applies an agent's patch at once, recorded as the agent's", async () => {
     const deck = await createDeck(db, alice.sub, sampleDocument());
     const result = await mutateDeck(db, {
       deckId: deck.id,
@@ -191,19 +191,21 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
       baseVersion: 0,
       ops: [{ op: "replace", path: "/slides/0/title", value: "Overview" }],
     });
-    expect(result).toMatchObject({ status: "suggested", version: 0 });
+    expect(result).toMatchObject({ status: "applied", version: 1 });
     const after = await getDeck(db, alice.sub, deck.id);
-    expect(after?.version).toBe(0);
-    expect(after?.document.slides[0].title).toBe("System overview");
+    expect(after?.version).toBe(1);
+    expect(after?.document.slides[0].title).toBe("Overview");
     const [revision] = await db`
-      select status, author_kind, version, inverse from revisions
-      where id = ${result.revisionId}
+      select status, author_kind, decided_kind, version,
+        inverse is not null as revertible
+      from revisions where id = ${result.revisionId}
     `;
     expect(revision).toEqual({
-      status: "suggested",
+      status: "applied",
       author_kind: "agent",
-      version: null,
-      inverse: null,
+      decided_kind: "agent",
+      version: 1,
+      revertible: true,
     });
   });
 

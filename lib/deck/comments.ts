@@ -32,7 +32,7 @@ export type Reply = {
   kind: "reply" | "resolve" | "reopen";
   author: Who;
   body: string;
-  /** A suggestion or change of the deck's history it points at. */
+  /** The change of the deck's history it points at. */
   entryId: string | null;
   createdAt: Date;
 };
@@ -129,7 +129,7 @@ async function statusOf(
 
 /**
  * Adds to a thread: a reply (optionally pointing at an entry of the deck's
- * history, such as the suggestion that answers it), or a resolve or reopen.
+ * history, such as the edit that answers it), or a resolve or reopen.
  * Resolving a resolved thread, or reopening an open one, changes nothing.
  */
 export async function addToThread(

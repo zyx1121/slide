@@ -7,6 +7,7 @@ import {
   EMPTY_HISTORY,
   type History,
   HISTORY_LIMIT,
+  historyAfterRebase,
   historyAfterReload,
   record,
   redo,
@@ -90,5 +91,41 @@ describe("history", () => {
       historyAfterReload(after, false, { history: before, fromDocument: false })
     ).toBe(EMPTY_HISTORY);
     expect(historyAfterReload(after, false, null)).toBe(EMPTY_HISTORY);
+  });
+
+  it("keeps the history after a change that moved nothing, and only then", () => {
+    const history = record(EMPTY_HISTORY, {
+      ops: [{ op: "replace", path: "/slides/0/shapes/1/x", value: 20 }],
+      inverse: [{ op: "replace", path: "/slides/0/shapes/1/x", value: 10 }],
+      slide: 0,
+    });
+    const doc = sampleDocument();
+    const change = (ops: Operation[]) => applyOperations(doc, ops).document;
+    // Edited, and added to after everything there: every step still lands.
+    const edited = change([
+      { op: "replace", path: "/slides/0/shapes/1/x", value: 30 },
+      {
+        op: "add",
+        path: "/slides/0/shapes/-",
+        value: { ...doc.slides[0].shapes[0], id: "sh_agent" },
+      },
+      {
+        op: "add",
+        path: "/slides/-",
+        value: { id: "sl_agent", title: "", shapes: [] },
+      },
+    ]);
+    expect(historyAfterRebase(history, doc, edited)).toBe(history);
+    // A slide inserted before, or a shape gone: positions moved.
+    const inserted = change([
+      {
+        op: "add",
+        path: "/slides/0",
+        value: { id: "sl_agent", title: "", shapes: [] },
+      },
+    ]);
+    expect(historyAfterRebase(history, doc, inserted)).toBe(EMPTY_HISTORY);
+    const removed = change([{ op: "remove", path: "/slides/0/shapes/6" }]);
+    expect(historyAfterRebase(history, doc, removed)).toBe(EMPTY_HISTORY);
   });
 });

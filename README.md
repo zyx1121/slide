@@ -21,7 +21,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 > "Make the hi on slide 1 say Results, 24 pt bold"
   ⚡ get_deck { deck_id: "dk_a9q86y45ax" }
   ⚡ update_shapes { deck_id: "dk_a9q86y45ax", slide: 1, updates: [{ id: "sh_hdq4vujt", set: { text: { paragraphs: [{ runs: [{ text: "Results", size: 48, bold: true }], align: "center" }] } } }] }
-✓ { status: "suggested", changed: ["sh_hdq4vujt"] }: nothing changes until you accept it in the editor
+✓ { status: "applied", entry: "42", changed: ["sh_hdq4vujt"] }: done; the editor shows it, and the history can revert it
 ```
 
 ## What it does
@@ -29,7 +29,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Draws** rectangles, rounded rectangles, ellipses, text boxes, pictures, and connectors that stay glued when shapes move, with undo, copy and paste
 - **Types** in place, Chinese input methods included, wrapping lines exactly where PowerPoint does
 - **Hands your agent** what you selected over MCP: the shapes as JSON, the words you marked, and a picture of that part of the slide
-- **Takes agent edits as suggestions**: you preview, accept or reject each one, and any applied edit can be reverted on its own
+- **Lets your agent edit directly**: its changes apply at once, like yours, and every one is recorded in the history, where any of them can be reverted on its own
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
 - **Publishes** a deck to a read-only link anyone can open and download
 - **Checks** a deck against the lab's slide rules: sizes, palette, overflow, overlaps, contrast
@@ -55,7 +55,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one. The dock's template button switches a deck between the plain template and the WinLab one.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors and styles what you select; the check mark shows the rule check.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
-4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits wait under the history button in the dock (**建議與紀錄**), where you preview, accept or reject each one.
+4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits show up at once; the history button in the dock (**紀錄**) lists every change, yours and your agent's, and reverts any of them.
 5. Download a `.pptx` from the dock, or publish the deck from the globe button and share its `/s/…` link.
 
 ## Configure
@@ -85,7 +85,7 @@ flowchart LR
   A -->|OIDC sign-in| O[Google or another OIDC provider]
 ```
 
-One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider (Google on slide.zyx.tw), and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's own OAuth authorization server: the member signs in as on the web, allows the agent on a consent page, and the agent gets a one-hour access token and a rotating refresh token, stored only as hashes; `/mcp` acts as that member while the grant stands and the member stays on the allowlist. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit waits as a suggestion until the member accepts it. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
+One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider (Google on slide.zyx.tw), and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's own OAuth authorization server: the member signs in as on the web, allows the agent on a consent page, and the agent gets a one-hour access token and a rotating refresh token, stored only as hashes; `/mcp` acts as that member while the grant stands and the member stays on the allowlist. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit applies at once like the member's, and any revision can be reverted on its own. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
 
 ## Develop
 

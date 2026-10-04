@@ -21,8 +21,9 @@ export const PARITY: Record<string, readonly string[]> = {
   ],
   loadDeckAction: ["get_deck"],
   publishDeckAction: ["publish_deck", "unpublish_deck"],
-  reviewAction: ["list_history"],
-  reviseAction: ["accept", "reject", "revert"],
+  historyAction: ["list_history"],
+  deckStatusAction: ["get_deck", "list_decks"],
+  revertAction: ["revert"],
   // The member points at things; the agent reads what they point at.
   selectAction: ["get_selection"],
   commentsAction: ["list_comments"],

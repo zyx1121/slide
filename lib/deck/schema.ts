@@ -4,7 +4,12 @@
 import * as z from "zod";
 
 import { TEMPLATE_IDS } from "../render/template";
-import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "./limits";
+import {
+  DECK_TITLE_MAX,
+  NOTES_MAX,
+  SHAPE_TEXT_MAX,
+  SLIDE_TEXT_MAX,
+} from "./limits";
 import { parsePath, PATH_MAX } from "./path";
 
 export const SCHEMA_VERSION = 1;
@@ -254,7 +259,7 @@ export const Slide = z.strictObject({
   title: Text(500),
   /** Back to front: later shapes are drawn on top. */
   shapes: z.array(Shape).max(1000),
-  notes: Text(50_000).optional(),
+  notes: Text(NOTES_MAX).optional(),
 });
 
 export const DeckDocument = z

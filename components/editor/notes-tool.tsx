@@ -14,6 +14,7 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { Textarea } from "@/components/ui/textarea";
+import { NOTES_MAX } from "@/lib/deck/limits";
 import {
   Tooltip,
   TooltipContent,
@@ -119,7 +120,7 @@ export function NotesTool({
         <Textarea
           id="slide-notes"
           value={value}
-          maxLength={50_000}
+          maxLength={NOTES_MAX}
           rows={8}
           disabled={disabled}
           placeholder="寫下這一頁要講的話。"

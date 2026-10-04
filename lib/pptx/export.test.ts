@@ -17,6 +17,39 @@ describe("exportPptx", () => {
   const parts = unzipSync(exportPptx(doc, new Map()));
   const text = (name: string) => strFromU8(parts[name]);
 
+  it("writes speaker notes as notes pages on the template's notes master", () => {
+    const noted: DeckDocument = {
+      ...doc,
+      slides: [
+        { ...doc.slides[0], notes: "Open with the demo\n\n講 <三> & 四" },
+        { id: "sl_quiet", title: "Quiet", shapes: [] },
+      ],
+    };
+    const got = unzipSync(exportPptx(noted, new Map()));
+    const read = (name: string) => strFromU8(got[name]);
+    const notes = read("ppt/notesSlides/notesSlide1.xml");
+    expect(notes).toContain('<p:ph type="body" idx="1"/>');
+    expect(notes.match(/<a:p>/g)).toHaveLength(3);
+    expect(notes).toContain(
+      '<a:rPr lang="en-US" altLang="zh-TW" dirty="0"/><a:t>Open with the demo</a:t>'
+    );
+    expect(notes).toContain("<a:t>講 &lt;三&gt; &amp; 四</a:t>");
+    expect(read("ppt/notesSlides/_rels/notesSlide1.xml.rels")).toContain(
+      'Target="../notesMasters/notesMaster1.xml"'
+    );
+    expect(read("ppt/slides/_rels/slide1.xml.rels")).toContain(
+      'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/notesSlide" Target="../notesSlides/notesSlide1.xml"'
+    );
+    expect(read("[Content_Types].xml")).toContain(
+      '<Override PartName="/ppt/notesSlides/notesSlide1.xml"'
+    );
+    // A slide without notes has no notes page.
+    expect(got["ppt/notesSlides/notesSlide2.xml"]).toBeUndefined();
+    expect(read("ppt/slides/_rels/slide2.xml.rels")).not.toContain(
+      "notesSlide"
+    );
+  });
+
   it("keeps the template's master and replaces its slides", () => {
     expect(parts["ppt/slideMasters/slideMaster1.xml"]).toBeDefined();
     const slides = Object.keys(parts).filter((name) =>

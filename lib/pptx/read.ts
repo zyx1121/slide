@@ -42,7 +42,8 @@ export function unzipPptx(bytes: Uint8Array): Map<string, Uint8Array> {
       },
       (name) =>
         name === "docProps/core.xml" ||
-        (name.startsWith("ppt/") && !name.startsWith("ppt/notesSlides/"))
+        // Notes pages for their text; their relationships are not needed.
+        (name.startsWith("ppt/") && !name.startsWith("ppt/notesSlides/_rels/"))
     );
   } catch (error) {
     if (!(error instanceof ZipError)) throw error;

@@ -1,8 +1,7 @@
 // Agents edit decks by id: shapes and slides keep their ids for life
 // (PLAN.md, Rule 3). These turn an agent's request into a JSON Patch against
-// the deck as it is, with id tests in front, so the suggestion it becomes
-// lands on the same shapes when the member accepts it, or is refused if
-// they moved.
+// the deck as it is, with id tests in front, so it lands on the same shapes
+// or is refused if they moved.
 import type { Operation } from "../deck/patch";
 import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";

@@ -44,7 +44,7 @@ export const issuerUrl = (env: McpEnv) =>
 
 /**
  * Scopes a client may ask for; anything else is dropped. A grant always
- * holds "decks" (read the member's decks and suggest edits) and always comes
+ * holds "decks" (read and change the member's decks) and always comes
  * with a refresh token, so offline_access is accepted but changes nothing.
  */
 export const SCOPES = ["decks", "offline_access"];

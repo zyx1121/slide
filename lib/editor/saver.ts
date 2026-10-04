@@ -2,12 +2,16 @@
 // then saved one at a time, each against the version the previous save left.
 //
 // The local document must never drift from the server's: a patch is only
-// meaningful against the document it was made on. So when the server refuses
-// a save, or the save fails, the queue stops taking edits, drops the ones
-// waiting (they were made on a document the server does not have) and loads
-// the deck again. If that load fails too, edits stay blocked until a load
-// succeeds; nothing is sent from a document the server never saw.
-import type { Operation } from "../deck/patch";
+// meaningful against the document it was made on. When a save meets a deck
+// that moved on (the member's agent edits it at the same time), the deck is
+// loaded again and the edits waiting are replayed on it: each patch carries
+// id tests, so it lands on the same shapes or is refused. When they cannot be
+// replayed, or the server refuses a save, or the save fails, the queue stops
+// taking edits, drops the ones waiting (they were made on a document the
+// server does not have) and loads the deck again. If that load fails too,
+// edits stay blocked until a load succeeds; nothing is sent from a document
+// the server never saw.
+import { applyOperations, type Operation } from "../deck/patch";
 import type { DeckDocument } from "../deck/schema";
 
 export type SendResult =
@@ -47,6 +51,22 @@ const MESSAGES = {
   kept: "連線中斷過，修改都已儲存。",
   blocked: "連不上伺服器，修改暫停。重新連上後會自動載入。",
 } as const;
+
+/** Patches applied in turn to a document; null when one of them no longer fits. */
+function replay(
+  document: DeckDocument,
+  patches: Operation[][]
+): DeckDocument | null {
+  let current = document;
+  try {
+    for (const patch of patches) {
+      current = applyOperations(current, patch).document;
+    }
+  } catch {
+    return null;
+  }
+  return current;
+}
 
 export function createSaver(options: SaverOptions) {
   let version = options.version;
@@ -107,6 +127,24 @@ export function createSaver(options: SaverOptions) {
       void pump();
       return;
     }
+    // A deck that moved on: replay this edit and the queued ones on it.
+    if (result?.ok === false && result.code === "conflict" && !disposed) {
+      phase = "reloading";
+      notify();
+      const waiting = [ops, ...queue];
+      const loaded = await options.load().catch(() => null);
+      const replayed = loaded && replay(loaded.document, waiting);
+      if (loaded && replayed && !disposed) {
+        version = loaded.version;
+        queue = waiting;
+        options.onReload(replayed);
+        phase = "ready";
+        message = null;
+        notify();
+        void pump();
+        return;
+      }
+    }
     // Everything still queued was made on top of the refused edit.
     queue = [];
     if (disposed) return;
@@ -124,6 +162,8 @@ export function createSaver(options: SaverOptions) {
 
   return {
     state,
+    /** The server version the next save is written against. */
+    version: () => version,
     /** Queues a patch already applied locally. False when edits are paused. */
     save(ops: Operation[]): boolean {
       if (phase !== "ready") return false;
@@ -133,9 +173,9 @@ export function createSaver(options: SaverOptions) {
       return true;
     },
     /**
-     * Loads the deck again after a change made elsewhere on purpose (an
-     * accepted suggestion, a revert), without a message. Only when nothing
-     * is waiting to be saved.
+     * Loads the deck again after a change made elsewhere (a revert, the
+     * member's agent), without a message. Only when nothing is waiting to
+     * be saved.
      */
     async refresh(): Promise<boolean> {
       if (phase !== "ready" || queue.length > 0 || sending) return false;

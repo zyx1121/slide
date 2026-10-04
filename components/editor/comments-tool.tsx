@@ -2,7 +2,7 @@
 // The dock's comments: write a comment on what is selected (shapes, words,
 // or the slide in view), and read, answer, resolve or reopen the deck's
 // threads. The member comments in batches; their agent reads the open
-// threads over MCP and answers with suggestions. Threads are checked for
+// threads over MCP and answers with edits. Threads are checked for
 // every 10 seconds while the page is visible.
 import { MessageSquareIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
@@ -239,7 +239,7 @@ export function CommentsTool({
                           : reply.kind === "reopen"
                             ? " 重新打開"
                             : `：${reply.body}`}
-                        {reply.entryId ? `（見建議 #${reply.entryId}）` : ""}
+                        {reply.entryId ? `（見紀錄 #${reply.entryId}）` : ""}
                       </p>
                     ))}
                     <form

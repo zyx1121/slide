@@ -127,7 +127,6 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(init.body.result.serverInfo.name).toBe("slide");
     const tools = (await rpc("tools/list", {})).body.result.tools;
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
-      "accept",
       "add_comment",
       "add_shapes",
       "add_slide",
@@ -147,7 +146,6 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "list_history",
       "move_slide",
       "publish_deck",
-      "reject",
       "rename_deck",
       "render_slide",
       "reopen_comment",
@@ -192,7 +190,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(checked).toEqual({ deck: deckId, violations: [] });
   });
 
-  it("stores an agent's edit as a suggestion and leaves the deck as it is", async () => {
+  it("applies an agent's edit at once and records it as the agent's", async () => {
     const before = JSON.parse(
       (await call("get_deck", { deck_id: deckId })).content[0].text
     );
@@ -205,17 +203,21 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
         })
       ).content[0].text
     );
-    expect(result).toMatchObject({ status: "suggested", changed: ["sh_asr"] });
+    expect(result).toMatchObject({
+      status: "applied",
+      version: before.version + 1,
+      changed: ["sh_asr"],
+    });
     const after = JSON.parse(
       (await call("get_deck", { deck_id: deckId })).content[0].text
     );
-    expect(after.version).toBe(before.version);
+    expect(after.version).toBe(before.version + 1);
     const [row] = await db`
-      select status, author_kind from revisions where id = ${result.suggestion}`;
-    expect(row).toEqual({ status: "suggested", author_kind: "agent" });
+      select status, author_kind from revisions where id = ${result.entry}`;
+    expect(row).toEqual({ status: "applied", author_kind: "agent" });
   });
 
-  it("says why an edit cannot be suggested", async () => {
+  it("says why an edit cannot be made", async () => {
     const bad = await call("add_shapes", {
       deck_id: deckId,
       slide: 1,
@@ -271,17 +273,23 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     const fresh = json(await call("get_deck", { deck_id: created.id }));
     expect(fresh.document.template).toBe("winlab");
 
-    // Document changes wait as suggestions.
+    // Document changes apply at once.
     for (const [tool, args] of [
       ["rename_deck", { title: "Renamed" }],
       ["set_template", { template: "plain" }],
       ["copy_slide", { slide: 1 }],
     ] as const) {
       const result = json(await call(tool, { deck_id: created.id, ...args }));
-      expect(result.status).toBe("suggested");
+      expect(result.status).toBe("applied");
     }
+    const changed = json(await call("get_deck", { deck_id: created.id }));
+    expect(changed.document).toMatchObject({
+      title: "Renamed",
+      template: "plain",
+    });
+    expect(changed.document.slides).toHaveLength(2);
     expect(
-      (await call("set_template", { deck_id: created.id, template: "winlab" }))
+      (await call("set_template", { deck_id: created.id, template: "plain" }))
         .isError
     ).toBe(true);
 
@@ -308,40 +316,31 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(imported.report.slides).toBeGreaterThan(0);
   });
 
-  it("asks before publishing or deleting, and reviews through history", async () => {
+  it("publishes and deletes at once, and undoes either through history", async () => {
     const deck = json(await call("create_deck", { title: "Reviewed" }));
-    const asked = json(await call("publish_deck", { deck_id: deck.id }));
-    expect(asked.status).toBe("requested");
-    const history = json(await call("list_history", { deck_id: deck.id }));
-    expect(history.pending).toHaveLength(1);
-    expect(history.pending[0]).toMatchObject({
-      kind: "publish",
-      author: "agent",
-    });
-    const accepted = json(
-      await call("accept", { deck_id: deck.id, entry: asked.entry })
-    );
-    expect(accepted).toMatchObject({ outcome: "applied", kind: "publish" });
+    const published = json(await call("publish_deck", { deck_id: deck.id }));
+    expect(published.status).toBe("applied");
     const listed = json(await call("list_decks", {}));
     expect(
       listed.find((item: { id: string }) => item.id === deck.id).published
     ).toBe(true);
+    const history = json(await call("list_history", { deck_id: deck.id }));
+    expect(history.pending).toBeUndefined();
+    expect(history.history[0]).toMatchObject({
+      id: published.entry,
+      kind: "publish",
+      author: "agent",
+    });
 
-    // Unpublishing happens at once; reverting it asks again.
-    const off = json(await call("unpublish_deck", { deck_id: deck.id }));
-    expect(off.status).toBe("applied");
+    // Reverting the publish unpublishes, at once.
     const back = json(
-      await call("revert", { deck_id: deck.id, entry: off.entry })
+      await call("revert", { deck_id: deck.id, entry: published.entry })
     );
-    expect(back.outcome).toBe("requested");
-    expect(
-      json(await call("reject", { deck_id: deck.id, entry: back.revisionId }))
-    ).toEqual({ status: "rejected" });
+    expect(back).toMatchObject({ outcome: "applied", kind: "unpublish" });
 
-    // Delete waits; accepted, the deck moves to the deleted list.
+    // Delete moves the deck to the deleted list; restore brings it back.
     const doomed = json(await call("delete_deck", { deck_id: deck.id }));
-    expect(doomed.status).toBe("requested");
-    await call("accept", { deck_id: deck.id, entry: doomed.entry });
+    expect(doomed.status).toBe("applied");
     expect(
       json(await call("list_decks", { deleted: true })).map(
         (item: { id: string }) => item.id
@@ -401,7 +400,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       listed.content.some((c: { type: string }) => c.type === "image")
     ).toBe(true);
 
-    // The agent answers with a suggestion, says so, and resolves.
+    // The agent answers with an edit, says so, and resolves.
     const titled = json(
       await call("add_slide", { deck_id: deck.id, after: 0, title: "Overview" })
     );
@@ -410,8 +409,8 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
         await call("reply_comment", {
           deck_id: deck.id,
           comment: threadId,
-          body: "Suggested a title slide",
-          entry: titled.suggestion,
+          body: "Added a title slide",
+          entry: titled.entry,
         })
       ).status
     ).toBe("added");
@@ -433,7 +432,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "reply",
       "resolve",
     ]);
-    expect(all[0].replies[0].entryId).toBe(titled.suggestion);
+    expect(all[0].replies[0].entryId).toBe(titled.entry);
 
     // An agent comments too, and a bad anchor is refused.
     expect(
@@ -494,7 +493,6 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       ["delete_deck", {}],
       ["publish_deck", {}],
       ["list_history", {}],
-      ["accept", { entry: "1" }],
       ["revert", { entry: "1" }],
       ["list_comments", {}],
       ["add_comment", { slide: 1, body: "x" }],

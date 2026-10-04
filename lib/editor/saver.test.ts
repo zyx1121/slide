@@ -8,6 +8,11 @@ const ops = (title: string): Operation[] => [
   { op: "replace", path: "/title", value: title },
 ];
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+/** A patch made on a deck titled `was`: it no longer fits once the title moved. */
+const onTitle = (was: string, title: string): Operation[] => [
+  { op: "test", path: "/title", value: was },
+  { op: "replace", path: "/title", value: title },
+];
 
 /** A promise the test settles by hand. */
 function deferred<T>() {
@@ -65,8 +70,8 @@ describe("createSaver", () => {
   });
 
   it("blocks edits while a refused save reloads, and drops what was queued", async () => {
-    // Another tab moved the deck on; the reload is still on its way when the
-    // member presses Delete.
+    // Another tab moved the deck on, changing what these edits were made on;
+    // the reload is still on its way when the member presses Delete.
     const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
@@ -76,8 +81,8 @@ describe("createSaver", () => {
         version: version + 1,
       }));
     const { saver, onReload } = setup(send, () => load.promise);
-    saver.save(ops("moved tx_note"));
-    saver.save(ops("queued behind it"));
+    saver.save(onTitle("Mine", "moved tx_note"));
+    saver.save(onTitle("moved tx_note", "queued behind it"));
     await tick();
     expect(saver.state()).toMatchObject({
       accepting: false,
@@ -97,6 +102,42 @@ describe("createSaver", () => {
     expect(saver.save(ops("after reload"))).toBe(true);
     await tick();
     expect(send).toHaveBeenLastCalledWith(1, ops("after reload"));
+  });
+
+  it("replays edits on a deck that moved on, when they still fit", async () => {
+    // The member's agent changed the deck between two of the member's saves.
+    const send = vi
+      .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
+      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 5 })
+      .mockImplementation(async (version) => ({
+        ok: true,
+        version: version + 1,
+      }));
+    const loaded = { ...sampleDocument(), title: "Renamed by the agent" };
+    const { saver, onReload } = setup(send, async () => ({
+      document: loaded,
+      version: 5,
+    }));
+    saver.save([{ op: "replace", path: "/slides/0/title", value: "Mine" }]);
+    saver.save(ops("Queued"));
+    await tick();
+    await tick();
+    await tick();
+    // The editor shows the agent's change with the member's on top.
+    expect(onReload).toHaveBeenCalledOnce();
+    const shown = onReload.mock.calls[0][0];
+    expect(shown.slides[0].title).toBe("Mine");
+    expect(shown.title).toBe("Queued");
+    // Both edits went to the server again, on the agent's version.
+    expect(send.mock.calls.slice(1).map(([version]) => version)).toEqual([
+      5, 6,
+    ]);
+    expect(saver.state()).toMatchObject({
+      accepting: true,
+      pending: 0,
+      message: null,
+    });
+    expect(saver.version()).toBe(7);
   });
 
   it("stays blocked when the save and the reload both fail, until a load works", async () => {

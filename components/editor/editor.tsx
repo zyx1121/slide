@@ -33,11 +33,12 @@ import {
   loadDeckAction,
   publishDeckAction,
   selectAction,
+  versionAction,
 } from "@/app/decks/[id]/actions";
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
-import { ReviewTool } from "@/components/editor/review-tool";
+import { HistoryTool } from "@/components/editor/history-tool";
 import {
   FillTool,
   LineTools,
@@ -66,7 +67,6 @@ import { compare } from "fast-json-patch";
 import Link from "next/link";
 
 import { DeckError } from "@/lib/deck/errors";
-import type { Suggestion } from "@/lib/deck/revisions";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
@@ -179,6 +179,8 @@ const HELP = [
 const NUDGE = 2;
 /** How long nudges gather before they are saved as one edit, in ms. */
 const NUDGE_SAVE_DELAY = 500;
+/** How often the editor looks for changes made elsewhere, in ms. */
+const REMOTE_POLL_MS = 3000;
 /** How long typing pauses before it is saved as one edit, in ms. */
 const TEXT_SAVE_DELAY = 800;
 
@@ -272,14 +274,6 @@ export function Editor({
   const nudgeTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   const [notice, setNotice] = useState(initialNotice);
-  // A suggestion shown applied, read only, until the preview ends.
-  const [previewDoc, setPreviewState] = useState<DeckDocument | null>(null);
-  const previewing = previewDoc !== null;
-  const previewRef = useRef(false);
-  const setPreviewDoc = (next: DeckDocument | null) => {
-    previewRef.current = next !== null;
-    setPreviewState(next);
-  };
 
   /** An edit that could not be applied here; it never reached the server. */
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -322,7 +316,15 @@ export function Editor({
     setDoc(fresh);
     setSlideIndex((i) => Math.min(i, fresh.slides.length - 1));
     setVisibleIndex((i) => Math.min(i, fresh.slides.length - 1));
-    setSelection([]);
+    // Shapes still there stay selected: a change from elsewhere, such as the
+    // member's agent, should not take away what the member was pointing at.
+    const present = new Set(
+      fresh.slides.flatMap((slide) => slide.shapes.map((shape) => shape.id))
+    );
+    setSelection((ids) => {
+      const kept = ids.filter((id) => present.has(id));
+      return kept.length === ids.length ? ids : kept;
+    });
     clearTimeout(nudgeTimer.current);
     nudgeRef.current = { dx: 0, dy: 0 };
     setNudge(nudgeRef.current);
@@ -333,6 +335,27 @@ export function Editor({
     return changed;
   }, []);
   const { saver, state: saving } = useSaver(deckId, initialVersion, reload);
+
+  // Changes made elsewhere (the member's agent, another tab) come in while
+  // the member is not in the middle of an edit: text being typed, nudges
+  // gathering or saves on their way wait for the next look.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (draftRef.current) return;
+      if (nudgeRef.current.dx || nudgeRef.current.dy) return;
+      const now = saver.state();
+      if (now.phase !== "ready" || now.pending > 0) return;
+      void versionAction(deckId)
+        .then((server) => {
+          if (server !== null && server > saver.version()) {
+            return saver.refresh();
+          }
+        })
+        .catch(() => {});
+    }, REMOTE_POLL_MS);
+    return () => clearInterval(timer);
+  }, [deckId, saver]);
   // Once every edit is saved, no undo or redo can be lost any more.
   useEffect(() => {
     if (saving.pending === 0) unsavedMove.current = null;
@@ -353,7 +376,7 @@ export function Editor({
   const commit = useCallback(
     (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
-      if (invalid !== null || previewRef.current) return "paused";
+      if (invalid !== null) return "paused";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -780,7 +803,7 @@ export function Editor({
     [doc.slides]
   );
   const pinsOf = (slideIndex: number) => {
-    const slideNow = (previewDoc ?? doc).slides[slideIndex];
+    const slideNow = doc.slides[slideIndex];
     if (!slideNow) return [];
     const byId = new Map(slideNow.shapes.map((shape) => [shape.id, shape]));
     return threads
@@ -1127,9 +1150,8 @@ export function Editor({
   };
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
-  const paused = !saving.accepting || invalid !== null || previewing;
-  // A suggestion being previewed may change the template too.
-  const shownTemplate = templateOf(previewDoc ?? doc).id;
+  const paused = !saving.accepting || invalid !== null;
+  const shownTemplate = templateOf(doc).id;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   const problem = invalid ?? refusal ?? saving.message;
@@ -1155,7 +1177,7 @@ export function Editor({
           className="absolute inset-0 snap-y snap-proximity overflow-y-auto"
         >
           <ol className="flex flex-col items-center gap-4 pt-16 pb-28">
-            {(previewDoc ?? doc).slides.map((item, i) => (
+            {doc.slides.map((item, i) => (
               <li
                 key={item.id}
                 ref={(element) => {
@@ -1167,10 +1189,10 @@ export function Editor({
                 <div className="relative">
                   <Canvas
                     className="w-full"
-                    slide={!previewing && i === index ? shown : item}
+                    slide={i === index ? shown : item}
                     number={i + 1}
                     template={shownTemplate}
-                    selection={!previewing && i === index ? selection : NONE}
+                    selection={i === index ? selection : NONE}
                     onSelect={(ids) => select(i, ids)}
                     onMove={(ids, dx, dy) =>
                       commit(
@@ -1186,7 +1208,7 @@ export function Editor({
                     onCopy={(event) => copy(event, i)}
                     onCut={(event) => cut(event, i)}
                     onPaste={(event) => paste(event, i)}
-                    text={previewing ? null : canvasText(i)}
+                    text={canvasText(i)}
                     onEditText={(target, point) => startEdit(i, target, point)}
                     tool={tool}
                     onDrawLine={(start, end) => drawLine(i, start, end)}
@@ -1238,21 +1260,6 @@ export function Editor({
         {/* The dock floats at the bottom center, as Plump's does; only the bar
           and the notice take pointer events, the rest stays the canvas's. */}
         <div className="pointer-events-none absolute inset-x-0 bottom-5 flex flex-col items-center gap-2 px-2">
-          {previewing && (
-            <div
-              role="status"
-              data-slot="floating-notice"
-              data-surface="tinted"
-              className="pointer-events-auto flex items-center gap-3 rounded-xl border px-3 py-2"
-            >
-              <p className="text-xs">
-                正在預覽建議套用後的樣子，這時不能編輯。
-              </p>
-              <Button variant="ghost" onClick={() => setPreviewDoc(null)}>
-                結束預覽
-              </Button>
-            </div>
-          )}
           {notice && !problem && (
             <div
               role="status"
@@ -1451,27 +1458,11 @@ export function Editor({
                 onThreads={setThreads}
               />
             )}
-            <ReviewTool
+            <HistoryTool
               deckId={deckId}
               busy={saving.pending > 0 || draft?.dirty === true || nudging}
               onChanged={async () => {
                 await saver.refresh();
-              }}
-              onPreview={(suggestion: Suggestion | null) => {
-                if (!suggestion) {
-                  setPreviewDoc(null);
-                  return;
-                }
-                endEdit();
-                try {
-                  setPreviewDoc(
-                    applyOperations(docRef.current, suggestion.patch).document
-                  );
-                  setRefusal(null);
-                } catch {
-                  setPreviewDoc(null);
-                  setRefusal("這個建議套不上目前的簡報。");
-                }
               }}
             />
             <CheckTool

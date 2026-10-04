@@ -11,15 +11,11 @@ import {
   saveAsset,
   slideAssetUris,
 } from "../assets/store";
-import { DeckError } from "../deck/errors";
 import { ASSET_MAX_BYTES, DECK_TITLE_MAX } from "../deck/limits";
 import {
-  acceptSuggestion,
   actOnDeck,
   type DeckAction,
   listRevisions,
-  listSuggestions,
-  rejectSuggestion,
   revertRevision,
 } from "../deck/revisions";
 import {
@@ -37,7 +33,6 @@ import {
   getDeck,
   listDecks,
   listDeletedDecks,
-  mutateDeck,
 } from "../deck/store";
 import { shapeBounds, unionRects } from "../editor/geometry";
 import { plainText } from "../editor/text-edit";
@@ -66,6 +61,7 @@ import {
   WriteError,
 } from "./write";
 import { inSpan } from "../otel/span";
+import { editDeck } from "./edit";
 
 export type ToolContext = { db: postgres.Sql; sub: string };
 
@@ -117,7 +113,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the suggestion, then resolve_comment. Document edits (add_shapes, update_shapes, delete_shapes, add_slide, copy_slide, delete_slide, move_slide, rename_deck, set_template) arrive as suggestions; publish_deck and delete_deck as requests; render_slide shows the deck as it is, without pending ones. list_history shows suggestions, requests and every past change; accept, reject and revert act on them, but accept only when the member asked you to. create_deck, import_deck, upload_image (for picture shapes), export_deck, unpublish_deck and restore_deck act at once.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one entry, so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
     }
   );
   const { db, sub } = context;
@@ -397,44 +393,20 @@ export function createServer(context: ToolContext): McpServer {
     }
   );
 
-  /** Stores a plan as a suggestion the member reviews; nothing changes yet. */
-  const suggest = async (
+  /** An edit applied as the agent; see edit.ts. */
+  const edit = async (
     deck_id: string,
     plan: (document: Parameters<typeof addShapes>[0]) => Planned
   ) => {
-    const deck = await getDeck(db, sub, deck_id);
-    if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
-    let planned: Planned;
-    try {
-      planned = plan(deck.document);
-    } catch (error) {
-      if (error instanceof WriteError) return failure(error.message);
-      throw error;
-    }
-    try {
-      const result = await mutateDeck(db, {
-        deckId: deck.id,
-        actor: { kind: "agent", sub },
-        baseVersion: deck.version,
-        ops: planned.ops,
-      });
-      return text({
-        status: result.status,
-        suggestion: result.revisionId,
-        baseVersion: deck.version,
-        created: planned.created,
-        changed: planned.changed,
-        note: "The member sees this as a suggestion in the editor; nothing changes until they accept it.",
-      });
-    } catch (error) {
-      if (!(error instanceof DeckError)) throw error;
-      const issues = (error.details as { issues?: string[] }).issues;
-      return failure(
-        issues?.length
-          ? `${error.message}:\n${issues.join("\n")}`
-          : error.message
-      );
-    }
+    const outcome = await editDeck(db, sub, deck_id, plan);
+    if (!outcome.ok) return failure(outcome.message);
+    return text({
+      status: "applied",
+      entry: outcome.entry,
+      version: outcome.version,
+      created: outcome.created,
+      changed: outcome.changed,
+    });
   };
 
   const shapeList = z.array(z.record(z.string(), z.unknown())).min(1).max(200);
@@ -443,18 +415,18 @@ export function createServer(context: ToolContext): McpServer {
     "add_shapes",
     {
       title: "Add shapes",
-      description: `Suggests new shapes on top of a slide. ${SHAPES_HELP} Ids are given by the deck; one you choose is kept only when free, and connector ends may refer to it.`,
+      description: `Adds shapes on top of a slide. ${SHAPES_HELP} Ids are given by the deck; one you choose is kept only when free, and connector ends may refer to it.`,
       inputSchema: { deck_id: DeckId, slide: SlideRef, shapes: shapeList },
     },
     async ({ deck_id, slide, shapes }) =>
-      suggest(deck_id, (document) => addShapes(document, slide, shapes))
+      edit(deck_id, (document) => addShapes(document, slide, shapes))
   );
 
   server.registerTool(
     "update_shapes",
     {
       title: "Update shapes",
-      description: `Suggests changes to shapes by id: each field in set replaces the shape's (null removes an optional field; fill or stroke null means none). ${SHAPES_HELP}`,
+      description: `Changes shapes by id: each field in set replaces the shape's (null removes an optional field; fill or stroke null means none). ${SHAPES_HELP}`,
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
@@ -470,7 +442,7 @@ export function createServer(context: ToolContext): McpServer {
       },
     },
     async ({ deck_id, slide, updates }) =>
-      suggest(deck_id, (document) => updateShapes(document, slide, updates))
+      edit(deck_id, (document) => updateShapes(document, slide, updates))
   );
 
   server.registerTool(
@@ -478,7 +450,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Delete shapes",
       description:
-        "Suggests deleting shapes by id. Connectors glued to them stay, with those ends left where they were.",
+        "Deletes shapes by id. Connectors glued to them stay, with those ends left where they were.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
@@ -486,14 +458,14 @@ export function createServer(context: ToolContext): McpServer {
       },
     },
     async ({ deck_id, slide, ids }) =>
-      suggest(deck_id, (document) => deleteShapes(document, slide, ids))
+      edit(deck_id, (document) => deleteShapes(document, slide, ids))
   );
 
   server.registerTool(
     "add_slide",
     {
       title: "Add a slide",
-      description: `Suggests a new slide on the deck's template: after slide number after (0 puts it first; last by default), with a title and optional shapes. ${SHAPES_HELP}`,
+      description: `Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title and optional shapes. ${SHAPES_HELP}`,
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),
@@ -502,28 +474,25 @@ export function createServer(context: ToolContext): McpServer {
       },
     },
     async ({ deck_id, after, title, shapes }) =>
-      suggest(deck_id, (document) =>
-        addSlide(document, { after, title, shapes })
-      )
+      edit(deck_id, (document) => addSlide(document, { after, title, shapes }))
   );
 
   server.registerTool(
     "delete_slide",
     {
       title: "Delete a slide",
-      description: "Suggests deleting a slide. A deck keeps at least one.",
+      description: "Deletes a slide. A deck keeps at least one.",
       inputSchema: { deck_id: DeckId, slide: SlideRef },
     },
     async ({ deck_id, slide }) =>
-      suggest(deck_id, (document) => deleteSlide(document, slide))
+      edit(deck_id, (document) => deleteSlide(document, slide))
   );
 
   server.registerTool(
     "move_slide",
     {
       title: "Move a slide",
-      description:
-        "Suggests moving a slide so that it becomes slide number to.",
+      description: "Moves a slide so that it becomes slide number to.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
@@ -531,7 +500,7 @@ export function createServer(context: ToolContext): McpServer {
       },
     },
     async ({ deck_id, slide, to }) =>
-      suggest(deck_id, (document) => moveSlide(document, slide, to))
+      edit(deck_id, (document) => moveSlide(document, slide, to))
   );
 
   // ---------------------------------------------------- decks and files
@@ -667,14 +636,14 @@ export function createServer(context: ToolContext): McpServer {
     "rename_deck",
     {
       title: "Rename a deck",
-      description: "Suggests a new title for the deck.",
+      description: "Renames the deck.",
       inputSchema: {
         deck_id: DeckId,
         title: z.string().trim().min(1).max(DECK_TITLE_MAX),
       },
     },
     async ({ deck_id, title }) =>
-      suggest(deck_id, (document) => retitle(document, title))
+      edit(deck_id, (document) => retitle(document, title))
   );
 
   server.registerTool(
@@ -682,11 +651,11 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Switch template",
       description:
-        "Suggests putting the deck on another template: plain (white, black title) or winlab (the WinLab master).",
+        "Puts the deck on another template: plain (white, black title) or winlab (the WinLab master).",
       inputSchema: { deck_id: DeckId, template: z.enum(TEMPLATE_IDS) },
     },
     async ({ deck_id, template }) =>
-      suggest(deck_id, (document) => retemplate(document, template))
+      edit(deck_id, (document) => retemplate(document, template))
   );
 
   server.registerTool(
@@ -694,14 +663,14 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Copy a slide",
       description:
-        "Suggests a copy of a slide right after it, with new ids for it and its shapes.",
+        "Copies a slide right after it, with new ids for it and its shapes.",
       inputSchema: { deck_id: DeckId, slide: SlideRef },
     },
     async ({ deck_id, slide }) =>
-      suggest(deck_id, (document) => copySlide(document, slide))
+      edit(deck_id, (document) => copySlide(document, slide))
   );
 
-  /** A deck action by the agent: done, or waiting as a request. */
+  /** A deck action by the agent, applied and recorded. */
   const deckAction = async (deck_id: string, action: DeckAction) => {
     const result = await actOnDeck(db, sub, deck_id, action, "agent");
     switch (result.outcome) {
@@ -709,12 +678,6 @@ export function createServer(context: ToolContext): McpServer {
         return failure(`No deck ${deck_id} among the member's decks.`);
       case "already":
         return text({ status: "unchanged", note: "Nothing to do." });
-      case "requested":
-        return text({
-          status: "requested",
-          entry: result.revisionId,
-          note: "The member sees this as a request in the editor; nothing happens until it is accepted.",
-        });
       case "applied":
         return text({ status: "applied", entry: result.revisionId });
     }
@@ -725,7 +688,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Publish a deck",
       description:
-        "Requests publishing the deck at a public link anyone can open; it waits for acceptance.",
+        "Publishes the deck at a public link anyone can open (get it from list_decks); unpublish_deck stops it.",
       inputSchema: { deck_id: DeckId },
     },
     async ({ deck_id }) => deckAction(deck_id, "publish")
@@ -746,7 +709,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Delete a deck",
       description:
-        "Requests deleting the deck; it waits for acceptance, and a deleted deck can be restored.",
+        "Deletes the deck: it leaves the lists and its public link stops, but it stays, history and all, and restore_deck brings it back.",
       inputSchema: { deck_id: DeckId },
     },
     async ({ deck_id }) => deckAction(deck_id, "delete")
@@ -757,7 +720,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Restore a deck",
       description:
-        "Brings back a deleted deck (list_decks with deleted). A deck that was public when deleted comes back as a request, since its link would work again.",
+        "Brings back a deleted deck (list_decks with deleted), as it was, public link included if it had one.",
       inputSchema: {
         deck_id: z.string().regex(/^dk_[0-9a-z]{2,48}$/),
       },
@@ -772,7 +735,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "List history",
       description:
-        "The deck's pending suggestions and requests (oldest first, edits with their patch) and its history (newest first): each entry's id, kind (edit, publish, unpublish, delete, restore), status, author, who decided it and when.",
+        "The deck's history, newest first: every change, the member's and agents', each with its id (an entry for revert), kind (edit, publish, unpublish, delete, restore), status, author, the versions it went from and to, and when.",
       inputSchema: {
         deck_id: DeckId,
         limit: z.number().int().min(1).max(200).optional(),
@@ -782,58 +745,9 @@ export function createServer(context: ToolContext): McpServer {
     async ({ deck_id, limit }) => {
       const deck = await getDeck(db, sub, deck_id);
       if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
-      const [pending, history] = await Promise.all([
-        listSuggestions(db, sub, deck_id),
-        listRevisions(db, sub, deck_id, limit ?? 50),
-      ]);
-      return text({ version: deck.version, pending, history });
+      const history = await listRevisions(db, sub, deck_id, limit ?? 50);
+      return text({ version: deck.version, history });
     }
-  );
-
-  const review = (
-    action: "accept" | "reject" | "revert",
-    deck_id: string,
-    entry: string
-  ) =>
-    action === "reject"
-      ? rejectSuggestion(db, sub, deck_id, entry, "agent").then((done) =>
-          done
-            ? text({ status: "rejected" })
-            : failure(`No pending entry ${entry} in deck ${deck_id}.`)
-        )
-      : (action === "accept" ? acceptSuggestion : revertRevision)(
-          db,
-          sub,
-          deck_id,
-          entry,
-          "agent"
-        ).then((outcome) =>
-          outcome.outcome === "gone"
-            ? failure(`No such entry ${entry} in deck ${deck_id}.`)
-            : outcome.outcome === "conflict"
-              ? failure(outcome.message)
-              : text(outcome)
-        );
-
-  server.registerTool(
-    "accept",
-    {
-      title: "Accept a suggestion or request",
-      description:
-        "Accepts a pending suggestion or request from list_history, as the agent. Accept only what the member asked you to.",
-      inputSchema: { deck_id: DeckId, entry: EntryId },
-    },
-    async ({ deck_id, entry }) => review("accept", deck_id, entry)
-  );
-
-  server.registerTool(
-    "reject",
-    {
-      title: "Reject a suggestion or request",
-      description: "Rejects a pending suggestion or request from list_history.",
-      inputSchema: { deck_id: DeckId, entry: EntryId },
-    },
-    async ({ deck_id, entry }) => review("reject", deck_id, entry)
   );
 
   server.registerTool(
@@ -841,13 +755,21 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Revert a change",
       description:
-        "Undoes one applied entry from list_history as a new entry: an edit's inverse (refused when a later edit changed the same place), or a deck action's opposite (publishing again or deleting again waits as a request).",
+        "Undoes one applied entry from list_history as a new entry: an edit's inverse (refused when a later edit changed the same place), or a deck action's opposite.",
       inputSchema: {
         deck_id: z.string().regex(/^dk_[0-9a-z]{2,48}$/),
         entry: EntryId,
       },
     },
-    async ({ deck_id, entry }) => review("revert", deck_id, entry)
+    async ({ deck_id, entry }) => {
+      const outcome = await revertRevision(db, sub, deck_id, entry, "agent");
+      if (outcome.outcome === "gone") {
+        return failure(`No such entry ${entry} in deck ${deck_id}.`);
+      }
+      return outcome.outcome === "conflict"
+        ? failure(outcome.message)
+        : text(outcome);
+    }
   );
 
   // ----------------------------------------------------------- comments
@@ -871,7 +793,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "List comments",
       description:
-        "The deck's comment threads, oldest first (open ones unless status says otherwise): each with its slide number, the shapes it is on as they stand now (with the words when it is on part of a text), its replies, resolves and reopens. With images, a PNG of each thread's shapes. The member comments in batches; answer each with your edits (as suggestions), then reply_comment naming the suggestion and resolve_comment.",
+        "The deck's comment threads, oldest first (open ones unless status says otherwise): each with its slide number, the shapes it is on as they stand now (with the words when it is on part of a text), its replies, resolves and reopens. With images, a PNG of each thread's shapes. The member comments in batches; answer each with your edits, then reply_comment naming the entry that answers it and resolve_comment.",
       inputSchema: {
         deck_id: DeckId,
         status: z.enum(["open", "resolved", "all"]).optional(),
@@ -976,7 +898,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Reply to a comment",
       description:
-        "Replies in a thread; entry names the suggestion or change (from list_history or a suggesting tool's answer) that answers it.",
+        "Replies in a thread; entry names the change that answers it (from list_history, or the entry an editing tool answered with).",
       inputSchema: {
         deck_id: DeckId,
         comment: CommentId,

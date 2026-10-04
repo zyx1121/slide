@@ -9,9 +9,14 @@ WORKDIR /app
 COPY package.json bun.lock ./
 RUN bun install --frozen-lockfile
 
+# The fonts are pinned by their script, so they download again only when it
+# changes.
+COPY scripts/fetch-fonts.sh scripts/
+RUN sh scripts/fetch-fonts.sh
+
 COPY . .
 ENV NEXT_TELEMETRY_DISABLED=1
-RUN sh scripts/fetch-fonts.sh && bun run build && bun run build:migrate && bun run build:worker
+RUN bun run build && bun run build:migrate && bun run build:worker
 
 FROM node:22-alpine
 WORKDIR /app

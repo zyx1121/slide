@@ -7,3 +7,5 @@ node_modules
 !.env.example
 *.tsbuildinfo
 next-env.d.ts
+# Downloaded in the image from scripts/fetch-fonts.sh, checked by sha256.
+fonts/slide

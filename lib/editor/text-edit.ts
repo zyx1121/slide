@@ -330,13 +330,14 @@ export function styleParagraphs(
     paragraphs: body.paragraphs.map((paragraph, p) => {
       if (p < start.p || p > end.p) return paragraph;
       const { runs, ...props } = paragraph;
-      const next = change(props);
-      const tidy: ParagraphProps = {};
-      if (next.align !== undefined) tidy.align = next.align;
-      if (next.bullet !== undefined && next.bullet !== "none") {
-        tidy.bullet = next.bullet;
-      }
-      if (next.level) tidy.level = next.level;
+      // Whatever the change leaves alone stays: an imported paragraph's line
+      // spacing, space around it and bullet character among them.
+      const { align, bullet, level, ...rest } = change(props);
+      const tidy: ParagraphProps = { ...rest };
+      if (align !== undefined) tidy.align = align;
+      if (bullet !== undefined && bullet !== "none") tidy.bullet = bullet;
+      else delete tidy.bulletChar;
+      if (level) tidy.level = level;
       return { ...tidy, runs };
     }),
   };

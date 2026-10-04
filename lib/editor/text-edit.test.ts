@@ -168,6 +168,44 @@ describe("styling part of a text", () => {
     );
   });
 
+  it("keeps the paragraph settings a change leaves alone", () => {
+    const start: TextBody = {
+      paragraphs: [
+        {
+          runs: [{ text: "a" }],
+          bullet: "bullet",
+          bulletChar: "–",
+          lineSpacing: 1.5,
+          spaceBefore: 12,
+          spaceAfter: 6,
+        },
+      ],
+    };
+    const aligned = styleParagraphs(
+      start,
+      { p: 0, o: 0 },
+      { p: 0, o: 1 },
+      (props) => ({ ...props, align: "center" })
+    );
+    expect(aligned.paragraphs[0]).toEqual({
+      ...start.paragraphs[0],
+      align: "center",
+    });
+    // Without a bullet, its character goes with it.
+    const plain = styleParagraphs(
+      start,
+      { p: 0, o: 0 },
+      { p: 0, o: 0 },
+      (props) => ({ ...props, bullet: "none" })
+    );
+    expect(plain.paragraphs[0]).toEqual({
+      runs: [{ text: "a" }],
+      lineSpacing: 1.5,
+      spaceBefore: 12,
+      spaceAfter: 6,
+    });
+  });
+
   it("drops a bullet set to none and a level of zero", () => {
     const start: TextBody = {
       paragraphs: [{ runs: [{ text: "a" }], bullet: "bullet", level: 1 }],

@@ -53,6 +53,14 @@ async function handle(request: Request): Promise<Response> {
   }
   if (!user) return challenge("invalid_token");
 
+  // Stateless, so there is no stream to hold open and no session to end. A
+  // GET answered with a stream that closes at once makes clients reconnect
+  // every second, refreshing their token each time; 405 tells them there is
+  // no stream here.
+  if (request.method !== "POST") {
+    return new Response(null, { status: 405, headers: { allow: "POST" } });
+  }
+
   const server = createServer({ db: sql, sub: user.sub });
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,

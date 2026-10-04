@@ -28,7 +28,7 @@ const ENV = {
   MCP_CLIENT_ID: "slide-mcp",
 };
 
-const { POST } = await import("./route");
+const { DELETE, GET, POST } = await import("./route");
 
 let id = 0;
 async function rpc(method: string, params: unknown, token = "good") {
@@ -61,6 +61,36 @@ describe("POST /mcp challenges", () => {
     delete process.env.MCP_CLIENT_ID;
     expect((await rpc("tools/list", {})).response.status).toBe(404);
     process.env.MCP_CLIENT_ID = ENV.MCP_CLIENT_ID;
+  });
+
+  const other = (handler: typeof GET, method: string, token: string) =>
+    handler(
+      new Request("https://slide.example.org/mcp", {
+        method,
+        headers: {
+          authorization: `Bearer ${token}`,
+          accept: "text/event-stream",
+        },
+      })
+    );
+
+  it("offers no stream and no session: GET and DELETE answer 405", async () => {
+    for (const [handler, method] of [
+      [GET, "GET"],
+      [DELETE, "DELETE"],
+    ] as const) {
+      const response = await other(handler, method, "good");
+      expect(response.status).toBe(405);
+      expect(response.headers.get("allow")).toBe("POST");
+    }
+  });
+
+  it("still challenges a GET without a valid token", async () => {
+    const response = await other(GET, "GET", "bad");
+    expect(response.status).toBe(401);
+    expect(response.headers.get("www-authenticate")).toContain(
+      "resource_metadata="
+    );
   });
 });
 

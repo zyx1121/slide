@@ -56,6 +56,8 @@ import { holdsText, renderSlideSvg } from "@/lib/render/svg";
 import { TEMPLATES, TITLE, type TemplateId } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
+/** Screen px between several selected shapes and the frame around them. */
+const GROUP_MARGIN = 6;
 /** Screen px within which a click picks a connector or a handle, and snaps. */
 const PICK = 6;
 const HANDLE = 10;
@@ -166,6 +168,7 @@ export function Canvas({
   onDrawLine,
   onLineEnd,
   onDropFiles,
+  onDragging,
   className,
 }: {
   slide: Slide;
@@ -178,6 +181,11 @@ export function Canvas({
   onResize: (id: string, box: Box) => void;
   /** Called as a pointer gesture begins, before it reads any shape. */
   onGestureStart: () => void;
+  /**
+   * Whether shapes are being moved, resized, drawn or picked with the
+   * marquee right now, so what floats over them can step aside.
+   */
+  onDragging?: (dragging: boolean) => void;
   onKeyDown: (event: KeyboardEvent<HTMLDivElement>) => void;
   /** Clipboard events while the canvas has focus, wherever the browser sends them. */
   onCopy: (event: ClipboardEvent) => void;
@@ -201,6 +209,10 @@ export function Canvas({
   const { background } = TEMPLATES[template];
   const [width, setWidth] = useState(SLIDE_WIDTH);
   const [drag, setDrag] = useState<Drag | null>(null);
+  const dragging = drag !== null && drag.kind !== "text";
+  useEffect(() => {
+    onDragging?.(dragging);
+  }, [dragging, onDragging]);
   const [cursor, setCursor] = useState("default");
   // The site a connector end would glue to under the pointer, shown while
   // the connector tool is on.
@@ -664,6 +676,15 @@ export function Canvas({
   const previewShapes = new Map(
     preview.shapes.map((shape) => [shape.id, shape])
   );
+  const group =
+    selection.length > 1
+      ? unionRects(
+          selection
+            .map((id) => previewShapes.get(id))
+            .filter((shape) => shape !== undefined)
+            .map((shape) => shapeBounds(shape, previewShapes))
+        )
+      : null;
   const shownLine =
     line && drag?.kind !== "move"
       ? preview.shapes.find((shape) => shape.id === line.id)
@@ -718,30 +739,70 @@ export function Canvas({
         viewBox={`0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}`}
         className="pointer-events-none absolute inset-0 size-full"
       >
+        {/* Every selected shape: a tint, and a colored outline over a white
+            halo, so it reads on any fill and on the white slide alike. */}
         {selection.map((id) => {
           const shape = previewShapes.get(id);
           if (!shape) return null;
-          return shape.kind === "line" ? (
-            <polyline
-              key={id}
-              points={points(linePoints(shape, previewShapes))}
-              fill="none"
-              stroke="var(--canvas-selection)"
-              strokeWidth={stroke * 3}
-              strokeOpacity={0.35}
-              vectorEffect="non-scaling-stroke"
-            />
-          ) : (
-            <polygon
-              key={id}
-              points={points(cornersOf(shape))}
-              fill="none"
-              stroke="var(--canvas-selection)"
-              strokeWidth={stroke}
-              vectorEffect="non-scaling-stroke"
-            />
+          if (shape.kind === "line") {
+            const at = points(linePoints(shape, previewShapes));
+            return (
+              <g key={id}>
+                <polyline
+                  points={at}
+                  fill="none"
+                  stroke="var(--canvas-selection-halo)"
+                  strokeWidth={7}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+                <polyline
+                  points={at}
+                  fill="none"
+                  stroke="var(--canvas-selection)"
+                  strokeWidth={3}
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              </g>
+            );
+          }
+          const at = points(cornersOf(shape));
+          return (
+            <g key={id}>
+              <polygon
+                points={at}
+                fill="var(--canvas-selection-fill)"
+                stroke="var(--canvas-selection-halo)"
+                strokeWidth={5}
+                vectorEffect="non-scaling-stroke"
+              />
+              <polygon
+                points={at}
+                fill="none"
+                stroke="var(--canvas-selection)"
+                strokeWidth={2}
+                vectorEffect="non-scaling-stroke"
+              />
+            </g>
           );
         })}
+        {/* Several selected: one dashed frame around them all as well. */}
+        {group && drag?.kind !== "move" && (
+          <rect
+            x={group.x - GROUP_MARGIN * scale}
+            y={group.y - GROUP_MARGIN * scale}
+            width={group.w + 2 * GROUP_MARGIN * scale}
+            height={group.h + 2 * GROUP_MARGIN * scale}
+            fill="none"
+            stroke="var(--canvas-selection)"
+            strokeWidth={1.5}
+            strokeDasharray="6 4"
+            vectorEffect="non-scaling-stroke"
+          />
+        )}
         {box && drag?.kind !== "move" && (
           <g>
             {HANDLES.map((handle) => {

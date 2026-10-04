@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.3.0](https://github.com/zyx1121/slide/compare/v0.2.0...v0.3.0) (2026-10-04)
+
+
+### Features
+
+* carry speaker notes through .pptx import and export ([#138](https://github.com/zyx1121/slide/issues/138)) ([50888d3](https://github.com/zyx1121/slide/commit/50888d3ee24ada360b0ed858674e5f6b9574b961))
+* present a deck full screen, with a presenter view for a second screen ([#137](https://github.com/zyx1121/slide/issues/137)) ([28166f4](https://github.com/zyx1121/slide/commit/28166f431aa421d976a6f6629e79c0c7e651a036))
+* write speaker notes in the editor and over MCP ([#135](https://github.com/zyx1121/slide/issues/135)) ([cc40489](https://github.com/zyx1121/slide/commit/cc4048902bebb2270a95998449dacbce4b4bf40c))
+
 ## [0.2.0](https://github.com/zyx1121/slide/compare/v0.1.3...v0.2.0) (2026-10-04)
 
 

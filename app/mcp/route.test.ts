@@ -153,6 +153,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "resolve_comment",
       "restore_deck",
       "revert",
+      "set_slide_title",
       "set_template",
       "unpublish_deck",
       "update_shapes",
@@ -277,6 +278,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     for (const [tool, args] of [
       ["rename_deck", { title: "Renamed" }],
       ["set_template", { template: "plain" }],
+      ["set_slide_title", { slide: 1, title: "Opening" }],
       ["copy_slide", { slide: 1 }],
     ] as const) {
       const result = json(await call(tool, { deck_id: created.id, ...args }));
@@ -288,6 +290,9 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       template: "plain",
     });
     expect(changed.document.slides).toHaveLength(2);
+    expect(
+      changed.document.slides.map((slide: { title: string }) => slide.title)
+    ).toEqual(["Opening", "Opening"]);
     expect(
       (await call("set_template", { deck_id: created.id, template: "plain" }))
         .isError

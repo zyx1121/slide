@@ -62,14 +62,14 @@ Text is edited where it is drawn. The renderer draws the draft as it is typed, a
 
 ### MCP tools
 
-| Tool                                           | Does                                                                 |
-| ---------------------------------------------- | -------------------------------------------------------------------- |
-| `list_decks`, `get_deck`                       | read the member's decks                                              |
-| `render_slide`                                 | return a slide as PNG so the agent can check its own work            |
-| `get_selection`                                | return what the member selected: targets, their JSON, and a PNG crop |
-| `add_shapes`, `update_shapes`, `delete_shapes` | edit shapes                                                          |
-| `add_slide`, `delete_slide`, `move_slide`      | edit slides                                                          |
-| `check_deck`                                   | return rule violations with slide and shape ids                      |
+| Tool                                                         | Does                                                                 |
+| ------------------------------------------------------------ | -------------------------------------------------------------------- |
+| `list_decks`, `get_deck`                                     | read the member's decks                                              |
+| `render_slide`                                               | return a slide as PNG so the agent can check its own work            |
+| `get_selection`                                              | return what the member selected: targets, their JSON, and a PNG crop |
+| `add_shapes`, `update_shapes`, `delete_shapes`               | edit shapes                                                          |
+| `add_slide`, `delete_slide`, `move_slide`, `set_slide_title` | edit slides                                                          |
+| `check_deck`                                                 | return rule violations with slide and shape ids                      |
 
 ### Rule check
 
@@ -104,15 +104,15 @@ Decided on 2026-10-04: Slide stops depending on WinLab and runs at `slide.zyx.tw
 
 Decided on 2026-10-04: the web app only helps present. Whatever a member can do there, an agent can do over MCP, review included. `lib/mcp/parity.ts` maps every server action and API route to its tools, and a test fails when one is missing.
 
-| In the web app                          | Over MCP                                                                                                                |
-| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
-| Create, import, rename, delete, restore | `create_deck`, `import_deck`, `rename_deck`, `delete_deck`, `restore_deck`, `list_decks`                                |
-| Edit shapes and slides, switch template | `add_shapes`, `update_shapes`, `delete_shapes`, `add_slide`, `copy_slide`, `delete_slide`, `move_slide`, `set_template` |
-| Pictures                                | `upload_image`, `get_image`                                                                                             |
-| Download, publish                       | `export_deck`, `publish_deck`, `unpublish_deck`                                                                         |
-| History                                 | `list_history`, `revert`                                                                                                |
-| Look and point                          | `get_deck`, `render_slide`, `check_deck`, `get_selection`                                                               |
-| Comment on a selection, reply, resolve  | `list_comments`, `add_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`                                    |
+| In the web app                          | Over MCP                                                                                                                                   |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| Create, import, rename, delete, restore | `create_deck`, `import_deck`, `rename_deck`, `delete_deck`, `restore_deck`, `list_decks`                                                   |
+| Edit shapes and slides, switch template | `add_shapes`, `update_shapes`, `delete_shapes`, `add_slide`, `copy_slide`, `delete_slide`, `move_slide`, `set_slide_title`, `set_template` |
+| Pictures                                | `upload_image`, `get_image`                                                                                                                |
+| Download, publish                       | `export_deck`, `publish_deck`, `unpublish_deck`                                                                                            |
+| History                                 | `list_history`, `revert`                                                                                                                   |
+| Look and point                          | `get_deck`, `render_slide`, `check_deck`, `get_selection`                                                                                  |
+| Comment on a selection, reply, resolve  | `list_comments`, `add_comment`, `reply_comment`, `resolve_comment`, `reopen_comment`                                                       |
 
 A member comments on what they select (slides, shapes, words); comments, replies, resolves and reopens are rows kept for good, so a thread is its whole conversation. The agent reads the open threads, answers each with edits, replies naming the entry that answers it, and resolves the thread.
 

@@ -13,7 +13,12 @@ import {
   type Slide,
   type TextBody,
 } from "../deck/schema";
-import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "../deck/limits";
+import {
+  DECK_TITLE_MAX,
+  NOTES_MAX,
+  SHAPE_TEXT_MAX,
+  SLIDE_TEXT_MAX,
+} from "../deck/limits";
 import { formatPath, type PathCommand, PATH_UNITS } from "../deck/path";
 import { DEFAULT_TEXT } from "../render/template";
 import { readColor, readColorMap, readTheme, type Theme } from "./color";
@@ -205,6 +210,29 @@ type Context = {
 };
 
 const clean = (text: string) => text.replace(/\u0000/g, "");
+
+/**
+ * The text of a slide's notes page: the paragraphs of its body placeholder
+ * as lines, line breaks and fields kept; empty when it has none.
+ */
+function notesText(notes: El | undefined): string {
+  const tree = path(notes, "p:cSld", "p:spTree");
+  const body = children(tree, "p:sp").find(
+    (sp) => path(sp, "p:nvSpPr", "p:nvPr", "p:ph")?.attrs.type === "body"
+  );
+  const lines = children(child(body, "p:txBody"), "a:p").map((paragraph) =>
+    paragraph.children
+      .map((part) =>
+        part.tag === "a:br"
+          ? "\n"
+          : part.tag === "a:r" || part.tag === "a:fld"
+            ? textOf(child(part, "a:t"))
+            : ""
+      )
+      .join("")
+  );
+  return clean(lines.join("\n")).replace(/\s+$/, "");
+}
 const clamp = (value: number, low: number, high: number) =>
   Math.max(low, Math.min(high, value));
 const coord = (value: number) =>
@@ -1431,6 +1459,12 @@ export async function importPptx(
       title: clean(title.text).slice(0, 500),
       shapes,
     };
+    const notesName = [...rels.values()].find((r) =>
+      r.type.endsWith("/notesSlide")
+    )?.target;
+    const notes = notesName ? notesText(read(notesName)) : "";
+    if (notes.length > NOTES_MAX) skip("text over the limit");
+    if (notes) slide.notes = notes.slice(0, NOTES_MAX);
     if (capText(slide)) skip("text over the limit");
     shapeCount += shapes.length;
     text += slideTextLength(slide);

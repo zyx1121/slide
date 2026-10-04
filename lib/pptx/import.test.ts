@@ -196,6 +196,35 @@ describe("importPptx", () => {
     });
   });
 
+  it("keeps speaker notes through an export and back", async () => {
+    const doc = sampleDocument();
+    const before: DeckDocument = {
+      ...doc,
+      slides: [
+        { ...doc.slides[0], notes: "First line\n\n第二段 <講> & 停" },
+        { id: "sl_quiet", title: "Quiet", shapes: [] },
+      ],
+    };
+    const { document: after } = await importPptx(
+      exportPptx(before, new Map()),
+      saveImage
+    );
+    expect(after.slides[0].notes).toBe("First line\n\n第二段 <講> & 停");
+    expect(after.slides[1]).not.toHaveProperty("notes");
+
+    // As PowerPoint writes them: a line break inside a paragraph, a field,
+    // and other placeholders on the page that are not the notes.
+    const parts = unzipSync(exportPptx(before, new Map()));
+    parts["ppt/notesSlides/notesSlide1.xml"] = strToU8(
+      strFromU8(parts["ppt/notesSlides/notesSlide1.xml"]).replace(
+        /<p:txBody>[\s\S]*<\/p:txBody>/,
+        '<p:txBody><a:bodyPr/><a:p><a:r><a:t>Say</a:t></a:r><a:br/><a:r><a:t>slide </a:t></a:r><a:fld id="{0}" type="slidenum"><a:t>3</a:t></a:fld></a:p><a:p><a:r><a:t>  </a:t></a:r></a:p></p:txBody>'
+      )
+    );
+    const { document: native } = await importPptx(zipSync(parts), saveImage);
+    expect(native.slides[0].notes).toBe("Say\nslide 3");
+  });
+
   it("counts pictures it cannot store as left out", async () => {
     const bytes = exportPptx(
       richDeck(),

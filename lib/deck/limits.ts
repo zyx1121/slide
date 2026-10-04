@@ -14,5 +14,8 @@ export const ASSET_MAX_BYTES = 10 * 1024 * 1024;
  */
 export const SHAPE_TEXT_MAX = 5_000;
 export const SLIDE_TEXT_MAX = 20_000;
+
+/** The longest speaker notes of a slide; never laid out, so they can be long. */
+export const NOTES_MAX = 50_000;
 /** The largest .pptx a member may import: 100 MB. */
 export const IMPORT_MAX_BYTES = 100 * 1024 * 1024;

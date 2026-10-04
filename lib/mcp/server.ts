@@ -11,7 +11,7 @@ import {
   saveAsset,
   slideAssetUris,
 } from "../assets/store";
-import { ASSET_MAX_BYTES, DECK_TITLE_MAX } from "../deck/limits";
+import { ASSET_MAX_BYTES, DECK_TITLE_MAX, NOTES_MAX } from "../deck/limits";
 import {
   actOnDeck,
   type DeckAction,
@@ -472,7 +472,7 @@ export function createServer(context: ToolContext): McpServer {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),
         title: z.string().max(500).optional(),
-        notes: z.string().max(50_000).optional(),
+        notes: z.string().max(NOTES_MAX).optional(),
         shapes: z.array(z.record(z.string(), z.unknown())).max(200).optional(),
       },
     },
@@ -518,7 +518,7 @@ export function createServer(context: ToolContext): McpServer {
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
-        notes: z.string().max(50_000),
+        notes: z.string().max(NOTES_MAX),
       },
     },
     async ({ deck_id, slide, notes }) =>

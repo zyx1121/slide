@@ -273,4 +273,25 @@ describe("token", () => {
     expect(declared.status).toBe(413);
     expect(keycloak).not.toHaveBeenCalled();
   });
+
+  it("answers a body that breaks off midway instead of throwing", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("grant_type=refresh_"));
+        controller.error(new Error("aborted"));
+      },
+    });
+    const response = await token(
+      env,
+      new Request("https://slide.example.org/oauth/token", {
+        method: "POST",
+        body,
+        duplex: "half",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      } as RequestInit),
+      keycloak as unknown as typeof fetch
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
 });

@@ -137,15 +137,20 @@ export async function readForm(
   let size = 0;
   if (request.body) {
     const reader = request.body.getReader();
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      size += value.byteLength;
-      if (size > limit) {
-        await reader.cancel().catch(() => {});
-        return { ok: false, status: 413 };
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > limit) {
+          await reader.cancel().catch(() => {});
+          return { ok: false, status: 413 };
+        }
+        chunks.push(value);
       }
-      chunks.push(value);
+    } catch {
+      // The client went away mid-body: nothing to answer, nothing to log.
+      return { ok: false, status: 400 };
     }
   }
   const form = await new Response(Buffer.concat(chunks), {

@@ -82,6 +82,12 @@ export async function approve(
   if (form?.get("decision") !== "allow") {
     return see(back(env, tx.r, { error: "access_denied" }));
   }
+  // A session whose member has no row (moved to another subject, say) gets
+  // no code: the code would name nobody.
+  const [known] = await db`select 1 from users where sub = ${member.sub}`;
+  if (!known) {
+    return page(403, "請重新登入後，再回到應用程式重新連線。");
+  }
   const code = await createCode(db, {
     sub: member.sub,
     clientId: tx.r.clientId,

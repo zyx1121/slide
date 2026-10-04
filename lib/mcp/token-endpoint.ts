@@ -4,7 +4,7 @@
 import type postgres from "postgres";
 
 import { redeemCode, refresh } from "./grants";
-import { type McpEnv, readForm } from "./oauth";
+import { type McpEnv, parseRedirect, readForm } from "./oauth";
 
 const answer = (body: object, status = 200) =>
   Response.json(body, {
@@ -36,7 +36,8 @@ export async function token(
     result = await redeemCode(db, env, {
       code,
       clientId,
-      redirectUri: field("redirect_uri"),
+      // Compared as the authorize step stored it: parsed and written back.
+      redirectUri: parseRedirect(field("redirect_uri"))?.href ?? "",
       verifier,
     });
   } else if (grant === "refresh_token") {

@@ -2,6 +2,7 @@
 
 import type { ReactNode } from "react";
 import { TopCorners } from "@/components/corners";
+import { markTo } from "@/components/task-shell";
 
 /**
  * The shell for a page whose working surface fills the viewport, as Plump's
@@ -27,7 +28,10 @@ export function StageShell({
       {/* Only the mark: the owner keeps the other corners and the edge fade
           off this page. The mark's ink follows what scrolls under it
           (--stage-logo-ink, set by the editor), as on the Made pages. */}
-      <TopCorners className="text-[color:var(--stage-logo-ink,var(--foreground))] motion-safe:transition-colors" />
+      <TopCorners
+        {...markTo("/")}
+        className="text-[color:var(--stage-logo-ink,var(--foreground))] motion-safe:transition-colors"
+      />
       <main
         id="task"
         tabIndex={-1}

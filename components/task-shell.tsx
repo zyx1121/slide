@@ -4,6 +4,17 @@ import type { ReactNode } from "react";
 import { BottomCorners, LegalLinks, TopCorners } from "@/components/corners";
 import { cn } from "@/lib/utils";
 
+/** The mark's link, name and tip for a home. */
+export function markTo(home: string, chinese = true) {
+  return home === "/"
+    ? {
+        home,
+        label: chinese ? "所有簡報" : "All decks",
+        markTip: chinese ? "所有簡報" : "All decks",
+      }
+    : { home };
+}
+
 export function TaskShell({
   title,
   description,
@@ -11,6 +22,7 @@ export function TaskShell({
   children,
   wide = false,
   lang = "en",
+  home = "/",
 }: {
   title: string;
   description?: string;
@@ -18,6 +30,11 @@ export function TaskShell({
   children: ReactNode;
   wide?: boolean;
   lang?: "en" | "zh-TW";
+  /**
+   * Where the mark goes: Slide's home by default; a page for visitors
+   * without an account (a public deck) sends them to www.zyx.tw instead.
+   */
+  home?: string;
 }) {
   const chinese = lang === "zh-TW";
   return (
@@ -30,6 +47,7 @@ export function TaskShell({
       </a>
       <TopCorners
         fade
+        {...markTo(home, chinese)}
         nav={
           actions && (
             <nav

@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { Operation } from "../deck/patch";
+import { applyOperations, type Operation } from "../deck/patch";
 import { sampleDocument } from "../deck/sample";
+import type { DeckDocument } from "../deck/schema";
+import { guard } from "./guard";
 import { createSaver, type Loaded, type SendResult } from "./saver";
 
 const ops = (title: string): Operation[] => [
@@ -122,6 +124,44 @@ describe("createSaver", () => {
     await tick();
     expect(onReload).toHaveBeenCalledOnce();
     expect(saver.state().message).toBe("這個修改沒有存到，已載入最新版本。");
+  });
+
+  it("re-points waiting edits at the slide they were made on, wherever it went", async () => {
+    // The member typed a title; their agent inserted a slide before it.
+    const doc = sampleDocument();
+    const typed = guard(doc, [
+      { op: "replace", path: "/slides/0/title", value: "Typed" },
+    ]);
+    const there = applyOperations(doc, [
+      {
+        op: "add",
+        path: "/slides/0",
+        value: { id: "sl_agent", title: "Agent", shapes: [] },
+      },
+    ]).document;
+    const send = vi
+      .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
+      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 1 })
+      .mockResolvedValueOnce({ ok: true, version: 2 });
+    const { saver, onReload, onRebase } = setup(send, async () => ({
+      document: there,
+      version: 1,
+    }));
+    saver.save(typed);
+    await tick();
+    await tick();
+    await tick();
+    expect(onReload).not.toHaveBeenCalled();
+    const rebased = onRebase.mock.calls[0][0] as DeckDocument;
+    expect(rebased.slides.map((slide) => slide.title)).toEqual([
+      "Agent",
+      "Typed",
+    ]);
+    expect(send).toHaveBeenLastCalledWith(1, [
+      { op: "test", path: "/slides/1/id", value: "sl_overview" },
+      { op: "replace", path: "/slides/1/title", value: "Typed" },
+    ]);
+    expect(saver.state()).toMatchObject({ pending: 0, message: null });
   });
 
   it("replays edits on a deck that moved on, without stopping the member", async () => {

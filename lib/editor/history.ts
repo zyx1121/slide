@@ -2,6 +2,7 @@
 // undoing applies the inverse as a new edit, so the server records it as a
 // revision like any other change, and redoing applies the edit again.
 import type { Operation } from "../deck/patch";
+import type { DeckDocument } from "../deck/schema";
 
 export type Step = {
   ops: Operation[];
@@ -52,6 +53,28 @@ export function historyAfterReload(
   if (sameDocument) return current;
   if (lostMove?.fromDocument) return lostMove.history;
   return EMPTY_HISTORY;
+}
+
+/**
+ * The history after a change made elsewhere came in under the member's
+ * edits. Steps address slides and shapes by position, unguarded, so they
+ * stand only while every slide and shape kept its position (the change
+ * edited them, or added after them); otherwise a step could land on whatever
+ * moved into its place, and the history starts over.
+ */
+export function historyAfterRebase(
+  current: History,
+  before: DeckDocument,
+  after: DeckDocument
+): History {
+  const kept = before.slides.every((slide, i) => {
+    const now = after.slides[i];
+    return (
+      now?.id === slide.id &&
+      slide.shapes.every((shape, j) => now.shapes[j]?.id === shape.id)
+    );
+  });
+  return kept ? current : EMPTY_HISTORY;
 }
 
 /** The patch that redoes the last undone edit, and the history after it. */

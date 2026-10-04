@@ -89,6 +89,7 @@ import { guard } from "@/lib/editor/guard";
 import {
   EMPTY_HISTORY,
   type History,
+  historyAfterRebase,
   historyAfterReload,
   record,
   redo,
@@ -351,12 +352,18 @@ export function Editor({
   }, []);
   // The server's document with the member's waiting edits already on it, or
   // a change made elsewhere while they were idle. What the member is in the
-  // middle of stays: the text being typed, nudges gathering, the selection
-  // and the undo steps (each carries id tests, so a step whose shapes are
-  // gone is refused rather than misapplied). Only text whose box is gone
-  // ends, and says so.
+  // middle of stays: the text being typed, nudges gathering and the
+  // selection. Undo steps address slides and shapes by position, so they
+  // stay only while nothing moved. Only text whose box is gone ends, and
+  // says so.
   const rebase = useCallback((fresh: DeckDocument) => {
     const before = docRef.current;
+    const history = historyAfterRebase(historyRef.current, before, fresh);
+    if (history !== historyRef.current) {
+      unsavedMove.current = null;
+      historyRef.current = history;
+      setHistoryState(history);
+    }
     docRef.current = fresh;
     setDoc(fresh);
     setSlideIndex((i) => followSlide(before, fresh, i));

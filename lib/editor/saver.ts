@@ -5,8 +5,9 @@
 // meaningful against the document it was made on. When a save meets a deck
 // that moved on (the member's agent edits it at the same time), the deck is
 // loaded again and the edits waiting, with any made meanwhile, are replayed
-// on it: each patch carries id tests, so it lands on the same shapes or is
-// refused, and one that has nothing left to do is skipped. The editor takes
+// on it: each patch carries id tests, and is re-pointed at the slides and
+// shapes they name wherever they are now (retarget.ts), so it lands on the
+// same ones or is refused; one with nothing left to do is skipped. The editor takes
 // the result without stopping what the member is doing (onRebase), and the
 // saves go on, even after the editor closed. When the edits cannot be
 // replayed, or the server refuses a save, or the save fails, the queue stops
@@ -17,6 +18,7 @@
 import { DeckError } from "../deck/errors";
 import { applyOperations, type Operation } from "../deck/patch";
 import type { DeckDocument } from "../deck/schema";
+import { retarget } from "./retarget";
 
 export type SendResult =
   | { ok: true; version: number }
@@ -63,8 +65,9 @@ const MESSAGES = {
 } as const;
 
 /**
- * Patches applied in turn to a document, without those that have nothing
- * left to do there; null when one of them no longer fits.
+ * Patches applied in turn to a document, each re-pointed at what it was made
+ * for, without those that have nothing left to do there; null when one of
+ * them no longer fits.
  */
 function replay(
   document: DeckDocument,
@@ -74,8 +77,9 @@ function replay(
   const kept: Operation[][] = [];
   for (const patch of patches) {
     try {
-      current = applyOperations(current, patch).document;
-      kept.push(patch);
+      const moved = retarget(current, patch);
+      current = applyOperations(current, moved).document;
+      kept.push(moved);
     } catch (error) {
       if (
         error instanceof DeckError &&

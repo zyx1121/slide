@@ -49,7 +49,7 @@ export default async function Authorize({
       <div className="flex flex-col gap-6 text-sm">
         <p>
           <strong className="font-medium">{who}</strong>
-          想要以你的身分讀取你的簡報（所有簡報、內容與投影片圖片）。
+          想要以你的身分讀取你的簡報（所有簡報、內容、投影片圖片與你在編輯器的選取），並對簡報提出修改建議。建議要你在編輯器接受才會生效。
         </p>
         <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
           <dt>應用程式</dt>

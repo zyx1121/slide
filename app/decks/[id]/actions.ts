@@ -25,7 +25,7 @@ import {
   type Thread,
 } from "@/lib/deck/comments";
 import { saveSelection, SelectionInput } from "@/lib/deck/selection";
-import { deckVersion, getDeck, mutateDeck } from "@/lib/deck/store";
+import { deckStatus, getDeck, mutateDeck } from "@/lib/deck/store";
 
 export type EditResult =
   | { ok: true; version: number }
@@ -109,11 +109,19 @@ export async function historyAction(
   return deck && { revisions, version: deck.version };
 }
 
-/** The deck's version now; null when it is not the member's. */
-export async function versionAction(deckId: unknown): Promise<number | null> {
+/**
+ * The deck's version now and whether it is published, for the editor to
+ * follow changes made elsewhere; null when it is not the member's or was
+ * deleted.
+ */
+export async function deckStatusAction(deckId: unknown): Promise<{
+  version: number;
+  published: boolean;
+  publicId: string | null;
+} | null> {
   const user = await requireUser();
   if (typeof deckId !== "string") return null;
-  return (await deckVersion(sql, user.sub, deckId)) ?? null;
+  return deckStatus(sql, user.sub, deckId);
 }
 
 const isId = (value: unknown): value is string =>

@@ -172,17 +172,32 @@ export async function getPublishedDeck(
   return row ? toDeck(row) : null;
 }
 
-/** A member's live deck's version, cheaply; null when there is none. */
-export async function deckVersion(
+/**
+ * A member's live deck's version and whether it is published, cheaply,
+ * without its document; null when there is no such deck.
+ */
+export async function deckStatus(
   db: Db,
   owner: string,
   id: string
-): Promise<number | null> {
-  const [row] = await db<{ version: number }[]>`
-    select version from decks
+): Promise<{
+  version: number;
+  published: boolean;
+  publicId: string | null;
+} | null> {
+  const [row] = await db<
+    Pick<DeckRow, "version" | "published" | "public_id">[]
+  >`
+    select version, published, public_id from decks
     where id = ${id} and owner_sub = ${owner} and deleted_at is null
   `;
-  return row?.version ?? null;
+  return row
+    ? {
+        version: row.version,
+        published: row.published,
+        publicId: row.public_id,
+      }
+    : null;
 }
 
 /**

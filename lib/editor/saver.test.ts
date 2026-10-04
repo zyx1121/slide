@@ -30,16 +30,18 @@ function setup(
   load: () => Promise<Loaded | null>
 ) {
   const onReload = vi.fn();
+  const onRebase = vi.fn();
   const onChange = vi.fn();
   const saver = createSaver({
     version: 0,
     send,
     load,
     onReload,
+    onRebase,
     onChange,
     retryDelay: 10,
   });
-  return { saver, onReload, onChange };
+  return { saver, onReload, onRebase, onChange };
 }
 
 describe("createSaver", () => {
@@ -69,9 +71,9 @@ describe("createSaver", () => {
     });
   });
 
-  it("blocks edits while a refused save reloads, and drops what was queued", async () => {
-    // Another tab moved the deck on, changing what these edits were made on;
-    // the reload is still on its way when the member presses Delete.
+  it("drops what no longer fits a deck that moved on, and says so", async () => {
+    // Another tab changed what these edits were made on; the deck is still
+    // loading when the member presses Delete.
     const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
@@ -80,22 +82,21 @@ describe("createSaver", () => {
         ok: true,
         version: version + 1,
       }));
-    const { saver, onReload } = setup(send, () => load.promise);
+    const { saver, onReload, onRebase } = setup(send, () => load.promise);
     saver.save(onTitle("Mine", "moved tx_note"));
     saver.save(onTitle("moved tx_note", "queued behind it"));
     await tick();
-    expect(saver.state()).toMatchObject({
-      accepting: false,
-      phase: "reloading",
-    });
-    expect(saver.save(ops("delete during reload"))).toBe(false);
+    expect(saver.save(ops("delete while loading"))).toBe(true);
 
     load.resolve({ document: sampleDocument(), version: 1 });
     await tick();
+    await tick();
+    expect(onRebase).not.toHaveBeenCalled();
     expect(onReload).toHaveBeenCalledOnce();
     expect(send).toHaveBeenCalledTimes(1);
     expect(saver.state()).toMatchObject({
       accepting: true,
+      pending: 0,
       message: "簡報在別處改過了，已載入最新版本。",
     });
 
@@ -104,8 +105,28 @@ describe("createSaver", () => {
     expect(send).toHaveBeenLastCalledWith(1, ops("after reload"));
   });
 
-  it("replays edits on a deck that moved on, when they still fit", async () => {
+  it("stops taking edits while a refused save reloads", async () => {
+    const load = deferred<Loaded | null>();
+    const send = vi
+      .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
+      .mockResolvedValueOnce({ ok: false, code: "invalid_document" });
+    const { saver, onReload } = setup(send, () => load.promise);
+    saver.save(ops("broken"));
+    await tick();
+    expect(saver.state()).toMatchObject({
+      accepting: false,
+      phase: "reloading",
+    });
+    expect(saver.save(ops("during reload"))).toBe(false);
+    load.resolve({ document: sampleDocument(), version: 0 });
+    await tick();
+    expect(onReload).toHaveBeenCalledOnce();
+    expect(saver.state().message).toBe("這個修改沒有存到，已載入最新版本。");
+  });
+
+  it("replays edits on a deck that moved on, without stopping the member", async () => {
     // The member's agent changed the deck between two of the member's saves.
+    const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
       .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 5 })
@@ -113,31 +134,100 @@ describe("createSaver", () => {
         ok: true,
         version: version + 1,
       }));
-    const loaded = { ...sampleDocument(), title: "Renamed by the agent" };
-    const { saver, onReload } = setup(send, async () => ({
-      document: loaded,
-      version: 5,
-    }));
+    const { saver, onReload, onRebase } = setup(send, () => load.promise);
     saver.save([{ op: "replace", path: "/slides/0/title", value: "Mine" }]);
     saver.save(ops("Queued"));
     await tick();
+    // While the deck loads, the member keeps editing.
+    expect(saver.state().accepting).toBe(true);
+    expect(saver.save(ops("Typed meanwhile"))).toBe(true);
+    load.resolve({
+      document: { ...sampleDocument(), title: "Renamed by the agent" },
+      version: 5,
+    });
     await tick();
     await tick();
-    // The editor shows the agent's change with the member's on top.
-    expect(onReload).toHaveBeenCalledOnce();
-    const shown = onReload.mock.calls[0][0];
+    await tick();
+    await tick();
+    // The editor takes the agent's change with the member's on top, and is
+    // not reloaded: what the member is doing stays.
+    expect(onReload).not.toHaveBeenCalled();
+    expect(onRebase).toHaveBeenCalledOnce();
+    const shown = onRebase.mock.calls[0][0];
     expect(shown.slides[0].title).toBe("Mine");
-    expect(shown.title).toBe("Queued");
-    // Both edits went to the server again, on the agent's version.
+    expect(shown.title).toBe("Typed meanwhile");
+    // All three went to the server again, on the agent's version.
     expect(send.mock.calls.slice(1).map(([version]) => version)).toEqual([
-      5, 6,
+      5, 6, 7,
     ]);
     expect(saver.state()).toMatchObject({
       accepting: true,
       pending: 0,
       message: null,
     });
-    expect(saver.version()).toBe(7);
+    expect(saver.version()).toBe(8);
+  });
+
+  it("skips an edit the other change already made, and replays the rest", async () => {
+    const send = vi
+      .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
+      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 2 })
+      .mockImplementation(async (version) => ({
+        ok: true,
+        version: version + 1,
+      }));
+    const { saver, onRebase } = setup(send, async () => ({
+      document: { ...sampleDocument(), title: "Same" },
+      version: 2,
+    }));
+    saver.save(ops("Same"));
+    saver.save(ops("After"));
+    for (let i = 0; i < 5; i++) await tick();
+    expect(onRebase.mock.calls[0][0].title).toBe("After");
+    expect(send.mock.calls.slice(1)).toEqual([[2, ops("After")]]);
+  });
+
+  it("replays and saves after the editor closed, without touching it", async () => {
+    const load = deferred<Loaded | null>();
+    const send = vi
+      .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
+      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 3 })
+      .mockImplementation(async (version) => ({
+        ok: true,
+        version: version + 1,
+      }));
+    const { saver, onRebase, onReload } = setup(send, () => load.promise);
+    saver.save(ops("Typed before leaving"));
+    await tick();
+    saver.dispose();
+    load.resolve({ document: sampleDocument(), version: 3 });
+    for (let i = 0; i < 5; i++) await tick();
+    expect(send).toHaveBeenLastCalledWith(3, ops("Typed before leaving"));
+    expect(onRebase).not.toHaveBeenCalled();
+    expect(onReload).not.toHaveBeenCalled();
+  });
+
+  it("takes a change from elsewhere only while the member stays idle", async () => {
+    const load = deferred<Loaded | null>();
+    const { saver, onRebase } = setup(
+      async (version) => ({ ok: true, version: version + 1 }),
+      () => load.promise
+    );
+    let idle = true;
+    const refreshed = saver.refresh(() => idle);
+    // Not paused while it loads.
+    expect(saver.state().accepting).toBe(true);
+    idle = false; // the member started typing meanwhile
+    load.resolve({ document: sampleDocument(), version: 4 });
+    expect(await refreshed).toBe(false);
+    expect(onRebase).not.toHaveBeenCalled();
+    expect(saver.version()).toBe(0);
+
+    idle = true;
+    const again = saver.refresh(() => idle);
+    expect(await again).toBe(true);
+    expect(onRebase).toHaveBeenCalledOnce();
+    expect(saver.version()).toBe(4);
   });
 
   it("stays blocked when the save and the reload both fail, until a load works", async () => {
@@ -168,14 +258,14 @@ describe("createSaver", () => {
     expect(send).toHaveBeenCalledTimes(1);
   });
 
-  it("keeps sending queued saves after the editor closes, but never reloads", async () => {
+  it("keeps sending queued saves after the editor closes, and never touches it", async () => {
     const first = deferred<SendResult>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
       .mockReturnValueOnce(first.promise)
       .mockResolvedValueOnce({ ok: false, code: "conflict" });
     const load = vi.fn(async () => null);
-    const { saver } = setup(send, load);
+    const { saver, onReload, onRebase } = setup(send, load);
     saver.save(ops("A"));
     saver.save(ops("B"));
     saver.dispose();
@@ -183,7 +273,11 @@ describe("createSaver", () => {
     await tick();
     await tick();
     expect(send).toHaveBeenCalledTimes(2);
-    expect(load).not.toHaveBeenCalled();
+    // The conflict loads the deck to replay on it; this load fails, so the
+    // edit is dropped, and the closed editor is left alone.
+    expect(load).toHaveBeenCalledOnce();
+    expect(onReload).not.toHaveBeenCalled();
+    expect(onRebase).not.toHaveBeenCalled();
   });
 
   it("says nothing was lost when only the answer to a save was", async () => {

@@ -386,7 +386,7 @@ export function TextEditor({
     const text = event.clipboardData.getData("text/plain");
     if (!text) return;
     const [start, end] = ordered(now().selection);
-    replace(start, end, text.replace(/\t/g, "\t"));
+    replace(start, end, text);
   }
 
   // The caret and selection in the shown text, in the frame's coordinates.

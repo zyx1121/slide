@@ -79,7 +79,7 @@ describe("createSaver", () => {
     const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
-      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 1 })
+      .mockResolvedValueOnce({ ok: false, code: "conflict" })
       .mockImplementation(async (version) => ({
         ok: true,
         version: version + 1,
@@ -141,7 +141,7 @@ describe("createSaver", () => {
     ]).document;
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
-      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 1 })
+      .mockResolvedValueOnce({ ok: false, code: "conflict" })
       .mockResolvedValueOnce({ ok: true, version: 2 });
     const { saver, onReload, onRebase } = setup(send, async () => ({
       document: there,
@@ -169,7 +169,7 @@ describe("createSaver", () => {
     const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
-      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 5 })
+      .mockResolvedValueOnce({ ok: false, code: "conflict" })
       .mockImplementation(async (version) => ({
         ok: true,
         version: version + 1,
@@ -211,7 +211,7 @@ describe("createSaver", () => {
   it("skips an edit the other change already made, and replays the rest", async () => {
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
-      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 2 })
+      .mockResolvedValueOnce({ ok: false, code: "conflict" })
       .mockImplementation(async (version) => ({
         ok: true,
         version: version + 1,
@@ -231,7 +231,7 @@ describe("createSaver", () => {
     const load = deferred<Loaded | null>();
     const send = vi
       .fn<(version: number, ops: Operation[]) => Promise<SendResult>>()
-      .mockResolvedValueOnce({ ok: false, code: "conflict", currentVersion: 3 })
+      .mockResolvedValueOnce({ ok: false, code: "conflict" })
       .mockImplementation(async (version) => ({
         ok: true,
         version: version + 1,

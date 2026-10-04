@@ -2,9 +2,67 @@ import { describe, expect, it } from "vitest";
 
 import type { Shape } from "../deck/schema";
 import { routeConnector } from "../render/connector";
-import { connectorGeometry, drawnPath } from "./connector";
+import type { Point } from "../render/connector";
+import { type ConnectorGeometry, connectorGeometry } from "./connector";
 
 type P = { x: number; y: number };
+
+/**
+ * The path a bent connector draws: the preset's points in its
+ * box, flipped and turned onto the slide.
+ */
+function drawnPath(geometry: ConnectorGeometry): Point[] {
+  const { w, h, adjust } = geometry;
+  const bends = Number(geometry.prst.slice(-1)) - 1;
+  const local: Point[] =
+    geometry.prst === "straightConnector1"
+      ? [
+          { x: 0, y: 0 },
+          { x: w, y: h },
+        ]
+      : bends === 1
+        ? [
+            { x: 0, y: 0 },
+            { x: w, y: 0 },
+            { x: w, y: h },
+          ]
+        : bends === 2
+          ? [
+              { x: 0, y: 0 },
+              { x: (w * adjust[0]) / 1e5, y: 0 },
+              { x: (w * adjust[0]) / 1e5, y: h },
+              { x: w, y: h },
+            ]
+          : bends === 3
+            ? [
+                { x: 0, y: 0 },
+                { x: (w * adjust[0]) / 1e5, y: 0 },
+                { x: (w * adjust[0]) / 1e5, y: (h * adjust[1]) / 1e5 },
+                { x: w, y: (h * adjust[1]) / 1e5 },
+                { x: w, y: h },
+              ]
+            : [
+                { x: 0, y: 0 },
+                { x: (w * adjust[0]) / 1e5, y: 0 },
+                { x: (w * adjust[0]) / 1e5, y: (h * adjust[1]) / 1e5 },
+                { x: (w * adjust[2]) / 1e5, y: (h * adjust[1]) / 1e5 },
+                { x: (w * adjust[2]) / 1e5, y: h },
+                { x: w, y: h },
+              ];
+  const cx = geometry.x + w / 2;
+  const cy = geometry.y + h / 2;
+  const r = (geometry.rotation * Math.PI) / 180;
+  return local.map((p) => {
+    let x = p.x - w / 2;
+    let y = p.y - h / 2;
+    if (geometry.flipH) x = -x;
+    if (geometry.flipV) y = -y;
+    return {
+      x: cx + x * Math.cos(r) - y * Math.sin(r),
+      y: cy + x * Math.sin(r) + y * Math.cos(r),
+    };
+  });
+}
 
 /** The route without repeated points or straight runs split in two. */
 function corners(points: P[]): P[] {

@@ -5,6 +5,8 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type postgres from "postgres";
 import * as z from "zod";
 
+import packageJson from "../../package.json";
+
 import {
   AssetError,
   readAsset,
@@ -112,7 +114,7 @@ const DeckId = z
 
 export function createServer(context: ToolContext): McpServer {
   const server = new McpServer(
-    { name: "slide", version: "0.1.0" },
+    { name: "slide", version: packageJson.version },
     {
       instructions:
         "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
@@ -218,14 +220,7 @@ export function createServer(context: ToolContext): McpServer {
       const page = deck?.document.slides[slide - 1];
       if (!deck || !page)
         return failure(`No slide ${slide} in deck ${deck_id}.`);
-      const assets = await slideAssetUris(db, sub, page);
-      const template = templateOf(deck.document).id;
-      const svg = renderSlideSvg(page, {
-        slideNumber: slide,
-        template,
-        background: backgroundDataUri(template),
-        assetHref: (sha256) => assets.get(sha256) ?? null,
-      });
+      const svg = await slideSvg(deck, slide - 1);
       try {
         const png = await renderPngAsync(svg, width ?? 1280);
         return {
@@ -261,6 +256,19 @@ export function createServer(context: ToolContext): McpServer {
     }
   );
 
+  /** A slide as SVG for a PNG: its pictures inline, the template drawn in. */
+  const slideSvg = async (deck: Deck, index: number) => {
+    const page = deck.document.slides[index];
+    const assets = await slideAssetUris(db, sub, page);
+    const template = templateOf(deck.document).id;
+    return renderSlideSvg(page, {
+      slideNumber: index + 1,
+      template,
+      background: backgroundDataUri(template),
+      assetHref: (sha256) => assets.get(sha256) ?? null,
+    });
+  };
+
   /**
    * A PNG of part of a slide: the shapes named, with some room around them,
    * or the whole slide; null while rendering is busy.
@@ -287,14 +295,7 @@ export function createServer(context: ToolContext): McpServer {
             Math.max(0, bounds.y - margin),
         }
       : { x: 0, y: 0, w: 1920, h: 1080 };
-    const assets = await slideAssetUris(db, sub, page);
-    const template = templateOf(deck.document).id;
-    const svg = renderSlideSvg(page, {
-      slideNumber: index + 1,
-      template,
-      background: backgroundDataUri(template),
-      assetHref: (sha256) => assets.get(sha256) ?? null,
-    }).replace(
+    const svg = (await slideSvg(deck, index)).replace(
       /^<svg ([^>]*?)viewBox="0 0 1920 1080" width="1920" height="1080"/,
       `<svg $1viewBox="${crop.x} ${crop.y} ${Math.max(1, crop.w)} ${Math.max(1, crop.h)}" width="${Math.max(1, crop.w)}" height="${Math.max(1, crop.h)}"`
     );
@@ -428,7 +429,8 @@ export function createServer(context: ToolContext): McpServer {
     "update_shapes",
     {
       title: "Update shapes",
-      description: `Changes shapes by id: each field in set replaces the shape's (null removes an optional field; fill or stroke null means none). ${SHAPES_HELP}`,
+      description:
+        "Changes shapes by id: each field in set replaces the shape's (null removes an optional field; fill or stroke null means none). Fields as add_shapes describes them.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
@@ -467,7 +469,8 @@ export function createServer(context: ToolContext): McpServer {
     "add_slide",
     {
       title: "Add a slide",
-      description: `Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes. ${SHAPES_HELP}`,
+      description:
+        "Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes, as add_shapes describes them.",
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),

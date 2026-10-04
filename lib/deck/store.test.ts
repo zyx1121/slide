@@ -156,7 +156,6 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     await edit(0, "First");
     const stale = await refusal(edit(0, "Stale"));
     expect(stale.code).toBe("conflict");
-    expect(stale.details.currentVersion).toBe(1);
     expect((await getDeck(db, alice.sub, deck.id))?.title).toBe("First");
   });
 

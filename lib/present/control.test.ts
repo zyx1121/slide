@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import { applyOperations } from "../deck/patch";
 import { sampleDocument } from "../deck/sample";
-import { act, actionOf, follow, typed, type Show } from "./control";
+import { followSlide } from "../editor/slides";
+import { act, actionOf, typed, type Show } from "./control";
 
 const at = (index: number, blank: Show["blank"] = null): Show => ({
   index,
@@ -69,10 +70,10 @@ describe("presenting", () => {
         value: { id: "sl_agent", title: "", shapes: [] },
       },
     ]).document;
-    expect(follow(before, inserted, 1)).toBe(2);
+    expect(followSlide(before, inserted, 1)).toBe(2);
     const removed = applyOperations(before, [
       { op: "remove", path: "/slides/1" },
     ]).document;
-    expect(follow(before, removed, 1)).toBe(0);
+    expect(followSlide(before, removed, 1)).toBe(0);
   });
 });

@@ -9,7 +9,7 @@ export class DeckError extends Error {
   constructor(
     readonly code: DeckErrorCode,
     message: string,
-    readonly details: { currentVersion?: number; issues?: string[] } = {}
+    readonly details: { issues?: string[] } = {}
   ) {
     super(message);
     this.name = "DeckError";

@@ -11,12 +11,11 @@ import { type Point, tidy } from "./geometry";
 /** The clipboard type the editor writes; text/plain carries the same JSON. */
 export const CLIP_TYPE = "application/x-slide-shapes+json";
 
-/** What a clip is called; copies made before the rename still paste. */
+/** What a clip is called. */
 const FORMAT = "slide/shapes";
-const LEGACY_FORMAT = "slide.winlab.tw/shapes";
 
 const Clip = z.strictObject({
-  format: z.literal([FORMAT, LEGACY_FORMAT]).transform(() => FORMAT),
+  format: z.literal(FORMAT),
   version: z.literal(1),
   shapes: z.array(Shape).min(1).max(1000),
 });

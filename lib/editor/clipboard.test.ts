@@ -40,10 +40,9 @@ describe("parseClip", () => {
     expect(parseClip(JSON.stringify(broken))).toBeNull();
   });
 
-  it("still reads a clip copied under the old name", () => {
+  it("reads only its own format", () => {
     const clip = copyShapes(slide, new Set(["sh_asr"]))!;
-    const old = { ...clip, format: "slide.winlab.tw/shapes" };
-    expect(parseClip(JSON.stringify(old))).toEqual(clip);
+    expect(parseClip(JSON.stringify(clip))).toEqual(clip);
     expect(
       parseClip(JSON.stringify({ ...clip, format: "other/shapes" }))
     ).toBeNull();

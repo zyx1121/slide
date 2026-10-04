@@ -46,12 +46,11 @@ describe("editDeckAction", () => {
 
   it("reports a refused patch with its reason", async () => {
     vi.mocked(mutateDeck).mockRejectedValue(
-      new DeckError("conflict", "moved on", { currentVersion: 5 })
+      new DeckError("conflict", "moved on")
     );
     expect(await editDeckAction("dk_1", 3, ops)).toEqual({
       ok: false,
       code: "conflict",
-      currentVersion: 5,
     });
   });
 

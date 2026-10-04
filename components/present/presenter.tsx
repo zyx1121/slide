@@ -32,11 +32,11 @@ import {
   act,
   type Action,
   channelName,
-  follow,
   type Message,
   type Show,
   typed,
 } from "@/lib/present/control";
+import { followSlide } from "@/lib/editor/slides";
 import { templateOf } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
@@ -177,8 +177,8 @@ export function Presenter({
     const opened = new BroadcastChannel(channelName(deckId));
     channel.current = opened;
     const tell = () => {
-      const { document, version, show } = latest.current;
-      opened.postMessage({ type: "deck", document, version } satisfies Message);
+      const { document, show } = latest.current;
+      opened.postMessage({ type: "deck", document } satisfies Message);
       opened.postMessage({ type: "show", show } satisfies Message);
     };
     opened.onmessage = (event: MessageEvent<Message>) => {
@@ -195,12 +195,8 @@ export function Presenter({
     channel.current?.postMessage({ type: "show", show } satisfies Message);
   }, [show]);
   useEffect(() => {
-    channel.current?.postMessage({
-      type: "deck",
-      document,
-      version,
-    } satisfies Message);
-  }, [document, version]);
+    channel.current?.postMessage({ type: "deck", document } satisfies Message);
+  }, [document]);
 
   // Keys: the clicker's, and digits then Enter to go to a slide.
   useEffect(() => {
@@ -243,7 +239,7 @@ export function Presenter({
           setVersion(loaded.version);
           setShow((current) => ({
             ...current,
-            index: follow(before, loaded.document, current.index),
+            index: followSlide(before, loaded.document, current.index),
           }));
         })
         .catch(() => {});

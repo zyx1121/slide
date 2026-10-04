@@ -21,8 +21,7 @@ import type { DeckDocument } from "../deck/schema";
 import { retarget } from "./retarget";
 
 export type SendResult =
-  | { ok: true; version: number }
-  | { ok: false; code: string; currentVersion?: number };
+  { ok: true; version: number } | { ok: false; code: string };
 
 export type Loaded = { document: DeckDocument; version: number };
 

@@ -680,7 +680,7 @@ export function Canvas({
       aria-label={`第 ${number} 頁`}
       aria-describedby="canvas-help"
       className={cn(
-        "relative aspect-video w-full touch-none overflow-hidden border border-border bg-white bg-size-[100%_100%] outline-offset-4 select-none focus-visible:outline-2",
+        "relative aspect-video w-full touch-none overflow-hidden rounded-[1rem] border border-border bg-white bg-size-[100%_100%] outline-offset-4 select-none focus-visible:outline-2",
         className
       )}
       style={{

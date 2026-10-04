@@ -7,6 +7,7 @@ import type { DeckDocument } from "../deck/schema";
 import { guard } from "./guard";
 import { deleteOps, moveOps, reorderOps } from "./ops";
 import { retarget } from "./retarget";
+import { insertSlideOps } from "./slides";
 
 const doc = sampleDocument();
 const slide = doc.slides[0];
@@ -107,6 +108,31 @@ describe("retarget", () => {
     const moved = retarget(there, patch);
     expect(moved[1].path).toBe("/slides/0/shapes/6");
     expect(ids(applyOperations(there, moved).document).at(-1)).toBe("sh_new");
+  });
+
+  it("puts a slide added after another after it, wherever that went", () => {
+    // Two slides; the member adds one after the first, and meanwhile the
+    // agent moved the second to the front.
+    const two = applyOperations(doc, [
+      {
+        op: "add",
+        path: "/slides/-",
+        value: { id: "sl_next", title: "", shapes: [] },
+      },
+    ]).document;
+    const patch = guard(
+      two,
+      insertSlideOps(1, { id: "sl_added", title: "", shapes: [] })
+    );
+    const there = applyOperations(two, [
+      { op: "move", from: "/slides/1", path: "/slides/0" },
+    ]).document;
+    const result = applyOperations(there, retarget(there, patch)).document;
+    expect(result.slides.map((slide) => slide.id)).toEqual([
+      "sl_next",
+      "sl_overview",
+      "sl_added",
+    ]);
   });
 
   it("leaves a patch whose shape is gone to be refused", () => {

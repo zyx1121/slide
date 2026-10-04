@@ -7,7 +7,8 @@
 // and the operations after it follow, until one moves positions again (the
 // guard pins anew after that). An id that is gone is left where it was: its
 // test fails and the patch is refused, as before. An insert past the end of
-// a list that got shorter goes to its end.
+// a list that got shorter goes to its end, and a slide inserted after
+// another follows that one.
 import { applyOperation, type Operation } from "fast-json-patch";
 
 import type { DeckDocument } from "../deck/schema";
@@ -69,7 +70,14 @@ export function retarget(
 
     let moved: Operation = { ...op, path: now(op.path) };
     if (moved.op === "add") {
-      moved = { ...moved, path: withinList(state, moved.path) };
+      // A slide inserted at a position follows the slide before it.
+      const slot = SLOT.exec(op.path);
+      const before = slot && !slot[2] ? slides.get(Number(slot[1]) - 1) : null;
+      const path =
+        before !== null && before !== undefined
+          ? `/slides/${before + 1}`
+          : moved.path;
+      moved = { ...moved, path: withinList(state, path) };
     }
     if (moved.op === "move" || moved.op === "copy") {
       moved = { ...moved, from: now(moved.from) };

@@ -449,7 +449,7 @@ export function Editor({
   const commit = useCallback(
     (ops: Operation[], slideOf: number, recordStep = true): Commit => {
       if (ops.length === 0) return "unchanged";
-      if (invalid !== null) return "paused";
+      if (invalid !== null || deleted) return "paused";
       if (!saver.state().accepting) return "paused";
       let result: ReturnType<typeof applyOperations>;
       try {
@@ -480,7 +480,7 @@ export function Editor({
       saver.save(result.operations);
       return "applied";
     },
-    [saver, invalid]
+    [saver, invalid, deleted]
   );
 
   /**
@@ -647,14 +647,17 @@ export function Editor({
    * Uploads image files and places each on a slide, centered on `at` (the
    * middle of the slide by default) and stepped down for the next one.
    * Files that are not images are left out without a word; a refused
-   * image says why.
+   * image says why. The slide is followed by its id: a change from
+   * elsewhere during the upload may move it.
    */
   const addImages = async (target: number, files: File[], at?: Point) => {
     const images = files.filter((file) => file.type.startsWith("image/"));
     if (images.length === 0) return;
     endEdit();
+    const slideId = docRef.current.slides[target]?.id;
     setUploads((n) => n + images.length);
     const placed: string[] = [];
+    let where = target;
     let k = 0;
     for (const file of images) {
       const result = await uploadImage(file);
@@ -663,17 +666,22 @@ export function Editor({
         setRefusal(result.message);
         continue;
       }
+      where = docRef.current.slides.findIndex((slide) => slide.id === slideId);
+      if (where < 0) {
+        setRefusal("要放圖片的投影片被刪掉了，圖片沒有放上去。");
+        continue;
+      }
       const center = at ?? { x: 960, y: 540 };
       const shape = newImage(result.asset, {
         x: center.x + 40 * k,
         y: center.y + 40 * k,
       });
       k++;
-      if (commit(insertOps(target, shape), target) === "applied") {
+      if (commit(insertOps(where, shape), where) === "applied") {
         placed.push(shape.id);
       }
     }
-    if (placed.length > 0) select(target, placed);
+    if (placed.length > 0 && where >= 0) select(where, placed);
   };
 
   // A slide to scroll to once the list has redrawn with it.
@@ -1124,7 +1132,7 @@ export function Editor({
     };
     if (event.key in arrows && picked.length > 0) {
       event.preventDefault();
-      if (!saver.state().accepting) return;
+      if (!saver.state().accepting || deleted) return;
       const [dx, dy] = arrows[event.key];
       nudgeRef.current = {
         dx: nudgeRef.current.dx + dx,
@@ -1132,7 +1140,12 @@ export function Editor({
       };
       setNudge(nudgeRef.current);
       clearTimeout(nudgeTimer.current);
-      nudgeTimer.current = setTimeout(flushNudge, NUDGE_SAVE_DELAY);
+      // Through the ref: by the time it fires, a change from elsewhere may
+      // have moved the slide, and only the latest render knows where.
+      nudgeTimer.current = setTimeout(
+        () => flushRef.current(),
+        NUDGE_SAVE_DELAY
+      );
     } else if (
       (event.key === "Delete" || event.key === "Backspace") &&
       picked.length > 0

@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.2.0](https://github.com/zyx1121/slide/compare/v0.1.3...v0.2.0) (2026-10-04)
+
+
+### Features
+
+* apply agents' changes at once, with no suggestions to accept ([#126](https://github.com/zyx1121/slide/issues/126)) ([9e40051](https://github.com/zyx1121/slide/commit/9e4005171a1492f0bb3c49ea6b9d2cb5054054cc))
+* comment on a selection so agents can edit in batches ([#121](https://github.com/zyx1121/slide/issues/121)) ([c4edcfa](https://github.com/zyx1121/slide/commit/c4edcfaa1c9a1974c2bfe39850cc46c07c32a007))
+* float the selected shapes' menu next to them ([#129](https://github.com/zyx1121/slide/issues/129)) ([f96766e](https://github.com/zyx1121/slide/commit/f96766ea3554e40e51b4247198de4ca292bc473d))
+* give every editor action an MCP tool, review included ([#120](https://github.com/zyx1121/slide/issues/120)) ([cdd4d8a](https://github.com/zyx1121/slide/commit/cdd4d8acdaef6897282e49432d16d3536cd16d2f))
+* issue MCP tokens from Slide instead of relaying Keycloak ([#113](https://github.com/zyx1121/slide/issues/113)) ([2ba8ecd](https://github.com/zyx1121/slide/commit/2ba8ecd844cb9ecdd6f97bf88427b5294b8f1d86))
+* let a deck pick its template, plain by default ([#109](https://github.com/zyx1121/slide/issues/109)) ([69cc886](https://github.com/zyx1121/slide/commit/69cc8867703ddc954596f8819c83df89635dd1a6))
+* let agents set a slide's title over MCP ([#130](https://github.com/zyx1121/slide/issues/130)) ([3a545f7](https://github.com/zyx1121/slide/commit/3a545f79da5b9f5d3b57e915bf3947e9916bb19a))
+* record deck actions in the history and make deleting undoable ([#119](https://github.com/zyx1121/slide/issues/119)) ([7547ba8](https://github.com/zyx1121/slide/commit/7547ba8a349f36efc12ffd4648c5dc351d78ba53))
+* sign in with any OpenID Connect provider, behind an email allowlist ([#112](https://github.com/zyx1121/slide/issues/112)) ([29606a7](https://github.com/zyx1121/slide/commit/29606a74cf377762c4e9338574edbf566af7442b))
+
+
+### Bug fixes
+
+* close the editor edges left after agents' direct edits ([#131](https://github.com/zyx1121/slide/issues/131)) ([7c5535d](https://github.com/zyx1121/slide/commit/7c5535d6d11262c274f02b09cb6d335429a12dde))
+* keep 1rem beside every slide, scrollbar or not ([#122](https://github.com/zyx1121/slide/issues/122)) ([afad6eb](https://github.com/zyx1121/slide/commit/afad6eb6840a410ca4714b7a8e167aa07865ed3f))
+* refuse a code for a missing member and match redirect URIs parsed ([#115](https://github.com/zyx1121/slide/issues/115)) ([499ba36](https://github.com/zyx1121/slide/commit/499ba3621f7d57a2db759856c20a499158d0fb66))
+* round each slide's corners by 1rem in the editor ([#123](https://github.com/zyx1121/slide/issues/123)) ([04515b5](https://github.com/zyx1121/slide/commit/04515b5826023b838c0900f5ef22acc971395938))
+* send the mark to Slide's home, all decks ([#124](https://github.com/zyx1121/slide/issues/124)) ([74bbd56](https://github.com/zyx1121/slide/commit/74bbd56d20d723d1c40ceae9d355aac0ccf472bf))
+
 ## [0.1.3](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.2...v0.1.3) (2026-10-04)
 
 

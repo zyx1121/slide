@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.1...v0.1.2) (2026-10-04)
+
+
+### Bug fixes
+
+* name suggested edits and the selection on the consent page ([#97](https://github.com/zyx1121/slide.winlab.tw/issues/97)) ([c468779](https://github.com/zyx1121/slide.winlab.tw/commit/c4687796b00fb5121df974bccbd1c70a4d182175))
+
 ## [0.1.1](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.0...v0.1.1) (2026-10-04)
 
 

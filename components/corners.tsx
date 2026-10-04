@@ -110,8 +110,8 @@ function EdgeFade({ edge }: { edge: "top" | "bottom" }) {
 
 /**
  * The top corners: the zyx mark, which mirrors itself on hover, and the page
- * nav. The mark links to `home`: "/" on www.zyx.tw, www.zyx.tw everywhere
- * else. Its tip says where: "Home" or the host.
+ * nav. The mark links to `home`: Slide's own home ("/", all decks) on its
+ * pages, www.zyx.tw where a visitor has no account. Its tip says where.
  */
 export function TopCorners({
   home = "https://www.zyx.tw",

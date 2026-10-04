@@ -41,6 +41,7 @@ export default async function PublicDeck({
 
   return (
     <TaskShell
+      home="https://www.zyx.tw"
       title={deck.title}
       lang="zh-TW"
       wide

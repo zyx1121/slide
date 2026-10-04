@@ -39,6 +39,7 @@ import {
 import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
+import { NotesTool } from "@/components/editor/notes-tool";
 import { HistoryTool } from "@/components/editor/history-tool";
 import { SlideOverlay } from "@/components/editor/overlay";
 import {
@@ -153,6 +154,7 @@ import {
   duplicateSlide,
   insertSlideOps,
   moveSlideOps,
+  notesOps,
 } from "@/lib/editor/slides";
 import { uploadImage } from "@/lib/editor/upload";
 import { cn } from "@/lib/utils";
@@ -729,6 +731,25 @@ export function Editor({
     setVisibleIndex(plan.show);
     pendingScroll.current = plan.show;
   };
+
+  /**
+   * Saves a slide's speaker notes, found by its id: the slide may have moved
+   * while they were typed. False when the edit could not be made.
+   */
+  const saveNotes = useCallback(
+    (slideId: string, notes: string) => {
+      const at = docRef.current.slides.findIndex(
+        (slide) => slide.id === slideId
+      );
+      if (at < 0) return true;
+      const outcome = commit(
+        notesOps(docRef.current.slides[at], at, notes),
+        at
+      );
+      return outcome === "applied" || outcome === "unchanged";
+    },
+    [commit]
+  );
 
   /** Adds a connector drawn on a slide and selects it. */
   const drawLine = (at: number, start: End, end: End) => {
@@ -1562,6 +1583,13 @@ export function Editor({
               last={visible === doc.slides.length - 1}
               only={doc.slides.length === 1}
               onAction={changeSlides}
+            />
+            <NotesTool
+              slideId={doc.slides[visible].id}
+              slideNumber={visible + 1}
+              notes={doc.slides[visible].notes ?? ""}
+              disabled={paused}
+              onSave={saveNotes}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
             {selectionInput && (

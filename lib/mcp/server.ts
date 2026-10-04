@@ -57,6 +57,7 @@ import {
   type Planned,
   retemplate,
   retitle,
+  setSlideNotes,
   setSlideTitle,
   updateShapes,
   WriteError,
@@ -114,7 +115,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one entry, so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one entry, so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
     }
   );
   const { db, sub } = context;
@@ -466,16 +467,19 @@ export function createServer(context: ToolContext): McpServer {
     "add_slide",
     {
       title: "Add a slide",
-      description: `Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title and optional shapes. ${SHAPES_HELP}`,
+      description: `Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes. ${SHAPES_HELP}`,
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),
         title: z.string().max(500).optional(),
+        notes: z.string().max(50_000).optional(),
         shapes: z.array(z.record(z.string(), z.unknown())).max(200).optional(),
       },
     },
-    async ({ deck_id, after, title, shapes }) =>
-      edit(deck_id, (document) => addSlide(document, { after, title, shapes }))
+    async ({ deck_id, after, title, notes, shapes }) =>
+      edit(deck_id, (document) =>
+        addSlide(document, { after, title, notes, shapes })
+      )
   );
 
   server.registerTool(
@@ -503,6 +507,22 @@ export function createServer(context: ToolContext): McpServer {
     },
     async ({ deck_id, slide, title }) =>
       edit(deck_id, (document) => setSlideTitle(document, slide, title))
+  );
+
+  server.registerTool(
+    "set_slide_notes",
+    {
+      title: "Set a slide's speaker notes",
+      description:
+        "Sets a slide's speaker notes: plain text, line breaks kept, shown below the slides in the presenter view and never on the projected slide. Empty notes remove them.",
+      inputSchema: {
+        deck_id: DeckId,
+        slide: SlideRef,
+        notes: z.string().max(50_000),
+      },
+    },
+    async ({ deck_id, slide, notes }) =>
+      edit(deck_id, (document) => setSlideNotes(document, slide, notes))
   );
 
   server.registerTool(

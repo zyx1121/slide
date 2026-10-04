@@ -7,7 +7,7 @@ import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { guard } from "../editor/guard";
 import { deleteOps } from "../editor/ops";
-import { duplicateSlide, insertSlideOps } from "../editor/slides";
+import { duplicateSlide, insertSlideOps, notesOps } from "../editor/slides";
 import type { TemplateId } from "../render/template";
 
 export class WriteError extends Error {}
@@ -170,7 +170,12 @@ export function deleteShapes(
 /** Adds a slide after slide `after` (0 puts it first; by default, last). */
 export function addSlide(
   document: DeckDocument,
-  input: { after?: number; title?: string; shapes?: Record<string, unknown>[] }
+  input: {
+    after?: number;
+    title?: string;
+    notes?: string;
+    shapes?: Record<string, unknown>[];
+  }
 ): Planned {
   const position = input.after ?? document.slides.length;
   if (position < 0 || position > document.slides.length) {
@@ -181,7 +186,13 @@ export function addSlide(
   while (taken.has(id)) id = newId("sl");
   taken.add(id);
   const shapes = withIds(input.shapes ?? [], taken);
-  const slide = { id, title: input.title ?? "", shapes } as unknown as Slide;
+  const notes = input.notes?.trim() ? { notes: input.notes } : {};
+  const slide = {
+    id,
+    title: input.title ?? "",
+    shapes,
+    ...notes,
+  } as unknown as Slide;
   return {
     ops: guard(document, [
       { op: "add", path: `/slides/${position}`, value: slide },
@@ -225,6 +236,21 @@ export function setSlideTitle(
     created: [],
     changed: [found.id],
   };
+}
+
+/**
+ * Sets a slide's speaker notes, which the presenter view shows below the
+ * slides; empty notes remove them.
+ */
+export function setSlideNotes(
+  document: DeckDocument,
+  slide: number | string,
+  notes: string
+): Planned {
+  const { slide: found, index } = findSlide(document, slide);
+  const ops = notesOps(found, index, notes);
+  if (ops.length === 0) throw new WriteError("the slide has those notes");
+  return { ops: guard(document, ops), created: [], changed: [found.id] };
 }
 
 /** Moves a slide so it becomes slide number `to`. */

@@ -1,12 +1,11 @@
-// Server only: an agent's edit, planned on the deck as it is and applied at
-// once. When the member saved in between, it is planned again on their
-// version (it addresses shapes by id, so it means the same), a few times at
-// most.
+// Server only: an agent's edit, planned on the deck as it is while its row is
+// held (mutateDeck), so a save the member made a moment before is already in
+// the document it is planned on, and the two never conflict.
 import type postgres from "postgres";
 
 import { DeckError } from "../deck/errors";
 import type { DeckDocument } from "../deck/schema";
-import { getDeck, mutateDeck } from "../deck/store";
+import { mutateDeck } from "../deck/store";
 import { type Planned, WriteError } from "./write";
 
 export type EditOutcome =
@@ -19,55 +18,45 @@ export type EditOutcome =
     }
   | { ok: false; message: string };
 
-const ATTEMPTS = 4;
-
 export async function editDeck(
   db: postgres.Sql,
   sub: string,
   deckId: string,
-  plan: (document: DeckDocument) => Planned,
-  mutate: typeof mutateDeck = mutateDeck
+  plan: (document: DeckDocument) => Planned
 ): Promise<EditOutcome> {
-  for (let attempt = 1; ; attempt++) {
-    const deck = await getDeck(db, sub, deckId);
-    if (!deck) {
+  const made: { planned?: Planned } = {};
+  try {
+    const result = await mutateDeck(db, {
+      deckId,
+      actor: { kind: "agent", sub },
+      plan: (document) => {
+        made.planned = plan(document);
+        return made.planned.ops;
+      },
+    });
+    return {
+      ok: true,
+      entry: result.revisionId,
+      version: result.version,
+      created: made.planned!.created,
+      changed: made.planned!.changed,
+    };
+  } catch (error) {
+    if (error instanceof WriteError)
+      return { ok: false, message: error.message };
+    if (!(error instanceof DeckError)) throw error;
+    if (error.code === "not_found") {
       return {
         ok: false,
         message: `No deck ${deckId} among the member's decks.`,
       };
     }
-    let planned: Planned;
-    try {
-      planned = plan(deck.document);
-    } catch (error) {
-      if (error instanceof WriteError)
-        return { ok: false, message: error.message };
-      throw error;
-    }
-    try {
-      const result = await mutate(db, {
-        deckId: deck.id,
-        actor: { kind: "agent", sub },
-        baseVersion: deck.version,
-        ops: planned.ops,
-      });
-      return {
-        ok: true,
-        entry: result.revisionId,
-        version: result.version,
-        created: planned.created,
-        changed: planned.changed,
-      };
-    } catch (error) {
-      if (!(error instanceof DeckError)) throw error;
-      if (error.code === "conflict" && attempt < ATTEMPTS) continue;
-      const issues = (error.details as { issues?: string[] }).issues;
-      return {
-        ok: false,
-        message: issues?.length
-          ? `${error.message}:\n${issues.join("\n")}`
-          : error.message,
-      };
-    }
+    const issues = error.details.issues;
+    return {
+      ok: false,
+      message: issues?.length
+        ? `${error.message}:\n${issues.join("\n")}`
+        : error.message,
+    };
   }
 }

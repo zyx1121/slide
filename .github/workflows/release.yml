@@ -1,6 +1,6 @@
 name: release
 
-# Every push to main publishes ghcr.io/zyx1121/slide.winlab.tw:sha-<commit>
+# Every push to main publishes ghcr.io/zyx1121/slide:sha-<commit>
 # (immutable) and :main. Release tags are published by release-please.yml,
 # because a tag pushed with GITHUB_TOKEN starts no workflow.
 on:

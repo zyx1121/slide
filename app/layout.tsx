@@ -7,7 +7,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: { default: "slide", template: "%s · slide" },
-  description: "在瀏覽器裡畫 WinLab 投影片，讓 agent 透過 MCP 幫你改。",
+  description: "在瀏覽器裡畫投影片，讓 agent 透過 MCP 幫你改。",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

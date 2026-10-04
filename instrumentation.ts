@@ -1,9 +1,9 @@
-// OpenTelemetry for the WinLab observability platform, Sensorium: request
+// OpenTelemetry for Sensorium, the observability platform: request
 // spans, the app's own spans (imports, renders, exports, MCP tools) and
 // error logs, over OTLP/HTTP JSON, the one encoding Sensorium takes. Off
 // unless OTEL_EXPORTER_OTLP_ENDPOINT is set; OTEL_EXPORTER_OTLP_HEADERS
 // carries the project's bearer token and OTEL_SERVICE_NAME names the
-// service. The same shape as www.winlab.tw's.
+// service.
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { BatchLogRecordProcessor } from "@opentelemetry/sdk-logs";
 import { OTLPHttpJsonTraceExporter, registerOTel } from "@vercel/otel";

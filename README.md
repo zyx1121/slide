@@ -9,13 +9,13 @@
 
 # slide
 
-> Lab decks in the browser: draw, point at a shape, and let your agent edit it over MCP.
+> Slide decks in the browser: draw, point at a shape, and let your agent edit it over MCP.
 
 `slides` · `mcp` · `docker` · `pptx`
 
-[![CI](https://github.com/zyx1121/slide.winlab.tw/actions/workflows/ci.yml/badge.svg)](https://github.com/zyx1121/slide.winlab.tw/actions) &nbsp;[![Image](https://img.shields.io/badge/image-ghcr.io%2Fzyx1121%2Fslide.winlab.tw-111111)](https://github.com/zyx1121/slide.winlab.tw/pkgs/container/slide.winlab.tw) &nbsp;[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
+[![CI](https://github.com/zyx1121/slide/actions/workflows/ci.yml/badge.svg)](https://github.com/zyx1121/slide/actions) &nbsp;[![Image](https://img.shields.io/badge/image-ghcr.io%2Fzyx1121%2Fslide-111111)](https://github.com/zyx1121/slide/pkgs/container/slide) &nbsp;[![License: MIT](https://img.shields.io/badge/license-MIT-blue)](#license)
 
-WinLab members draw their slides by hand in PowerPoint: rounded rectangles, connectors glued to them, text boxes placed wherever they fit. Asking an AI to change one box means first describing where that box is. slide keeps those drawing tools in the browser, lets you select a shape and tell your agent what to change, and still exports a normal `.pptx` when someone needs one.
+Many people draw their slides by hand in PowerPoint: rounded rectangles, connectors glued to them, text boxes placed wherever they fit. Asking an AI to change one box means first describing where that box is. slide keeps those drawing tools in the browser, lets you select a shape and tell your agent what to change, and still exports a normal `.pptx` when someone needs one.
 
 ```
 > "Make the hi on slide 1 say Results, 24 pt bold"
@@ -39,14 +39,14 @@ WinLab members draw their slides by hand in PowerPoint: rounded rectangles, conn
 With Docker Compose, on any machine with Docker:
 
 ```sh
-curl -fsSLO https://raw.githubusercontent.com/zyx1121/slide.winlab.tw/main/compose.yaml
-curl -fsSL -o .env https://raw.githubusercontent.com/zyx1121/slide.winlab.tw/main/.env.example
+curl -fsSLO https://raw.githubusercontent.com/zyx1121/slide/main/compose.yaml
+curl -fsSL -o .env https://raw.githubusercontent.com/zyx1121/slide/main/.env.example
 # set POSTGRES_PASSWORD, APP_URL, KEYCLOAK_* and SESSION_SECRET in .env,
 # and MCP_CLIENT_ID to let agents in
 docker compose up -d
 ```
 
-This starts Postgres, a one-shot migration job and the web app, all from `ghcr.io/zyx1121/slide.winlab.tw`, with the app on `127.0.0.1:3000`. Uploaded pictures live on the `assets` volume; back it up with the database.
+This starts Postgres, a one-shot migration job and the web app, all from `ghcr.io/zyx1121/slide`, with the app on `127.0.0.1:3000`. Uploaded pictures live on the `assets` volume; back it up with the database.
 
 > [!IMPORTANT]
 > The app listens on 127.0.0.1 and speaks plain HTTP: put a reverse proxy with TLS in front (it must pass the original `Host`), and register `APP_URL/*` as a redirect URI of your Keycloak client. Let the proxy refuse request bodies a little over 100 MiB, the largest upload (a `.pptx` import); in Caddy, `request_body { max_size 101MiB }` (Caddy reads `MB` as 1,000,000 bytes).

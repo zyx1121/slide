@@ -1,6 +1,6 @@
 # Plan
 
-PLAN.md is the design document. Work items live in [GitHub issues](https://github.com/zyx1121/slide.winlab.tw/issues), and each sprint is a milestone.
+PLAN.md is the design document. Work items live in [GitHub issues](https://github.com/zyx1121/slide/issues), and each sprint is a milestone.
 
 ## Goal
 
@@ -12,7 +12,7 @@ Made on 2026-10-03.
 
 | Topic           | Decision                                                                                                                                                                                                                                                                                                                                                                                          |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Repo            | `zyx1121/slide.winlab.tw`, public, MIT                                                                                                                                                                                                                                                                                                                                                            |
+| Repo            | `zyx1121/slide` (renamed from `zyx1121/slide.winlab.tw` on 2026-10-04), public, MIT                                                                                                                                                                                                                                                                                                               |
 | Sign-in         | Keycloak for both the web app and MCP. WinLab's instance uses `auth.winlab.tw`, realm `winlab`                                                                                                                                                                                                                                                                                                    |
 | Access          | A member reads and edits only their own decks. Sharing comes later. Every account in the Keycloak realm may sign in: WinLab's realm holds only lab members, so there is no group check                                                                                                                                                                                                            |
 | Home page       | Create a deck from the WinLab template, or upload a `.pptx`                                                                                                                                                                                                                                                                                                                                       |
@@ -86,6 +86,19 @@ Text is edited where it is drawn. The renderer draws the draft as it is typed, a
 Later: comments for agents, drafts from sources (paper PDF, transcript, README), a diagram library, live agent presence, shared decks, tables, groups, freeform shapes.
 
 Out of scope: animation, equations, charts, SmartArt, audio and video.
+
+## v0.2: Slide on its own
+
+Decided on 2026-10-04: Slide stops depending on WinLab and runs at `slide.zyx.tw`. Sprint 4 tracks the work.
+
+| Topic       | Decision                                                                                   |
+| ----------- | ------------------------------------------------------------------------------------------ |
+| Name        | Slide: repo `zyx1121/slide`, image `ghcr.io/zyx1121/slide`                                 |
+| Sign-in     | Google through Better Auth, replacing Keycloak                                             |
+| Access      | Only allowlisted, verified email addresses may sign in                                     |
+| MCP         | Slide is its own authorization server for `/mcp` instead of relaying Keycloak              |
+| Templates   | A deck picks a template. New decks use a neutral one; the WinLab master stays as an option |
+| Old address | `slide.winlab.tw` goes offline without a redirect; its public links stop working           |
 
 ## Evidence
 

@@ -21,7 +21,7 @@ export function duplicateSlide(slide: Slide): Slide {
     slide.shapes.length > 0
       ? pasteShapes(
           {
-            format: "slide.winlab.tw/shapes",
+            format: "slide/shapes",
             version: 1,
             shapes: slide.shapes,
           },

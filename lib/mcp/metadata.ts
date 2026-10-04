@@ -13,7 +13,7 @@ export function protectedResource(env: McpEnv) {
     authorization_servers: [issuerUrl(env)],
     bearer_methods_supported: ["header"],
     scopes_supported: SCOPES.filter((scope) => scope !== "offline_access"),
-    resource_name: "slide.winlab.tw",
+    resource_name: "Slide",
   };
 }
 

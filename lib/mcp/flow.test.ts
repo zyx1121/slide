@@ -1,265 +1,195 @@
-import { describe, expect, it, vi } from "vitest";
+// The MCP authorization server end to end: consent, code, tokens, refresh
+// and the access check, against a real Postgres (TEST_DATABASE_URL).
+import { createHash } from "node:crypto";
 
-import { approve, callback } from "./flow";
-import { FORM_LIMIT, type McpEnv, readAuthorize, sign, unsign } from "./oauth";
+import { NextRequest } from "next/server";
+import type postgres from "postgres";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { sealSession } from "../auth/session";
+import { ensureUser } from "../deck/store";
+import { createTestDb, TEST_DATABASE_URL } from "../test-db";
+import { approve } from "./flow";
+import {
+  bearer,
+  type TokenPair,
+  verifyAccessToken,
+  REUSE_GRACE_SECONDS,
+} from "./grants";
+import { FORM_LIMIT, mcpEnv, readAuthorize, sign } from "./oauth";
 import { token } from "./token-endpoint";
 
-const env: McpEnv = {
-  appUrl: new URL("https://slide.example.org"),
-  issuer: new URL("https://auth.example.org/realms/lab"),
-  clientId: "slide-mcp",
-  audience: "slide-mcp",
-  secret: "s".repeat(64),
-};
+const SETTINGS = {
+  APP_URL: "https://slide.example.org",
+  OIDC_ISSUER: "https://accounts.google.com",
+  OIDC_CLIENT_ID: "slide",
+  OIDC_CLIENT_SECRET: "client-secret",
+  SESSION_SECRET: "s".repeat(64),
+  ALLOWED_EMAILS: "alice@example.com",
+} as unknown as NodeJS.ProcessEnv;
+const env = mcpEnv(SETTINGS)!;
+
+const CLIENT = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+const REDIRECT = "https://claude.ai/api/mcp/auth_callback";
+const VERIFIER = "v".repeat(43);
+const CHALLENGE = createHash("sha256").update(VERIFIER).digest("base64url");
+
 const authorized = readAuthorize(
   env,
   new URLSearchParams({
     response_type: "code",
-    client_id: "https://claude.ai/oauth/mcp-oauth-client-metadata",
-    redirect_uri: "https://claude.ai/api/mcp/auth_callback",
+    client_id: CLIENT,
+    redirect_uri: REDIRECT,
     state: "client-state",
-    code_challenge: "b".repeat(43),
+    code_challenge: CHALLENGE,
     code_challenge_method: "S256",
   })
 );
 if (!authorized.ok) throw new Error("fixture");
 const request = authorized.request;
 
-const post = (
+const form = (
   url: string,
-  form: Record<string, string>,
+  fields: Record<string, string>,
   headers: Record<string, string> = {}
 ) =>
-  new Request(url, {
+  new NextRequest(url, {
     method: "POST",
-    body: new URLSearchParams(form),
+    body: new URLSearchParams(fields),
     headers: {
       "content-type": "application/x-www-form-urlencoded",
       ...headers,
     },
   });
 
-describe("approve", () => {
-  const tx = sign(env, "consent", { r: request }, 600);
-  it("refuses another site's form", async () => {
-    const response = await approve(
-      env,
-      post(
-        "https://slide.example.org/oauth/approve",
-        { tx, decision: "allow" },
-        {
-          origin: "https://evil.example",
-        }
-      )
-    );
-    expect(response.status).toBe(403);
-  });
+const ALICE = { sub: "alice-sub", name: "Alice", email: "alice@example.com" };
+const consent = (member = ALICE.sub) =>
+  sign(env, "consent", { r: request, m: member }, 600);
+const sessionCookie = async (user = ALICE) =>
+  `__Host-slide_session=${await sealSession(user, env.secret)}`;
 
-  it("sends a denial back to the client", async () => {
-    const response = await approve(
-      env,
-      post(
-        "https://slide.example.org/oauth/approve",
-        { tx, decision: "deny" },
-        {
-          origin: "https://slide.example.org",
-        }
-      )
-    );
-    const back = new URL(response.headers.get("location")!);
-    expect(back.origin).toBe("https://claude.ai");
-    expect(back.searchParams.get("error")).toBe("access_denied");
-  });
+const approveAs = async (
+  fields: Record<string, string>,
+  headers: Record<string, string> = {},
+  db: postgres.Sql
+) =>
+  approve(
+    env,
+    form("https://slide.example.org/oauth/approve", fields, {
+      origin: "https://slide.example.org",
+      ...headers,
+    }),
+    db
+  );
 
-  it("sends an approval to Keycloak with a cookie for this browser", async () => {
-    const response = await approve(
+const tokenCall = (db: postgres.Sql, fields: Record<string, string>) =>
+  token(env, form("https://slide.example.org/oauth/token", fields), db);
+
+describe("approve, without a database", () => {
+  const db = null as unknown as postgres.Sql;
+
+  it("refuses another site's form, or one that says nothing of its origin", async () => {
+    const tx = consent();
+    const evil = await approveAs(
+      { tx, decision: "allow" },
+      { origin: "https://evil.example" },
+      db
+    );
+    expect(evil.status).toBe(403);
+    const bare = await approve(
       env,
-      post(
-        "https://slide.example.org/oauth/approve",
-        { tx, decision: "allow" },
-        {
-          origin: "https://slide.example.org",
-          "sec-fetch-site": "same-origin",
-        }
-      )
+      new NextRequest("https://slide.example.org/oauth/approve", {
+        method: "POST",
+        body: new URLSearchParams({ tx, decision: "allow" }),
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      }),
+      db
     );
-    expect(response.status).toBe(303);
-    expect(response.headers.get("location")).toMatch(
-      /^https:\/\/auth\.example\.org\/realms\/lab\/protocol\/openid-connect\/auth\?/
-    );
-    expect(response.headers.get("set-cookie")).toMatch(
-      /^__Host-slide_mcp_flow=[^;]+; Path=\/; HttpOnly; SameSite=Lax; Max-Age=600; Secure$/
-    );
+    expect(bare.status).toBe(403);
   });
 
   it("refuses an expired or forged consent", async () => {
-    const response = await approve(
-      env,
-      post(
-        "https://slide.example.org/oauth/approve",
-        { tx: "x.y", decision: "allow" },
-        { origin: "https://slide.example.org" }
-      )
+    const response = await approveAs(
+      { tx: "forged.value", decision: "allow" },
+      { cookie: await sessionCookie() },
+      db
     );
     expect(response.status).toBe(400);
   });
 
-  it("refuses a form that says nothing of where it came from", async () => {
-    const response = await approve(
-      env,
-      post("https://slide.example.org/oauth/approve", { tx, decision: "allow" })
+  it("refuses a member other than the one the page was shown to", async () => {
+    const response = await approveAs(
+      { tx: consent("mallory-sub"), decision: "allow" },
+      { cookie: await sessionCookie() },
+      db
+    );
+    expect(response.status).toBe(403);
+    const signedOut = await approveAs(
+      { tx: consent(), decision: "allow" },
+      {},
+      db
+    );
+    expect(signedOut.status).toBe(403);
+  });
+
+  it("refuses a member who left the allowlist", async () => {
+    const carol = {
+      sub: "alice-sub",
+      name: "Alice",
+      email: "carol@example.com",
+    };
+    const response = await approveAs(
+      { tx: consent(), decision: "allow" },
+      { cookie: await sessionCookie(carol) },
+      db
     );
     expect(response.status).toBe(403);
   });
 
-  it("stops reading a form larger than any consent", async () => {
-    const response = await approve(
-      env,
-      post(
-        "https://slide.example.org/oauth/approve",
-        { tx, decision: "allow", pad: "x".repeat(FORM_LIMIT) },
-        { origin: "https://slide.example.org" }
-      )
+  it("sends a denial back to the client, with state and issuer", async () => {
+    const response = await approveAs(
+      { tx: consent(), decision: "deny" },
+      { cookie: await sessionCookie() },
+      db
     );
-    expect(response.status).toBe(413);
+    const back = new URL(response.headers.get("location")!);
+    expect(back.origin + back.pathname).toBe(REDIRECT);
+    expect(back.searchParams.get("error")).toBe("access_denied");
+    expect(back.searchParams.get("state")).toBe("client-state");
+    expect(back.searchParams.get("iss")).toBe("https://slide.example.org");
   });
 });
 
-describe("callback", () => {
-  const state = sign(env, "state", { r: request, n: "nonce-1" }, 600);
-  const back = (cookie: string, extra = "&code=kc-code") =>
-    callback(
-      env,
-      new Request(
-        `https://slide.example.org/oauth/callback?state=${encodeURIComponent(state)}${extra}`,
-        { headers: { cookie } }
-      )
-    );
+describe("token endpoint, without a database", () => {
+  const db = null as unknown as postgres.Sql;
 
-  it("needs the browser that approved", () => {
-    expect(back("__Host-slide_mcp_flow=other").status).toBe(400);
-    expect(back("").status).toBe(400);
-    // A look-alike name, as a sibling site could set, does not count.
-    expect(back("\u00a0__Host-slide_mcp_flow=nonce-1").status).toBe(400);
-  });
-
-  it("sends the client a wrapped code, its state and our issuer", () => {
-    const response = back("__Host-slide_mcp_flow=nonce-1");
-    const location = new URL(response.headers.get("location")!);
-    expect(location.origin + location.pathname).toBe(
-      "https://claude.ai/api/mcp/auth_callback"
-    );
-    expect(location.searchParams.get("state")).toBe("client-state");
-    expect(location.searchParams.get("iss")).toBe("https://slide.example.org");
-    expect(
-      unsign(env, "code", location.searchParams.get("code"))
-    ).toMatchObject({
-      k: "kc-code",
-      c: request.clientId,
-      u: request.redirectUri,
+  it("refuses unknown grants and malformed requests", async () => {
+    const other = await tokenCall(db, {
+      grant_type: "password",
+      client_id: CLIENT,
     });
-  });
-});
-
-describe("token", () => {
-  const code = sign(
-    env,
-    "code",
-    { k: "kc-code", c: request.clientId, u: request.redirectUri },
-    300
-  );
-  const keycloak = vi.fn(async () =>
-    Response.json({ access_token: "jwt", token_type: "Bearer" })
-  );
-
-  it("relays a wrapped code with the shared client and our callback", async () => {
-    const response = await token(
-      env,
-      post("https://slide.example.org/oauth/token", {
-        grant_type: "authorization_code",
-        code,
-        client_id: request.clientId,
-        redirect_uri: request.redirectUri,
-        code_verifier: "v".repeat(43),
-      }),
-      keycloak as unknown as typeof fetch
-    );
-    expect(await response.json()).toEqual({
-      access_token: "jwt",
-      token_type: "Bearer",
-    });
-    const [url, init] = keycloak.mock.calls[0] as unknown as [
-      string,
-      RequestInit,
-    ];
-    expect(url).toBe(
-      "https://auth.example.org/realms/lab/protocol/openid-connect/token"
-    );
-    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual({
-      client_id: "slide-mcp",
-      grant_type: "authorization_code",
-      code: "kc-code",
-      redirect_uri: "https://slide.example.org/oauth/callback",
-      code_verifier: "v".repeat(43),
-    });
-  });
-
-  it("refuses a code for another client or redirect", async () => {
-    for (const [client_id, redirect_uri] of [
-      ["someone-else", request.redirectUri],
-      [request.clientId, "http://localhost/callback"],
-    ]) {
-      const response = await token(
-        env,
-        post("https://slide.example.org/oauth/token", {
-          grant_type: "authorization_code",
-          code,
-          client_id,
-          redirect_uri,
-          code_verifier: "v".repeat(43),
-        }),
-        keycloak as unknown as typeof fetch
-      );
-      expect(await response.json()).toEqual({ error: "invalid_grant" });
-    }
-  });
-
-  it("relays a refresh and refuses other grants", async () => {
-    keycloak.mockClear();
-    await token(
-      env,
-      post("https://slide.example.org/oauth/token", {
-        grant_type: "refresh_token",
-        refresh_token: "rt",
-      }),
-      keycloak as unknown as typeof fetch
-    );
-    const [, init] = keycloak.mock.calls[0] as unknown as [string, RequestInit];
-    expect(Object.fromEntries(init.body as URLSearchParams)).toEqual({
-      client_id: "slide-mcp",
-      grant_type: "refresh_token",
-      refresh_token: "rt",
-    });
-    const other = await token(
-      env,
-      post("https://slide.example.org/oauth/token", { grant_type: "password" })
-    );
     expect(await other.json()).toEqual({ error: "unsupported_grant_type" });
+    const noClient = await tokenCall(db, {
+      grant_type: "refresh_token",
+      refresh_token: "x",
+    });
+    expect(await noClient.json()).toEqual({ error: "invalid_request" });
+    const shortVerifier = await tokenCall(db, {
+      grant_type: "authorization_code",
+      client_id: CLIENT,
+      code: "x",
+      code_verifier: "short",
+    });
+    expect(await shortVerifier.json()).toEqual({ error: "invalid_request" });
   });
 
-  it("refuses a body over the limit, sent or declared, without asking Keycloak", async () => {
-    keycloak.mockClear();
-    const sent = await token(
-      env,
-      post("https://slide.example.org/oauth/token", {
-        grant_type: "refresh_token",
-        refresh_token: "r".repeat(FORM_LIMIT),
-      }),
-      keycloak as unknown as typeof fetch
-    );
+  it("refuses a body over the limit, sent or declared", async () => {
+    const sent = await tokenCall(db, {
+      grant_type: "refresh_token",
+      client_id: CLIENT,
+      refresh_token: "r".repeat(FORM_LIMIT),
+    });
     expect(sent.status).toBe(413);
-    expect(await sent.json()).toEqual({ error: "invalid_request" });
-    // A declared length over the limit is refused before a byte is read.
     const declared = await token(
       env,
       {
@@ -268,10 +198,9 @@ describe("token", () => {
           throw new Error("the body was read");
         },
       } as unknown as Request,
-      keycloak as unknown as typeof fetch
+      db
     );
     expect(declared.status).toBe(413);
-    expect(keycloak).not.toHaveBeenCalled();
   });
 
   it("answers a body that breaks off midway instead of throwing", async () => {
@@ -289,9 +218,202 @@ describe("token", () => {
         duplex: "half",
         headers: { "content-type": "application/x-www-form-urlencoded" },
       } as RequestInit),
-      keycloak as unknown as typeof fetch
+      db
     );
     expect(response.status).toBe(400);
-    expect(await response.json()).toEqual({ error: "invalid_request" });
+  });
+
+  it("reads a bearer token from the header only", () => {
+    const with_ = (value: string) =>
+      bearer(new Request("https://x", { headers: { authorization: value } }));
+    expect(with_("Bearer abc.def")).toBe("abc.def");
+    expect(with_("Basic abc")).toBeNull();
+    expect(with_("Bearer a b")).toBeNull();
+  });
+});
+
+describe.skipIf(!TEST_DATABASE_URL)("grants (Postgres)", () => {
+  let db: postgres.Sql;
+  let drop: () => Promise<void>;
+
+  beforeAll(async () => {
+    ({ db, drop } = await createTestDb());
+    await ensureUser(db, ALICE);
+  });
+  afterAll(async () => {
+    await drop?.();
+  });
+
+  /** Consent through to a code, as the browser would. */
+  async function codeFor(): Promise<string> {
+    const response = await approveAs(
+      { tx: consent(), decision: "allow" },
+      { cookie: await sessionCookie() },
+      db
+    );
+    expect(response.status).toBe(303);
+    const back = new URL(response.headers.get("location")!);
+    expect(back.origin + back.pathname).toBe(REDIRECT);
+    expect(back.searchParams.get("state")).toBe("client-state");
+    expect(back.searchParams.get("iss")).toBe("https://slide.example.org");
+    return back.searchParams.get("code")!;
+  }
+
+  const redeem = (code: string, extra: Record<string, string> = {}) =>
+    tokenCall(db, {
+      grant_type: "authorization_code",
+      client_id: CLIENT,
+      redirect_uri: REDIRECT,
+      code,
+      code_verifier: VERIFIER,
+      ...extra,
+    });
+
+  const refreshWith = (refresh_token: string, client_id = CLIENT) =>
+    tokenCall(db, { grant_type: "refresh_token", client_id, refresh_token });
+
+  async function pair(): Promise<TokenPair> {
+    const response = await redeem(await codeFor());
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    return response.json();
+  }
+
+  it("stores codes and refresh tokens only by their hash", async () => {
+    const code = await codeFor();
+    const rows = await db`select hash from mcp_codes`;
+    expect(rows.some((row) => row.hash === code)).toBe(false);
+    const tokens: TokenPair = await (await redeem(code)).json();
+    const stored = await db`select hash from mcp_refresh_tokens`;
+    expect(stored.some((row) => row.hash === tokens.refresh_token)).toBe(false);
+  });
+
+  it("trades a code once, with the right verifier, client and redirect", async () => {
+    const tokens = await pair();
+    expect(tokens).toMatchObject({
+      token_type: "Bearer",
+      expires_in: 3600,
+      scope: "decks",
+    });
+    expect(await verifyAccessToken(db, env, tokens.access_token)).toMatchObject(
+      {
+        sub: "alice-sub",
+        clientId: CLIENT,
+      }
+    );
+
+    const code = await codeFor();
+    expect((await redeem(code)).status).toBe(200);
+    // Spent: the same code again is refused.
+    expect(await (await redeem(code)).json()).toEqual({
+      error: "invalid_grant",
+    });
+
+    const wrongs: Record<string, string>[] = [
+      { code_verifier: "w".repeat(43) },
+      { client_id: "https://other.example/client" },
+      { redirect_uri: "https://claude.ai/api/mcp/other" },
+    ];
+    for (const wrong of wrongs) {
+      const fresh = await codeFor();
+      expect(await (await redeem(fresh, wrong)).json()).toEqual({
+        error: "invalid_grant",
+      });
+      // A failed try spends the code too.
+      expect(await (await redeem(fresh)).json()).toEqual({
+        error: "invalid_grant",
+      });
+    }
+  });
+
+  it("refuses an expired code", async () => {
+    const code = await codeFor();
+    await db`update mcp_codes set expires_at = now() - interval '1 second'`;
+    expect(await (await redeem(code)).json()).toEqual({
+      error: "invalid_grant",
+    });
+  });
+
+  it("rotates refresh tokens, forgives a quick retry, and revokes a copy", async () => {
+    const first = await pair();
+    const second: TokenPair = await (
+      await refreshWith(first.refresh_token)
+    ).json();
+    expect(second.refresh_token).not.toBe(first.refresh_token);
+    expect(
+      await verifyAccessToken(db, env, second.access_token)
+    ).not.toBeNull();
+
+    // Two refreshes at once: the second, a moment later, still works.
+    const retry = await refreshWith(first.refresh_token);
+    expect(retry.status).toBe(200);
+
+    // Past the grace period, a spent token is a copy: the grant goes.
+    await db`
+      update mcp_refresh_tokens
+      set used_at = now() - make_interval(secs => ${REUSE_GRACE_SECONDS + 1})
+      where used_at is not null
+    `;
+    expect(await (await refreshWith(first.refresh_token)).json()).toEqual({
+      error: "invalid_grant",
+    });
+    expect(await verifyAccessToken(db, env, second.access_token)).toBeNull();
+    expect(await (await refreshWith(second.refresh_token)).json()).toEqual({
+      error: "invalid_grant",
+    });
+  });
+
+  it("revokes a grant whose refresh token another client presents", async () => {
+    const tokens = await pair();
+    expect(
+      await (
+        await refreshWith(tokens.refresh_token, "https://other.example/client")
+      ).json()
+    ).toEqual({ error: "invalid_grant" });
+    expect(await verifyAccessToken(db, env, tokens.access_token)).toBeNull();
+  });
+
+  it("cuts off a member taken off the allowlist", async () => {
+    const tokens = await pair();
+    const narrowed = mcpEnv({
+      ...SETTINGS,
+      ALLOWED_EMAILS: "bob@example.com",
+    } as NodeJS.ProcessEnv)!;
+    expect(
+      await verifyAccessToken(db, narrowed, tokens.access_token)
+    ).toBeNull();
+    const refused = await token(
+      narrowed,
+      form("https://slide.example.org/oauth/token", {
+        grant_type: "refresh_token",
+        client_id: CLIENT,
+        refresh_token: tokens.refresh_token,
+      }),
+      db
+    );
+    expect(await refused.json()).toEqual({ error: "invalid_grant" });
+    // And the grant is gone even if the address comes back.
+    expect(await verifyAccessToken(db, env, tokens.access_token)).toBeNull();
+  });
+
+  it("refuses forged, expired and other-purpose access tokens", async () => {
+    const tokens = await pair();
+    const [body, mac] = tokens.access_token.split(".");
+    expect(await verifyAccessToken(db, env, `${body}.${mac}x`)).toBeNull();
+    const consentToken = consent();
+    expect(await verifyAccessToken(db, env, consentToken)).toBeNull();
+    const family = (
+      await db<
+        { family: string }[]
+      >`select family from mcp_refresh_tokens limit 1`
+    )[0].family;
+    const expired = sign(
+      env,
+      "access",
+      { s: "alice-sub", f: family, c: CLIENT },
+      60,
+      Date.now() - 120_000
+    );
+    expect(await verifyAccessToken(db, env, expired)).toBeNull();
   });
 });

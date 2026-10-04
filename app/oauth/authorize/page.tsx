@@ -4,7 +4,17 @@ import { redirect } from "next/navigation";
 import { ConsentButton } from "@/components/consent-button";
 import { TaskShell } from "@/components/task-shell";
 import { Button } from "@/components/ui/button";
-import { FLOW_SECONDS, mcpEnv, readAuthorize, sign } from "@/lib/mcp/oauth";
+import { safeNext } from "@/lib/auth/redirect";
+import { getSession } from "@/lib/auth/session";
+import type { Consent } from "@/lib/mcp/flow";
+import {
+  authorizeQuery,
+  FLOW_SECONDS,
+  mcpEnv,
+  readAuthorize,
+  resourceUrl,
+  sign,
+} from "@/lib/mcp/oauth";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = {
@@ -13,9 +23,9 @@ export const metadata: Metadata = {
 };
 
 /**
- * GET /oauth/authorize: an MCP client asks to act for the member. The
- * member decides here, on every sign-in; nothing is remembered. Approving
- * goes on to Keycloak, where the member signs in.
+ * GET /oauth/authorize: an MCP client asks to act for the member. A member
+ * who is not signed in signs in first and comes back here. The member
+ * decides on every connection; nothing is remembered.
  */
 export default async function Authorize({
   searchParams,
@@ -34,13 +44,32 @@ export default async function Authorize({
         <p className="text-sm text-muted-foreground">
           {env
             ? `這個應用程式的授權要求有問題：${checked && !checked.ok ? checked.error : ""}。`
-            : "這個網站還沒有開放 MCP。"}
+            : "這個網站還沒有設定登入，無法連線。"}
         </p>
       </TaskShell>
     );
   }
   const { request } = checked;
-  const tx = sign(env, "consent", { r: request }, FLOW_SECONDS);
+  const member = await getSession();
+  if (!member) {
+    const here = `/oauth/authorize?${authorizeQuery(request, resourceUrl(env))}`;
+    if (safeNext(here) !== here) {
+      return (
+        <TaskShell title="無法授權" lang="zh-TW">
+          <p className="text-sm text-muted-foreground">
+            這個授權要求太長，登入後無法回到這裡。請回到應用程式重新連線。
+          </p>
+        </TaskShell>
+      );
+    }
+    redirect(`/auth/login?next=${encodeURIComponent(here)}`);
+  }
+  const tx = sign(
+    env,
+    "consent",
+    { r: request, m: member.sub } satisfies Consent,
+    FLOW_SECONDS
+  );
   const host = new URL(request.redirectUri).host;
   const who = request.verified ? request.name : "未驗證的應用程式";
 
@@ -71,7 +100,7 @@ export default async function Authorize({
           </Button>
         </form>
         <p className="text-xs text-muted-foreground">
-          允許後會轉到 WinLab 登入。隨時可以在應用程式那邊中斷連線。
+          你目前以 {member.email} 登入。隨時可以在應用程式那邊中斷連線。
         </p>
       </div>
     </TaskShell>

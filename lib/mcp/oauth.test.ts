@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  authorizeQuery,
   checkClient,
-  keycloakAuthorize,
   type McpEnv,
   mcpEnv,
   parseRedirect,
@@ -12,29 +12,24 @@ import {
   unsign,
 } from "./oauth";
 
-const env: McpEnv = {
-  appUrl: new URL("https://slide.example.org"),
-  issuer: new URL("https://auth.example.org/realms/lab"),
-  clientId: "slide-mcp",
-  audience: "slide-mcp",
-  secret: "s".repeat(64),
-};
+const SETTINGS = {
+  APP_URL: "https://slide.example.org",
+  OIDC_ISSUER: "https://accounts.google.com",
+  OIDC_CLIENT_ID: "slide",
+  OIDC_CLIENT_SECRET: "client-secret",
+  SESSION_SECRET: "s".repeat(64),
+  ALLOWED_EMAILS: "alice@example.com",
+} as unknown as NodeJS.ProcessEnv;
+const env: McpEnv = mcpEnv(SETTINGS)!;
 const CHALLENGE = "a".repeat(43);
 
 describe("mcpEnv", () => {
-  it("stays off until the MCP client is set", () => {
-    const base = {
-      APP_URL: "https://slide.example.org",
-      OIDC_ISSUER: "https://auth.example.org/realms/lab",
-      SESSION_SECRET: "s".repeat(32),
-    };
-    expect(mcpEnv(base as unknown as NodeJS.ProcessEnv)).toBeNull();
+  it("is on exactly when sign-in is set up", () => {
+    expect(env.appUrl.href).toBe("https://slide.example.org/");
+    expect(env.auth.allowed.has("alice@example.com")).toBe(true);
     expect(
-      mcpEnv({
-        ...base,
-        MCP_CLIENT_ID: "slide-mcp",
-      } as unknown as NodeJS.ProcessEnv)
-    ).toMatchObject({ clientId: "slide-mcp", audience: "slide-mcp" });
+      mcpEnv({ ...SETTINGS, ALLOWED_EMAILS: "" } as NodeJS.ProcessEnv)
+    ).toBeNull();
   });
 });
 
@@ -112,7 +107,7 @@ describe("readAuthorize", () => {
     const result = readAuthorize(env, params());
     expect(result.ok && result.request).toMatchObject({
       redirectUri: "http://localhost:4000/callback",
-      scope: "openid email",
+      scope: "decks",
       state: "xyz",
     });
   });
@@ -140,27 +135,22 @@ describe("readAuthorize", () => {
     expect((result as { redirect?: string }).redirect).toBeUndefined();
   });
 
-  it("asks Keycloak with the shared client and a signed state", () => {
-    const result = readAuthorize(env, params());
+  it("writes a checked request back as the query to return to", () => {
+    const result = readAuthorize(env, params({ junk: "x".repeat(4000) }));
     if (!result.ok) throw new Error("expected ok");
-    const url = new URL(keycloakAuthorize(env, result.request, "nonce"));
-    expect(url.origin + url.pathname).toBe(
-      "https://auth.example.org/realms/lab/protocol/openid-connect/auth"
+    const query = new URLSearchParams(
+      authorizeQuery(result.request, "https://slide.example.org/mcp")
     );
-    expect(url.searchParams.get("client_id")).toBe("slide-mcp");
-    expect(url.searchParams.get("redirect_uri")).toBe(
-      "https://slide.example.org/oauth/callback"
-    );
-    expect(url.searchParams.get("code_challenge")).toBe(CHALLENGE);
-    expect(unsign(env, "state", url.searchParams.get("state"))).toMatchObject({
-      n: "nonce",
-    });
+    expect(query.get("junk")).toBeNull();
+    expect(query.get("code_challenge")).toBe(CHALLENGE);
+    expect(query.get("state")).toBe("xyz");
+    expect(readAuthorize(env, query).ok).toBe(true);
   });
 
-  it("always asks for openid", () => {
-    expect(scopeFor(null)).toBe("openid");
-    expect(scopeFor("offline_access profile")).toBe(
-      "openid profile offline_access"
+  it("always grants decks, and nothing it does not know", () => {
+    expect(scopeFor(null)).toBe("decks");
+    expect(scopeFor("openid offline_access admin")).toBe(
+      "decks offline_access"
     );
   });
 });

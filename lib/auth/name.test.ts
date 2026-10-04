@@ -18,7 +18,7 @@ describe("displayName", () => {
     );
   });
 
-  it("keeps Keycloak's name for Latin and mixed names", () => {
+  it("keeps the provider's name for Latin and mixed names", () => {
     expect(
       displayName({
         given_name: "Alice",

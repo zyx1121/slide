@@ -1,65 +1,57 @@
-// The OAuth front for MCP clients. Keycloak is the real authorization
-// server, but MCP clients cannot register there (Keycloak would keep one
-// client per workstation), so this app advertises itself as the
-// authorization server and relays to one shared public Keycloak client:
+// The OAuth authorization server for MCP clients. Slide signs members in
+// with its own web sign-in (an OpenID Connect provider plus ALLOWED_EMAILS)
+// and issues MCP tokens itself:
 //
-//   1. GET /oauth/authorize checks the MCP client and shows a consent page.
-//   2. POST /oauth/approve (same origin) sets a cookie bound to the browser
-//      and sends it to Keycloak with the shared client, the client's PKCE
-//      challenge, and a signed state that carries the client's request.
-//   3. GET /oauth/callback checks the state and the cookie, wraps
-//      Keycloak's code in a signed envelope bound to the client and its
-//      redirect, and sends the browser back to the client.
-//   4. POST /oauth/token checks the envelope against the request and
-//      relays to Keycloak, which verifies PKCE and issues its own token.
+//   1. GET /oauth/authorize checks the MCP client, sends a member who is not
+//      signed in to sign in first, and shows a consent page.
+//   2. POST /oauth/approve (same origin, same member) stores a one-time
+//      code bound to the client, its redirect URI and PKCE challenge, and
+//      sends the browser back to the client with it.
+//   3. POST /oauth/token trades the code, with the PKCE verifier, for an
+//      access token and a refresh token; a refresh token is traded for the
+//      next pair (rotation, see grants.ts).
 //
-// Nothing is stored: every step carries what the next needs, signed. The
-// access token an MCP client holds is Keycloak's JWT; /mcp verifies it.
-// After transcribe.winlab.tw's proxy (its ADR 0012).
+// The access token is a value signed with SESSION_SECRET naming the member
+// and the grant; /mcp checks it, and that the grant still stands and the
+// member is still on the allowlist, on every request.
 import { createHmac, timingSafeEqual } from "node:crypto";
 
-/** What the MCP endpoint and its OAuth front need; null turns MCP off. */
+import { authEnv, type AuthEnv } from "../auth/config";
+
+/** What the MCP endpoint and its authorization server need. */
 export type McpEnv = {
   appUrl: URL;
-  issuer: URL;
-  /** The shared public Keycloak client MCP sign-ins use. */
-  clientId: string;
-  /** The audience the access token must carry. */
-  audience: string;
-  /** Signs the state, the code envelope and the cookie. */
+  /** Signs the consent transaction and the access tokens. */
   secret: string;
+  auth: AuthEnv;
 };
 
-/** Reads the MCP settings; MCP stays off until MCP_CLIENT_ID is set. */
+/** The MCP settings: those of sign-in, so MCP is off while sign-in is. */
 export function mcpEnv(env: NodeJS.ProcessEnv = process.env): McpEnv | null {
-  const clientId = env.MCP_CLIENT_ID;
-  if (!clientId || !env.APP_URL || !env.OIDC_ISSUER) return null;
-  const secret = env.SESSION_SECRET ?? "";
-  if (secret.length < 32) return null;
-  return {
-    appUrl: new URL(env.APP_URL),
-    issuer: new URL(env.OIDC_ISSUER),
-    clientId,
-    audience: env.MCP_AUDIENCE || clientId,
-    secret,
-  };
+  let auth: AuthEnv;
+  try {
+    auth = authEnv(env);
+  } catch {
+    return null;
+  }
+  return { appUrl: auth.appUrl, secret: auth.secret, auth };
 }
 
 /** The resource MCP clients ask for: the endpoint itself. */
 export const resourceUrl = (env: McpEnv) => new URL("/mcp", env.appUrl).href;
 export const issuerUrl = (env: McpEnv) =>
   env.appUrl.origin + env.appUrl.pathname.replace(/\/$/, "");
-export const callbackUrl = (env: McpEnv) =>
-  new URL("/oauth/callback", env.appUrl).href;
-export const keycloakUrl = (env: McpEnv, path: "auth" | "token" | "certs") =>
-  `${env.issuer.href.replace(/\/$/, "")}/protocol/openid-connect/${path}`;
 
-/** Scopes a client may ask for; anything else is dropped. */
-export const SCOPES = ["openid", "profile", "email", "offline_access"];
+/**
+ * Scopes a client may ask for; anything else is dropped. A grant always
+ * holds "decks" (read the member's decks and suggest edits) and always comes
+ * with a refresh token, so offline_access is accepted but changes nothing.
+ */
+export const SCOPES = ["decks", "offline_access"];
 
 export function scopeFor(requested: string | null): string {
   const asked = new Set((requested ?? "").split(/\s+/).filter(Boolean));
-  asked.add("openid");
+  asked.add("decks");
   return SCOPES.filter((scope) => asked.has(scope)).join(" ");
 }
 
@@ -304,27 +296,20 @@ export function readAuthorize(
   };
 }
 
-/** How long a sign-in may take, from the consent page to the token, in s. */
+/** How long the consent page stays good, in s. */
 export const FLOW_SECONDS = 600;
-/** How long a wrapped code is good for, in s. */
-export const CODE_SECONDS = 300;
 
-/** Where the approving browser goes: Keycloak, with the shared client. */
-export function keycloakAuthorize(
-  env: McpEnv,
-  request: AuthorizeRequest,
-  nonce: string
-): string {
-  const url = new URL(keycloakUrl(env, "auth"));
-  url.searchParams.set("response_type", "code");
-  url.searchParams.set("client_id", env.clientId);
-  url.searchParams.set("redirect_uri", callbackUrl(env));
-  url.searchParams.set("scope", request.scope);
-  url.searchParams.set("code_challenge", request.codeChallenge);
-  url.searchParams.set("code_challenge_method", "S256");
-  url.searchParams.set(
-    "state",
-    sign(env, "state", { r: request, n: nonce }, FLOW_SECONDS)
-  );
-  return url.href;
+/** The validated authorize request as a query string, to come back to after sign-in. */
+export function authorizeQuery(request: AuthorizeRequest, resource: string) {
+  const query = new URLSearchParams({
+    response_type: "code",
+    client_id: request.clientId,
+    redirect_uri: request.redirectUri,
+    code_challenge: request.codeChallenge,
+    code_challenge_method: "S256",
+    scope: request.scope,
+    resource,
+  });
+  if (request.state) query.set("state", request.state);
+  return query.toString();
 }

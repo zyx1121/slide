@@ -4,10 +4,11 @@ import { GET } from "./route";
 
 const KEYS = [
   "APP_URL",
-  "KEYCLOAK_ISSUER",
-  "KEYCLOAK_CLIENT_ID",
-  "KEYCLOAK_CLIENT_SECRET",
+  "OIDC_ISSUER",
+  "OIDC_CLIENT_ID",
+  "OIDC_CLIENT_SECRET",
   "SESSION_SECRET",
+  "ALLOWED_EMAILS",
 ];
 const saved = Object.fromEntries(KEYS.map((key) => [key, process.env[key]]));
 

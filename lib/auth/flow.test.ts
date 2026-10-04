@@ -1,5 +1,6 @@
 // Drives the whole sign-in flow against a local OIDC provider
-// (oauth2-mock-server), which checks PKCE and echoes the nonce like Keycloak.
+// (oauth2-mock-server), which checks PKCE and echoes the nonce like a real
+// provider does.
 import { NextRequest } from "next/server";
 import { OAuth2Server } from "oauth2-mock-server";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -20,6 +21,7 @@ beforeAll(async () => {
     token.payload.sub = "alice-sub";
     token.payload.name = "Alice";
     token.payload.email = "alice@example.com";
+    token.payload.email_verified = true;
   });
   env = {
     appUrl: new URL("http://app.test"),
@@ -27,6 +29,7 @@ beforeAll(async () => {
     clientId: "slide",
     clientSecret: "client-secret",
     secret: "s".repeat(32),
+    allowed: new Set(["alice@example.com"]),
   };
 });
 
@@ -91,6 +94,7 @@ describe("sign-in flow", () => {
     expect(params.get("state")).toBeTruthy();
     expect(params.get("nonce")).toBeTruthy();
     expect(params.get("scope")).toBe("openid profile email");
+    expect(params.get("prompt")).toBe("select_account");
   });
 
   it("draws a new verifier, state and nonce for every sign-in", async () => {
@@ -127,6 +131,40 @@ describe("sign-in flow", () => {
     expect(cookie).toMatch(/HttpOnly/i);
     expect(cookie).toMatch(/SameSite=lax/i);
     expect(cookie).toMatch(/Path=\//);
+  });
+
+  it("refuses an account off the allowlist, or with an unverified email", async () => {
+    const cases = [
+      (token: { payload: Record<string, unknown> }) => {
+        token.payload.email = "mallory@example.com";
+      },
+      (token: { payload: Record<string, unknown> }) => {
+        token.payload.email_verified = false;
+      },
+      (token: { payload: Record<string, unknown> }) => {
+        delete token.payload.email_verified;
+      },
+    ];
+    for (const change of cases) {
+      server.service.on("beforeTokenSigning", change);
+      try {
+        const onSignIn = vi.fn(async () => {});
+        const { request } = await signInUpTo("/");
+        const response = await finishSignIn(request, env, onSignIn);
+        expect(response.headers.get("location")).toBe(
+          "http://app.test/auth/error?reason=denied"
+        );
+        expect(onSignIn).not.toHaveBeenCalled();
+        expect(
+          response.headers
+            .getSetCookie()
+            .some((line) => line.startsWith(`${sessionCookie(env)}=`))
+        ).toBe(false);
+        expect(setCookie(response, signInCookie(env))).toMatch(/Max-Age=0/);
+      } finally {
+        server.service.off("beforeTokenSigning", change);
+      }
+    }
   });
 
   it("records a CJK name as Taiwan writes it", async () => {

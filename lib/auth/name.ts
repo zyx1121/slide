@@ -7,10 +7,10 @@ const text = (value: unknown) =>
   typeof value === "string" ? value.trim() : "";
 
 /**
- * A member's display name. Keycloak sends a first name, a last name, and a
- * `name` of "first last", which reads 詠翔 詹 for a Chinese name; when both
- * parts are CJK the name is written as Taiwan does, last name first with no
- * space (詹詠翔). Other names keep Keycloak's own form.
+ * A member's display name. A provider sends a first name, a last name, and
+ * often a `name` of "first last", which reads 詠翔 詹 for a Chinese name;
+ * when both parts are CJK the name is written as Taiwan does, last name
+ * first with no space (詹詠翔). Other names keep the provider's own form.
  */
 export function displayName(claims: Record<string, unknown>): string {
   const given = text(claims.given_name);

@@ -1,10 +1,12 @@
-// Sign-in with Keycloak: authorization code flow with PKCE, state and nonce.
+// Sign-in with an OpenID Connect provider (Google in production):
+// authorization code flow with PKCE, state and nonce. Only verified email
+// addresses on the allowlist (ALLOWED_EMAILS) get a session.
 // Each step takes the request and returns the response, so the route
 // handlers in app/auth/ stay one line and tests can drive the whole flow.
 import { NextResponse, type NextRequest } from "next/server";
 import * as client from "openid-client";
 
-import { callbackUrl, oidc, type AuthEnv } from "./config";
+import { callbackUrl, isAllowed, oidc, type AuthEnv } from "./config";
 import { displayName } from "./name";
 import { safeNext } from "./redirect";
 import { seal, unseal } from "./seal";
@@ -26,7 +28,7 @@ const SIGN_IN_SECONDS = 10 * 60;
 
 type SignIn = { v: string; s: string; n: string; next: string };
 
-type Failure = "expired" | "failed" | "unavailable";
+type Failure = "expired" | "failed" | "unavailable" | "denied";
 
 /** Sends the member to the sign-in error page (app/auth/error), inside the shell. */
 function failure(env: AuthEnv, reason: Failure): NextResponse {
@@ -35,7 +37,7 @@ function failure(env: AuthEnv, reason: Failure): NextResponse {
   return NextResponse.redirect(target, 303);
 }
 
-/** GET /auth/login?next=/path: sends the member to Keycloak. */
+/** GET /auth/login?next=/path: sends the member to the provider. */
 export async function startSignIn(
   request: NextRequest,
   env: AuthEnv
@@ -55,6 +57,8 @@ export async function startSignIn(
   const target = client.buildAuthorizationUrl(configuration, {
     redirect_uri: callbackUrl(env).href,
     scope: "openid profile email",
+    // Lets a member refused with one account pick another.
+    prompt: "select_account",
     code_challenge: await client.calculatePKCECodeChallenge(verifier),
     code_challenge_method: "S256",
     state,
@@ -75,7 +79,8 @@ export async function startSignIn(
 
 /**
  * GET /auth/callback: exchanges the code, checks state, nonce and PKCE,
- * records the member, and sets the session cookie.
+ * admits only a verified email on the allowlist, records the member, and
+ * sets the session cookie.
  */
 export async function finishSignIn(
   request: NextRequest,
@@ -90,9 +95,10 @@ export async function finishSignIn(
 
   let user: SessionUser;
   let idToken: string | undefined;
+  let verified = false;
   try {
     const configuration = await oidc(env);
-    // The URL Keycloak redirected to, rebuilt on APP_URL: behind a reverse
+    // The URL the provider redirected to, rebuilt on APP_URL: behind a reverse
     // proxy the request URL carries the internal host instead.
     const current = callbackUrl(env);
     current.search = request.nextUrl.search;
@@ -108,10 +114,19 @@ export async function finishSignIn(
       name: displayName(claims as Record<string, unknown>),
       email: String(claims.email ?? ""),
     };
+    verified = claims.email_verified === true;
     idToken = tokens.id_token;
   } catch (error) {
     console.error("auth: callback refused", error);
     return failure(env, "failed");
+  }
+
+  if (!verified || !user.email || !isAllowed(env, user.email)) {
+    // No user row and no session for an account the app does not admit;
+    // the sign-in cookie is spent either way.
+    const refused = failure(env, "denied");
+    refused.cookies.set(signInCookie(env), "", cookieOptions(env, 0));
+    return refused;
   }
 
   await onSignIn(user);
@@ -126,8 +141,9 @@ export async function finishSignIn(
 }
 
 /**
- * POST /auth/logout: clears the session and ends the Keycloak session too,
- * then Keycloak sends the member back to APP_URL. A cross-site form cannot
+ * POST /auth/logout: clears the session and, when the provider has an
+ * end-session endpoint (Keycloak does, Google does not), ends its session
+ * too, which then sends the member back to APP_URL. A cross-site form cannot
  * sign a member out: it is refused, and a request without a session clears
  * nothing.
  */

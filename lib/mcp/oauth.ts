@@ -33,12 +33,12 @@ export type McpEnv = {
 /** Reads the MCP settings; MCP stays off until MCP_CLIENT_ID is set. */
 export function mcpEnv(env: NodeJS.ProcessEnv = process.env): McpEnv | null {
   const clientId = env.MCP_CLIENT_ID;
-  if (!clientId || !env.APP_URL || !env.KEYCLOAK_ISSUER) return null;
+  if (!clientId || !env.APP_URL || !env.OIDC_ISSUER) return null;
   const secret = env.SESSION_SECRET ?? "";
   if (secret.length < 32) return null;
   return {
     appUrl: new URL(env.APP_URL),
-    issuer: new URL(env.KEYCLOAK_ISSUER),
+    issuer: new URL(env.OIDC_ISSUER),
     clientId,
     audience: env.MCP_AUDIENCE || clientId,
     secret,

@@ -1,27 +1,24 @@
 import { WebStandardStreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js";
 
 import { sql } from "@/lib/db";
+import { bearer, verifyAccessToken } from "@/lib/mcp/grants";
 import { protectedResourceUrl } from "@/lib/mcp/metadata";
 import { mcpEnv } from "@/lib/mcp/oauth";
 import { createServer } from "@/lib/mcp/server";
-import {
-  bearer,
-  KeysUnavailableError,
-  verifyAccessToken,
-} from "@/lib/mcp/token";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 /**
  * /mcp: the MCP endpoint (Streamable HTTP, stateless, JSON responses). Every
- * request carries a Keycloak access token for the shared MCP client; the
- * tools act as the member it names.
+ * request carries an access token Slide issued (lib/mcp/grants.ts); the
+ * tools act as the member it names, while the grant stands and the member
+ * stays on the allowlist.
  */
 async function handle(request: Request): Promise<Response> {
   const env = mcpEnv();
   if (!env)
-    return Response.json({ error: "MCP is not set up" }, { status: 404 });
+    return Response.json({ error: "sign-in is not set up" }, { status: 404 });
 
   // A page on another site may not drive the endpoint through a browser.
   const origin = request.headers.get("origin");
@@ -41,16 +38,7 @@ async function handle(request: Request): Promise<Response> {
     });
   const token = bearer(request);
   if (!token) return challenge();
-  let user;
-  try {
-    user = await verifyAccessToken(env, token);
-  } catch (error) {
-    if (!(error instanceof KeysUnavailableError)) throw error;
-    return Response.json(
-      { error: "cannot check the token now" },
-      { status: 503, headers: { "retry-after": "10" } }
-    );
-  }
+  const user = await verifyAccessToken(sql, env, token);
   if (!user) return challenge("invalid_token");
 
   // Stateless, so there is no stream to hold open and no session to end. A
@@ -71,8 +59,8 @@ async function handle(request: Request): Promise<Response> {
     return await transport.handleRequest(request, {
       authInfo: {
         token,
-        clientId: env.clientId,
-        scopes: [],
+        clientId: user.clientId,
+        scopes: ["decks"],
         expiresAt: user.expiresAt,
       },
     });

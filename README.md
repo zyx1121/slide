@@ -41,8 +41,7 @@ With Docker Compose, on any machine with Docker:
 ```sh
 curl -fsSLO https://raw.githubusercontent.com/zyx1121/slide/main/compose.yaml
 curl -fsSL -o .env https://raw.githubusercontent.com/zyx1121/slide/main/.env.example
-# set POSTGRES_PASSWORD, APP_URL, OIDC_*, ALLOWED_EMAILS and SESSION_SECRET in .env,
-# and MCP_CLIENT_ID to let agents in
+# set POSTGRES_PASSWORD, APP_URL, OIDC_*, ALLOWED_EMAILS and SESSION_SECRET in .env
 docker compose up -d
 ```
 
@@ -55,7 +54,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 
 1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one. The dock's template button switches a deck between the plain template and the WinLab one.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors and styles what you select; the check mark shows the rule check.
-3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it asks you to allow the agent, then signs you in with Keycloak.
+3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
 4. Select shapes and ask your agent to change them. Its edits wait under the history button in the dock (**建議與紀錄**), where you preview, accept or reject each one.
 5. Download a `.pptx` from the dock, or publish the deck from the globe button and share its `/s/…` link.
 
@@ -63,20 +62,18 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 
 Set these in `.env`; [.env.example](.env.example) documents every one.
 
-| Key                                                         | What it sets                                                                                                                                                           | Default             |
-| ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `POSTGRES_PASSWORD`                                         | the bundled Postgres password                                                                                                                                          | required            |
-| `APP_URL`                                                   | the public URL members open; the sign-in provider sends them back there                                                                                                | required            |
-| `OIDC_ISSUER`                                               | the OpenID Connect provider, e.g. `https://accounts.google.com`                                                                                                        | required            |
-| `OIDC_CLIENT_ID`                                            | a confidential web client using the code flow with PKCE S256                                                                                                           | required            |
-| `OIDC_CLIENT_SECRET`                                        | that client's secret                                                                                                                                                   | required            |
-| `ALLOWED_EMAILS`                                            | comma-separated verified email addresses that may sign in                                                                                                              | required            |
-| `SESSION_SECRET`                                            | encrypts the session cookie, 32 characters or more                                                                                                                     | required            |
-| `MCP_CLIENT_ID`                                             | a public Keycloak client for agents, with the standard flow, PKCE S256, the redirect URI `APP_URL/oauth/callback` and an audience mapper; MCP is off while it is empty | off                 |
-| `MCP_AUDIENCE`                                              | the audience the agents' access tokens carry                                                                                                                           | the client id       |
-| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | where traces and error logs go, over OTLP/HTTP JSON                                                                                                                    | off                 |
-| `SLIDE_VERSION`                                             | the image tag compose runs                                                                                                                                             | `latest`            |
-| `SLIDE_BIND`, `SLIDE_PORT`                                  | where the web port is published                                                                                                                                        | `127.0.0.1`, `3000` |
+| Key                                                         | What it sets                                                            | Default             |
+| ----------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------- |
+| `POSTGRES_PASSWORD`                                         | the bundled Postgres password                                           | required            |
+| `APP_URL`                                                   | the public URL members open; the sign-in provider sends them back there | required            |
+| `OIDC_ISSUER`                                               | the OpenID Connect provider, e.g. `https://accounts.google.com`         | required            |
+| `OIDC_CLIENT_ID`                                            | a confidential web client using the code flow with PKCE S256            | required            |
+| `OIDC_CLIENT_SECRET`                                        | that client's secret                                                    | required            |
+| `ALLOWED_EMAILS`                                            | comma-separated verified email addresses that may sign in               | required            |
+| `SESSION_SECRET`                                            | encrypts the session cookie, 32 characters or more                      | required            |
+| `OTEL_EXPORTER_OTLP_ENDPOINT`, `OTEL_EXPORTER_OTLP_HEADERS` | where traces and error logs go, over OTLP/HTTP JSON                     | off                 |
+| `SLIDE_VERSION`                                             | the image tag compose runs                                              | `latest`            |
+| `SLIDE_BIND`, `SLIDE_PORT`                                  | where the web port is published                                         | `127.0.0.1`, `3000` |
 
 ## How it works
 
@@ -86,10 +83,9 @@ flowchart LR
   G[Your agent] -->|MCP at /mcp| A
   A --> D[(Postgres)]
   A -->|OIDC sign-in| O[Google or another OIDC provider]
-  A -->|MCP OAuth, until #105| K[Keycloak]
 ```
 
-One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider (Google on slide.zyx.tw), and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's OAuth front, which relays to one public Keycloak client: the agent holds a Keycloak access token, and `/mcp` acts as the member it names. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit waits as a suggestion until the member accepts it. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
+One Next.js app and one Postgres database, run with Docker Compose. Members sign in with an OpenID Connect provider (Google on slide.zyx.tw), and only verified emails in `ALLOWED_EMAILS` get in; each member sees only their own decks and pictures; a published deck is readable by anyone with its link until it is unpublished. An agent signs in through the app's own OAuth authorization server: the member signs in as on the web, allows the agent on a consent page, and the agent gets a one-hour access token and a rotating refresh token, stored only as hashes; `/mcp` acts as that member while the grant stands and the member stays on the allowlist. Every edit, from the editor or from an agent, goes through the same validated path and is stored as a revision; an agent's edit waits as a suggestion until the member accepts it. One renderer draws slides in the browser and, through resvg, on the server, with bundled fonts, so lines wrap the same everywhere.
 
 ## Develop
 

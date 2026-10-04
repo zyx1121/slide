@@ -118,7 +118,6 @@ describe("proxy", () => {
       "/mcp",
       "/oauth/token",
       "/oauth/approve",
-      "/oauth/callback",
       "/.well-known/oauth-authorization-server",
       "/s/abc",
       "/template/winlab-background.png",

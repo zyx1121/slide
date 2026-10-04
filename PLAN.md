@@ -31,7 +31,7 @@ flowchart LR
   G[Member's agent] -->|MCP at /mcp| A
   V[Public viewer] -->|/s/:id| A
   A --> D[(Postgres)]
-  A -->|OIDC and OAuth| K[Keycloak]
+  A -->|OIDC sign-in| O[Google or another OIDC provider]
 ```
 
 The Next.js app holds the editor, the MCP endpoint, the public pages, `.pptx` import and export, and the renderer.
@@ -94,7 +94,7 @@ Decided on 2026-10-04: Slide stops depending on WinLab and runs at `slide.zyx.tw
 | Topic       | Decision                                                                                   |
 | ----------- | ------------------------------------------------------------------------------------------ |
 | Name        | Slide: repo `zyx1121/slide`, image `ghcr.io/zyx1121/slide`                                 |
-| Sign-in     | Google through Better Auth, replacing Keycloak                                             |
+| Sign-in     | Google through OpenID Connect, replacing Keycloak                                          |
 | Access      | Only allowlisted, verified email addresses may sign in                                     |
 | MCP         | Slide is its own authorization server for `/mcp` instead of relaying Keycloak              |
 | Templates   | A deck picks a template. New decks use a neutral one; the WinLab master stays as an option |
@@ -110,5 +110,5 @@ Glued connectors: a demo built with python-pptx, with the elbow geometry precomp
 
 - Text layout parity with PowerPoint. Carlito matches Calibri's metrics; CJK fonts differ, so CJK lines may wrap slightly differently.
 - IME composition while editing text on the canvas.
-- MCP sign-in through Keycloak, including the client registration policy.
+- MCP sign-in: Slide is the authorization server; clients are known by their metadata document or limited to loopback redirects.
 - `.pptx` import fidelity. Unsupported elements become pictures or are skipped, with a report.

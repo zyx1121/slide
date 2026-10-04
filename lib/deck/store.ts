@@ -13,7 +13,7 @@ type Db = postgres.Sql;
 
 export type Actor = {
   kind: "member" | "agent";
-  /** The member's Keycloak subject; an agent carries its member's. */
+  /** The member's sign-in subject; an agent carries its member's. */
   sub: string;
 };
 

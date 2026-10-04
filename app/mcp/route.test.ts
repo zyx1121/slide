@@ -12,20 +12,23 @@ vi.mock("@/lib/db", () => ({
     return holder.db;
   },
 }));
-vi.mock("@/lib/mcp/token", async (original) => ({
-  ...(await original<typeof import("@/lib/mcp/token")>()),
-  verifyAccessToken: vi.fn(async (_env: unknown, token: string) =>
-    token === "good"
-      ? { sub: "alice-sub", name: "Alice", email: "", expiresAt: 2e9 }
-      : null
+vi.mock("@/lib/mcp/grants", async (original) => ({
+  ...(await original<typeof import("@/lib/mcp/grants")>()),
+  verifyAccessToken: vi.fn(
+    async (_db: unknown, _env: unknown, token: string) =>
+      token === "good"
+        ? { sub: "alice-sub", clientId: "test-client", expiresAt: 2e9 }
+        : null
   ),
 }));
 
 const ENV = {
   APP_URL: "https://slide.example.org",
-  OIDC_ISSUER: "https://auth.example.org/realms/lab",
+  OIDC_ISSUER: "https://accounts.google.com",
+  OIDC_CLIENT_ID: "slide",
+  OIDC_CLIENT_SECRET: "client-secret",
   SESSION_SECRET: "s".repeat(64),
-  MCP_CLIENT_ID: "slide-mcp",
+  ALLOWED_EMAILS: "alice@example.com",
 };
 
 const { DELETE, GET, POST } = await import("./route");
@@ -57,10 +60,10 @@ describe("POST /mcp challenges", () => {
     );
   });
 
-  it("is off without an MCP client", async () => {
-    delete process.env.MCP_CLIENT_ID;
+  it("is off while sign-in is not set up", async () => {
+    delete process.env.ALLOWED_EMAILS;
     expect((await rpc("tools/list", {})).response.status).toBe(404);
-    process.env.MCP_CLIENT_ID = ENV.MCP_CLIENT_ID;
+    process.env.ALLOWED_EMAILS = ENV.ALLOWED_EMAILS;
   });
 
   const other = (handler: typeof GET, method: string, token: string) =>

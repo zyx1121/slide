@@ -19,6 +19,15 @@ import {
   type Revision,
   type Suggestion,
 } from "@/lib/deck/revisions";
+import {
+  addComment,
+  addToThread,
+  Body,
+  type CommentResult,
+  CommentInput,
+  listThreads,
+  type Thread,
+} from "@/lib/deck/comments";
 import { saveSelection, SelectionInput } from "@/lib/deck/selection";
 import { getDeck, mutateDeck } from "@/lib/deck/store";
 
@@ -136,4 +145,49 @@ export async function selectAction(
   const parsed = SelectionInput.safeParse(input);
   if (typeof deckId !== "string" || !parsed.success) return false;
   return saveSelection(sql, user.sub, deckId, parsed.data);
+}
+
+/** The deck's comment threads, oldest first. */
+export async function commentsAction(deckId: unknown): Promise<Thread[]> {
+  const user = await requireUser();
+  if (typeof deckId !== "string") return [];
+  return listThreads(sql, user.sub, deckId);
+}
+
+/** Starts a comment thread on what the member selected. */
+export async function commentAction(
+  deckId: unknown,
+  input: unknown
+): Promise<CommentResult> {
+  const user = await requireUser();
+  const parsed = CommentInput.safeParse(input);
+  if (typeof deckId !== "string" || !parsed.success) {
+    return { outcome: "invalid", message: "malformed" };
+  }
+  return addComment(sql, user.sub, deckId, parsed.data);
+}
+
+/** Replies to, resolves or reopens a thread. */
+export async function threadAction(
+  deckId: unknown,
+  threadId: unknown,
+  kind: unknown,
+  body?: unknown
+): Promise<CommentResult> {
+  const user = await requireUser();
+  if (
+    typeof deckId !== "string" ||
+    !isId(threadId) ||
+    (kind !== "reply" && kind !== "resolve" && kind !== "reopen") ||
+    (body !== undefined && typeof body !== "string")
+  ) {
+    return { outcome: "invalid", message: "malformed" };
+  }
+  if (typeof body === "string" && !Body.safeParse(body).success) {
+    return { outcome: "invalid", message: "malformed" };
+  }
+  return addToThread(sql, user.sub, deckId, threadId, {
+    kind,
+    body: typeof body === "string" ? body : undefined,
+  });
 }

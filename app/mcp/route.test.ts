@@ -128,6 +128,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     const tools = (await rpc("tools/list", {})).body.result.tools;
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
       "accept",
+      "add_comment",
       "add_shapes",
       "add_slide",
       "check_deck",
@@ -141,6 +142,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "get_image",
       "get_selection",
       "import_deck",
+      "list_comments",
       "list_decks",
       "list_history",
       "move_slide",
@@ -148,6 +150,9 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "reject",
       "rename_deck",
       "render_slide",
+      "reopen_comment",
+      "reply_comment",
+      "resolve_comment",
       "restore_deck",
       "revert",
       "set_template",
@@ -366,6 +371,120 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(json(await call("upload_image", { data: wrapped })).width).toBe(1);
   });
 
+  it("reads the member's comments and answers them", async () => {
+    const deck = json(await call("create_deck", { title: "Commented" }));
+    const slideId = json(await call("get_deck", { deck_id: deck.id })).document
+      .slides[0].id;
+    // The member comments in the editor; here, the same function.
+    const { addComment } = await import("@/lib/deck/comments");
+    const added = await addComment(db, "alice-sub", deck.id, {
+      slideId,
+      targets: [],
+      body: "Add a title",
+    });
+    const threadId = (added as { id: string }).id;
+
+    const listed = await call("list_comments", {
+      deck_id: deck.id,
+      images: true,
+    });
+    const threads = JSON.parse(listed.content[0].text);
+    expect(threads).toHaveLength(1);
+    expect(threads[0]).toMatchObject({
+      id: threadId,
+      body: "Add a title",
+      author: "member",
+      status: "open",
+      slide: { number: 1 },
+    });
+    expect(
+      listed.content.some((c: { type: string }) => c.type === "image")
+    ).toBe(true);
+
+    // The agent answers with a suggestion, says so, and resolves.
+    const titled = json(
+      await call("add_slide", { deck_id: deck.id, after: 0, title: "Overview" })
+    );
+    expect(
+      json(
+        await call("reply_comment", {
+          deck_id: deck.id,
+          comment: threadId,
+          body: "Suggested a title slide",
+          entry: titled.suggestion,
+        })
+      ).status
+    ).toBe("added");
+    expect(
+      json(
+        await call("resolve_comment", { deck_id: deck.id, comment: threadId })
+      ).status
+    ).toBe("added");
+    expect(
+      JSON.parse(
+        (await call("list_comments", { deck_id: deck.id })).content[0].text
+      )
+    ).toEqual([]);
+    const all = JSON.parse(
+      (await call("list_comments", { deck_id: deck.id, status: "all" }))
+        .content[0].text
+    );
+    expect(all[0].replies.map((r: { kind: string }) => r.kind)).toEqual([
+      "reply",
+      "resolve",
+    ]);
+    expect(all[0].replies[0].entryId).toBe(titled.suggestion);
+
+    // An agent comments too, and a bad anchor is refused.
+    expect(
+      json(
+        await call("add_comment", {
+          deck_id: deck.id,
+          slide: 1,
+          body: "Check the numbers",
+        })
+      ).status
+    ).toBe("added");
+    expect(
+      (
+        await call("add_comment", {
+          deck_id: deck.id,
+          slide: 1,
+          targets: [{ shape: "sh_ghost" }],
+          body: "x",
+        })
+      ).isError
+    ).toBe(true);
+    expect(
+      json(
+        await call("reopen_comment", { deck_id: deck.id, comment: threadId })
+      ).status
+    ).toBe("added");
+  });
+
+  it("lists a comment whose words were deleted since", async () => {
+    const deck = await createDeck(db, "alice-sub", sampleDocument());
+    const doc = deck.document;
+    const slide = doc.slides[0];
+    const note = slide.shapes.find((shape) => shape.id === "tx_note")!;
+    const { addComment } = await import("@/lib/deck/comments");
+    await addComment(db, "alice-sub", deck.id, {
+      slideId: slide.id,
+      targets: [
+        {
+          shape: "tx_note",
+          text: { from: { p: 5, o: 0 }, to: { p: 5, o: 3 } },
+        },
+      ],
+      body: "Drop this bullet",
+    });
+    const listed = await call("list_comments", { deck_id: deck.id });
+    expect(listed.isError).toBeFalsy();
+    const [thread] = JSON.parse(listed.content[0].text);
+    expect(thread.targets[0]).toMatchObject({ stale: true });
+    expect(note).toBeDefined();
+  });
+
   it("keeps every tool to the member's own decks", async () => {
     const [bobs] = await db<{ id: string }[]>`
       select id from decks where owner_sub = 'bob-sub' limit 1`;
@@ -377,6 +496,11 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       ["list_history", {}],
       ["accept", { entry: "1" }],
       ["revert", { entry: "1" }],
+      ["list_comments", {}],
+      ["add_comment", { slide: 1, body: "x" }],
+      ["reply_comment", { comment: "1", body: "x" }],
+      ["resolve_comment", { comment: "1" }],
+      ["reopen_comment", { comment: "1" }],
     ] as const) {
       const result = await call(tool, { deck_id: bobs.id, ...args });
       expect(result.isError, tool).toBe(true);

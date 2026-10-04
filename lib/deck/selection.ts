@@ -41,7 +41,8 @@ export async function saveSelection(
   const rows = await db`
     insert into selections (user_sub, deck_id, slide_id, targets, updated_at)
     select ${sub}, d.id, ${input.slideId}, ${db.json(input.targets as postgres.JSONValue)}, now()
-    from decks d where d.id = ${deckId} and d.owner_sub = ${sub}
+    from decks d
+    where d.id = ${deckId} and d.owner_sub = ${sub} and d.deleted_at is null
     on conflict (user_sub) do update
       set deck_id = excluded.deck_id, slide_id = excluded.slide_id,
           targets = excluded.targets, updated_at = now()
@@ -64,6 +65,7 @@ export async function getSelection(
   >`
     select s.deck_id, s.slide_id, s.targets, s.updated_at from selections s
     join decks d on d.id = s.deck_id and d.owner_sub = ${sub}
+      and d.deleted_at is null
     where s.user_sub = ${sub}`;
   if (!row?.deck_id || !row.slide_id) return null;
   return {

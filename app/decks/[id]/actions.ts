@@ -10,6 +10,7 @@ import { DeckError, type DeckErrorCode } from "@/lib/deck/errors";
 import type { DeckDocument } from "@/lib/deck/schema";
 import {
   acceptSuggestion,
+  actOnDeck,
   listRevisions,
   listSuggestions,
   type Outcome,
@@ -19,7 +20,7 @@ import {
   type Suggestion,
 } from "@/lib/deck/revisions";
 import { saveSelection, SelectionInput } from "@/lib/deck/selection";
-import { getDeck, mutateDeck, setPublished } from "@/lib/deck/store";
+import { getDeck, mutateDeck } from "@/lib/deck/store";
 
 export type EditResult =
   | { ok: true; version: number }
@@ -65,7 +66,8 @@ export async function loadDeckAction(
 
 /**
  * Publishes or unpublishes the member's deck: a published deck is readable
- * by anyone with its link at /s/<public id>.
+ * by anyone with its link at /s/<public id>. Either is an entry in the
+ * deck's history.
  */
 export async function publishDeckAction(
   deckId: unknown,
@@ -75,7 +77,15 @@ export async function publishDeckAction(
   if (typeof deckId !== "string" || typeof published !== "boolean") {
     return null;
   }
-  return setPublished(sql, user.sub, deckId, published);
+  const result = await actOnDeck(
+    sql,
+    user.sub,
+    deckId,
+    published ? "publish" : "unpublish"
+  );
+  if (result.outcome === "gone") return null;
+  const deck = await getDeck(sql, user.sub, deckId);
+  return deck && { published: deck.published, publicId: deck.publicId };
 }
 
 /** The deck's pending suggestions and its recent history. */

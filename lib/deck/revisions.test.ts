@@ -5,6 +5,7 @@ import { updateShapes } from "../mcp/write";
 import { createTestDb, TEST_DATABASE_URL } from "../test-db";
 import {
   acceptSuggestion,
+  actOnDeck,
   listRevisions,
   listSuggestions,
   rejectSuggestion,
@@ -72,6 +73,7 @@ describe.skipIf(!TEST_DATABASE_URL)(
       expect(await acceptSuggestion(db, "alice", deck.id, id)).toEqual({
         outcome: "applied",
         version: 1,
+        kind: "edit",
       });
       expect((await asr(deck.id)).fill).toBe("#fff2cc");
       const [latest] = await listRevisions(db, "alice", deck.id);
@@ -148,6 +150,101 @@ describe.skipIf(!TEST_DATABASE_URL)(
         outcome: "conflict",
       });
       expect((await asr(deck.id)).x).toBe(333);
+    });
+
+    it("asks before an agent publishes or deletes, and lets anyone decide", async () => {
+      const deck = await fresh();
+      const ask = await actOnDeck(db, "alice", deck.id, "publish", "agent");
+      expect(ask.outcome).toBe("requested");
+      expect((await getDeck(db, "alice", deck.id))!.published).toBe(false);
+      const [pending] = await listSuggestions(db, "alice", deck.id);
+      expect(pending).toMatchObject({
+        kind: "publish",
+        author: "agent",
+        stale: false,
+        decidedBy: null,
+      });
+
+      // The member tells the agent to go ahead: the agent accepts.
+      const id = (ask as { revisionId: string }).revisionId;
+      expect(
+        await acceptSuggestion(db, "alice", deck.id, id, "agent")
+      ).toMatchObject({ outcome: "applied", kind: "publish" });
+      expect((await getDeck(db, "alice", deck.id))!.published).toBe(true);
+      const [entry] = await listRevisions(db, "alice", deck.id);
+      expect(entry).toMatchObject({
+        id,
+        kind: "publish",
+        status: "applied",
+        author: "agent",
+        decidedBy: "agent",
+      });
+
+      // Unpublishing is not risky: an agent's applies at once.
+      expect(
+        (await actOnDeck(db, "alice", deck.id, "unpublish", "agent")).outcome
+      ).toBe("applied");
+      expect((await getDeck(db, "alice", deck.id))!.published).toBe(false);
+
+      // A delete request rejected leaves the deck; accepted, deletes it.
+      const doomed = await actOnDeck(db, "alice", deck.id, "delete", "agent");
+      const doomedId = (doomed as { revisionId: string }).revisionId;
+      expect(await rejectSuggestion(db, "alice", deck.id, doomedId)).toBe(true);
+      expect(await getDeck(db, "alice", deck.id)).not.toBeNull();
+      const again = await actOnDeck(db, "alice", deck.id, "delete", "agent");
+      const againId = (again as { revisionId: string }).revisionId;
+      expect(
+        await acceptSuggestion(db, "alice", deck.id, againId)
+      ).toMatchObject({ outcome: "applied", kind: "delete" });
+      expect(await getDeck(db, "alice", deck.id)).toBeNull();
+
+      // Reverting the delete restores the deck, as a new entry.
+      expect(await revertRevision(db, "alice", deck.id, againId)).toMatchObject(
+        { outcome: "applied", kind: "restore" }
+      );
+      expect(await getDeck(db, "alice", deck.id)).not.toBeNull();
+      const kinds = (await listRevisions(db, "alice", deck.id)).map(
+        (r) => `${r.kind}:${r.status}`
+      );
+      expect(kinds.slice(0, 5)).toEqual([
+        "restore:applied",
+        "delete:applied",
+        "delete:rejected",
+        "unpublish:applied",
+        "publish:applied",
+      ]);
+    });
+
+    it("turns an agent's revert of an unpublish into a publish request", async () => {
+      const deck = await fresh();
+      await actOnDeck(db, "alice", deck.id, "publish");
+      const off = await actOnDeck(db, "alice", deck.id, "unpublish");
+      const offId = (off as { revisionId: string }).revisionId;
+      expect(
+        await revertRevision(db, "alice", deck.id, offId, "agent")
+      ).toMatchObject({ outcome: "requested" });
+      expect((await getDeck(db, "alice", deck.id))!.published).toBe(false);
+      // An agent's revert of an edit applies at once and names the agent.
+      const edited = await edit(deck.id, { x: 5 });
+      expect(
+        await revertRevision(db, "alice", deck.id, edited.revisionId, "agent")
+      ).toMatchObject({ outcome: "applied", kind: "edit" });
+      const [latest] = await listRevisions(db, "alice", deck.id);
+      expect(latest).toMatchObject({ author: "agent", decidedBy: "agent" });
+    });
+
+    it("refuses another member's deck for every action", async () => {
+      const deck = await fresh();
+      for (const action of [
+        "publish",
+        "unpublish",
+        "delete",
+        "restore",
+      ] as const) {
+        expect(await actOnDeck(db, "bob", deck.id, action)).toEqual({
+          outcome: "gone",
+        });
+      }
     });
   }
 );

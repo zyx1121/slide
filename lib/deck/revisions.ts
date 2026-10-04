@@ -265,7 +265,10 @@ async function act(
   const deck = await lockDeck(tx, owner, deckId);
   if (!deck) return { outcome: "gone" };
   if (!changes(deck, action)) return { outcome: "already" };
-  if (by === "agent" && RISKY.has(action)) {
+  // Restoring a deck that was public when deleted brings its link back, so
+  // it is as risky as publishing.
+  const risky = RISKY.has(action) || (action === "restore" && deck.published);
+  if (by === "agent" && risky) {
     const [entry] = await tx<{ id: string }[]>`
       insert into revisions
         (deck_id, kind, base_version, author_kind, author_sub, status)
@@ -405,6 +408,20 @@ export async function revertRevision(
     if (!row) return { outcome: "gone" };
 
     if (row.kind !== "edit") {
+      // Like an edit, a deck action reverts only while nothing later did
+      // the same kind of thing: reverting an old publish after an
+      // unpublish and a publish would undo the later ones too.
+      const [later] = await tx`
+        select 1 from revisions
+        where deck_id = ${deckId} and id > ${revisionId} and status = 'applied'
+          and kind <> 'edit'
+        limit 1`;
+      if (later) {
+        return {
+          outcome: "conflict",
+          message: "後來又公開、取消公開、刪除或還原過，無法單獨還原這一筆。",
+        };
+      }
       const undo = UNDO[row.kind];
       const result = await act(tx, owner, deckId, undo, by);
       if (result.outcome === "applied") {

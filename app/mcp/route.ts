@@ -4,9 +4,14 @@ import { sql } from "@/lib/db";
 import { bearer, verifyAccessToken } from "@/lib/mcp/grants";
 import { protectedResourceUrl } from "@/lib/mcp/metadata";
 import { mcpEnv } from "@/lib/mcp/oauth";
-import { createServer } from "@/lib/mcp/server";
+import { createServer, MCP_IMPORT_MAX_BYTES } from "@/lib/mcp/server";
 
 export const dynamic = "force-dynamic";
+
+/** The largest request /mcp reads: a base64 .pptx at its cap, and room. */
+// Base64 is 4/3 of the file; 3 % more covers line breaks every 76
+// characters, as the base64 command writes them, and the JSON-RPC around it.
+const MCP_BODY_MAX_BYTES = Math.ceil(((MCP_IMPORT_MAX_BYTES * 4) / 3) * 1.03);
 export const runtime = "nodejs";
 
 /**
@@ -53,6 +58,9 @@ async function handle(request: Request): Promise<Response> {
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined,
     enableJsonResponse: true,
+    // Room for the largest file a tool takes (import_deck), in base64, and
+    // the JSON-RPC around it; the SDK's own cap is 4 MiB.
+    maxRequestBodySize: MCP_BODY_MAX_BYTES,
   });
   await server.connect(transport);
   try {

@@ -100,6 +100,21 @@ Decided on 2026-10-04: Slide stops depending on WinLab and runs at `slide.zyx.tw
 | Templates   | A deck picks a template. New decks use a neutral one; the WinLab master stays as an option |
 | Old address | `slide.winlab.tw` goes offline without a redirect; its public links stop working           |
 
+## v0.3: agents can do everything
+
+Decided on 2026-10-04: the web app only helps present. Whatever a member can do there, an agent can do over MCP, review included. `lib/mcp/parity.ts` maps every server action and API route to its tools, and a test fails when one is missing.
+
+| In the web app                          | Over MCP                                                                                                                |
+| --------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| Create, import, rename, delete, restore | `create_deck`, `import_deck`, `rename_deck`, `delete_deck`, `restore_deck`, `list_decks`                                |
+| Edit shapes and slides, switch template | `add_shapes`, `update_shapes`, `delete_shapes`, `add_slide`, `copy_slide`, `delete_slide`, `move_slide`, `set_template` |
+| Pictures                                | `upload_image`, `get_image`                                                                                             |
+| Download, publish                       | `export_deck`, `publish_deck`, `unpublish_deck`                                                                         |
+| Review: suggestions, requests, history  | `list_history`, `accept`, `reject`, `revert`                                                                            |
+| Look and point                          | `get_deck`, `render_slide`, `check_deck`, `get_selection`                                                               |
+
+An agent's document edits are suggestions; its publish and delete (and restoring a deck that was public) are requests; either waits until the member, or an agent the member asks, accepts it. Every change is an entry in the deck's history and can be reverted.
+
 ## Evidence
 
 Feature inventory of 12 hand-made decks, 876 slides in total: 1,033 text boxes, 665 pictures, 564 rounded rectangles, 275 connectors (141 glued to shapes), 267 arrowheads, 181 dashed lines, 16 tables, 7 groups, 18 freeforms, and no charts, SmartArt, or media. Animation and equations appeared only in course decks.

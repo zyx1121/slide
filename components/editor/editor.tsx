@@ -13,6 +13,8 @@ import {
   LayoutGridIcon,
   LayoutTemplateIcon,
   MessageSquareIcon,
+  PlayIcon,
+  PresentationIcon,
   TypeIcon,
   Redo2Icon,
   SendToBackIcon,
@@ -40,6 +42,8 @@ import { Canvas, type CanvasText } from "@/components/editor/canvas";
 import { CheckTool } from "@/components/editor/check-tool";
 import { CommentsTool } from "@/components/editor/comments-tool";
 import { NotesTool } from "@/components/editor/notes-tool";
+import { Play } from "@/components/present/play";
+import { screenName, screenUrl } from "@/components/present/presenter";
 import { HistoryTool } from "@/components/editor/history-tool";
 import { SlideOverlay } from "@/components/editor/overlay";
 import {
@@ -68,6 +72,7 @@ import {
 } from "@/components/ui/tooltip";
 import { compare } from "fast-json-patch";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import { DeckError } from "@/lib/deck/errors";
 import { applyOperations, type Operation } from "@/lib/deck/patch";
@@ -258,6 +263,7 @@ export function Editor({
   initialPublicId,
   invalid = null,
   notice: initialNotice = null,
+  initialSlide = 0,
 }: {
   deckId: string;
   initialDocument: DeckDocument;
@@ -271,7 +277,10 @@ export function Editor({
   invalid?: string | null;
   /** A note to show once, such as an import report. */
   notice?: string | null;
+  /** The slide to open on, by position, as when back from presenting. */
+  initialSlide?: number;
 }) {
+  const router = useRouter();
   const [doc, setDoc] = useState(initialDocument);
   const docRef = useRef(doc);
   const [history, setHistoryState] = useState<History>(EMPTY_HISTORY);
@@ -283,8 +292,8 @@ export function Editor({
   // The slide holding the selection, which keyboard and arrange tools act
   // on, and the slide most in view, which the page number shows and inserts
   // go to.
-  const [slideIndex, setSlideIndex] = useState(0);
-  const [visibleIndex, setVisibleIndex] = useState(0);
+  const [slideIndex, setSlideIndex] = useState(initialSlide);
+  const [visibleIndex, setVisibleIndex] = useState(initialSlide);
   const [selection, setSelection] = useState<string[]>([]);
   /** A tool that draws on the next drag instead of selecting. */
   const [tool, setTool] = useState<"connector" | null>(null);
@@ -686,8 +695,11 @@ export function Editor({
     if (placed.length > 0 && where >= 0) select(where, placed);
   };
 
-  // A slide to scroll to once the list has redrawn with it.
-  const pendingScroll = useRef<number | null>(null);
+  // A slide to scroll to once the list has redrawn with it: at first, the
+  // slide the editor opens on.
+  const pendingScroll = useRef<number | null>(
+    initialSlide > 0 ? initialSlide : null
+  );
   useEffect(() => {
     const at = pendingScroll.current;
     if (at === null) return;
@@ -750,6 +762,42 @@ export function Editor({
     },
     [commit]
   );
+
+  // Presenting on this screen, from the slide at this position.
+  const [playing, setPlaying] = useState<number | null>(null);
+  /** The slides full screen over the editor, from slide `from`. */
+  const startPlay = (from: number) => {
+    endEdit();
+    flushNudge();
+    // Asked in the click itself: browsers allow full screen only then.
+    void window.document.documentElement.requestFullscreen?.().catch(() => {});
+    setPlaying(from);
+  };
+  const endPlay = useCallback((at: number) => {
+    setPlaying(null);
+    if (window.document.fullscreenElement) {
+      void window.document.exitFullscreen().catch(() => {});
+    }
+    setSlideIndex(at);
+    setVisibleIndex(at);
+    pendingScroll.current = at;
+  }, []);
+  /**
+   * The presenter view in this tab, from slide `from`, and the projection
+   * window, opened in the click itself or the browser blocks it.
+   */
+  const startPresenter = (from: number) => {
+    endEdit();
+    flushNudge();
+    const opened = window.open(
+      screenUrl(deckId),
+      screenName(deckId),
+      "popup,width=960,height=540"
+    );
+    router.push(
+      `/decks/${deckId}/present?from=${from + 1}${opened ? "" : "&blocked=1"}`
+    );
+  };
 
   /** Adds a connector drawn on a slide and selects it. */
   const drawLine = (at: number, start: End, end: End) => {
@@ -1213,6 +1261,9 @@ export function Editor({
       } else if (key === "d") {
         event.preventDefault();
         duplicate();
+      } else if (key === "enter") {
+        event.preventDefault();
+        startPlay(at);
       }
     }
   };
@@ -1591,6 +1642,16 @@ export function Editor({
               disabled={paused}
               onSave={saveNotes}
             />
+            <Tool
+              tip="播放（⌘ Enter）"
+              icon={PlayIcon}
+              onClick={() => startPlay(visible)}
+            />
+            <Tool
+              tip="簡報者模式：投影幕放投影片，這裡看講稿"
+              icon={PresentationIcon}
+              onClick={() => startPresenter(visible)}
+            />
             <Separator orientation="vertical" className="mx-1 my-2" />
             {selectionInput && (
               <CommentsTool
@@ -1679,6 +1740,9 @@ export function Editor({
           </div>
         </div>
       </div>
+      {playing !== null && (
+        <Play document={doc} start={playing} onEnd={endPlay} />
+      )}
     </TextFocus.Provider>
   );
 }

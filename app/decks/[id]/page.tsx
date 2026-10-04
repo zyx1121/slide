@@ -16,7 +16,7 @@ export default async function DeckPage({
 }: PageProps<"/decks/[id]">) {
   const { id } = await params;
   // Right after an import: what the .pptx had that the deck does not.
-  const { imported } = await searchParams;
+  const { imported, slide } = await searchParams;
   let notice: string | null = null;
   if (typeof imported === "string") {
     try {
@@ -29,6 +29,11 @@ export default async function DeckPage({
   // Someone else's deck is a 404, the same as a deck that does not exist.
   const deck = await getDeck(sql, user.sub, id);
   if (!deck) notFound();
+  // Back from presenting: the slide it ended on, 1 first.
+  const initialSlide = Math.min(
+    Math.max(Number(slide) - 1 || 0, 0),
+    deck.document.slides.length - 1
+  );
 
   return (
     <StageShell title={deck.title}>
@@ -40,6 +45,7 @@ export default async function DeckPage({
         initialPublicId={deck.publicId}
         invalid={storedDocumentProblem(deck.document)}
         notice={notice}
+        initialSlide={initialSlide}
       />
     </StageShell>
   );

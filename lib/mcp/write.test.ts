@@ -8,6 +8,7 @@ import {
   deleteShapes,
   deleteSlide,
   moveSlide,
+  setSlideNotes,
   setSlideTitle,
   updateShapes,
   WriteError,
@@ -92,6 +93,25 @@ describe("agent writes by id", () => {
       "has that title"
     );
     expect(() => setSlideTitle(doc, 2, "None")).toThrow("no slide 2");
+  });
+
+  it("sets and clears a slide's speaker notes, and adds a slide with them", () => {
+    const noted = apply(setSlideNotes(doc, "sl_overview", "Say hello.").ops);
+    expect(noted.slides[0].notes).toBe("Say hello.");
+    expect(() => setSlideNotes(noted, 1, "Say hello.")).toThrow(
+      "has those notes"
+    );
+    const cleared = setSlideNotes(noted, 1, "");
+    expect(cleared.changed).toEqual(["sl_overview"]);
+    expect(
+      applyOperations(noted, cleared.ops).document.slides[0]
+    ).not.toHaveProperty("notes");
+    expect(() => setSlideNotes(doc, 1, "")).toThrow(WriteError);
+
+    const added = apply(addSlide(doc, { title: "Next", notes: "Pause." }).ops);
+    expect(added.slides[1]).toMatchObject({ title: "Next", notes: "Pause." });
+    const bare = apply(addSlide(doc, { notes: "  " }).ops);
+    expect(bare.slides[1]).not.toHaveProperty("notes");
   });
 
   it("refuses when the shapes have moved since the plan was made", () => {

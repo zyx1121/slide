@@ -9,6 +9,7 @@ import {
   duplicateSlide,
   insertSlideOps,
   moveSlideOps,
+  notesOps,
 } from "./slides";
 
 const doc = sampleDocument();
@@ -56,5 +57,25 @@ describe("slide list edits", () => {
     ).document;
     expect(deleted.slides.map((slide) => slide.title)).toEqual(["Second"]);
     expect(moveSlideOps(0, 0)).toEqual([]);
+  });
+
+  it("writes, changes and clears speaker notes, as typed", () => {
+    const slide = doc.slides[0];
+    const written = apply(
+      notesOps(slide, 0, "Open with the demo.\n ")
+    ).document;
+    expect(written.slides[0].notes).toBe("Open with the demo.\n ");
+    const changed = notesOps(written.slides[0], 0, "Then the numbers.");
+    expect(changed).toEqual([
+      { op: "replace", path: "/slides/0/notes", value: "Then the numbers." },
+    ]);
+    // Whitespace only clears them; nothing to clear, or the same, is no edit.
+    expect(notesOps(written.slides[0], 0, " \n")).toEqual([
+      { op: "remove", path: "/slides/0/notes" },
+    ]);
+    expect(notesOps(slide, 0, "")).toEqual([]);
+    expect(notesOps(written.slides[0], 0, "Open with the demo.\n ")).toEqual(
+      []
+    );
   });
 });

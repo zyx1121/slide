@@ -31,6 +31,25 @@ export function duplicateSlide(slide: Slide): Slide {
   return { ...slide, id: newId("sl"), shapes };
 }
 
+/**
+ * Sets a slide's speaker notes, kept as typed; notes of nothing but
+ * whitespace remove them. No operations when nothing would change.
+ */
+export function notesOps(
+  slide: Slide,
+  index: number,
+  notes: string
+): Operation[] {
+  const path = `/slides/${index}/notes`;
+  if (!notes.trim()) {
+    return slide.notes === undefined ? [] : [{ op: "remove", path }];
+  }
+  if (notes === slide.notes) return [];
+  return [
+    { op: slide.notes === undefined ? "add" : "replace", path, value: notes },
+  ];
+}
+
 /** Puts a slide at position `at` (0 first). */
 export const insertSlideOps = (at: number, slide: Slide): Operation[] => [
   { op: "add", path: `/slides/${at}`, value: slide },

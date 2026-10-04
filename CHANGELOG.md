@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/zyx1121/slide.winlab.tw/compare/v0.1.0...v0.1.1) (2026-10-04)
+
+
+### Bug fixes
+
+* cap the bodies of unauthenticated OAuth requests ([#93](https://github.com/zyx1121/slide.winlab.tw/issues/93)) ([a1f4ac7](https://github.com/zyx1121/slide.winlab.tw/commit/a1f4ac7eb1903be5eff3ed9b215d5b9a40f88e64))
+
 ## 0.1.0 (2026-10-04)
 
 

@@ -49,7 +49,7 @@ docker compose up -d
 This starts Postgres, a one-shot migration job and the web app, all from `ghcr.io/zyx1121/slide.winlab.tw`, with the app on `127.0.0.1:3000`. Uploaded pictures live on the `assets` volume; back it up with the database.
 
 > [!IMPORTANT]
-> The app listens on 127.0.0.1 and speaks plain HTTP: put a reverse proxy with TLS in front (it must pass the original `Host`), and register `APP_URL/*` as a redirect URI of your Keycloak client.
+> The app listens on 127.0.0.1 and speaks plain HTTP: put a reverse proxy with TLS in front (it must pass the original `Host`), and register `APP_URL/*` as a redirect URI of your Keycloak client. Let the proxy refuse request bodies a little over 100 MiB, the largest upload (a `.pptx` import); in Caddy, `request_body { max_size 101MiB }` (Caddy reads `MB` as 1,000,000 bytes).
 
 ## Use
 

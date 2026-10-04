@@ -84,7 +84,7 @@ describe("proxy", () => {
     expect(response.status).toBe(307);
   });
 
-  it("leaves sign-in, the health check, public decks and static files alone", () => {
+  it("leaves sign-in, the health check, uploads, MCP and its OAuth front, public decks and static files alone", () => {
     const pattern = new RegExp(`^${config.matcher[0]}$`);
     for (const path of [
       "/",
@@ -101,6 +101,11 @@ describe("proxy", () => {
       "/api/health",
       "/api/assets",
       "/api/decks/import",
+      "/mcp",
+      "/oauth/token",
+      "/oauth/approve",
+      "/oauth/callback",
+      "/.well-known/oauth-authorization-server",
       "/s/abc",
       "/template/winlab-background.png",
       "/_next/static/chunk.js",

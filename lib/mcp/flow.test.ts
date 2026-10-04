@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { approve, callback } from "./flow";
-import { type McpEnv, readAuthorize, sign, unsign } from "./oauth";
+import { FORM_LIMIT, type McpEnv, readAuthorize, sign, unsign } from "./oauth";
 import { token } from "./token-endpoint";
 
 const env: McpEnv = {
@@ -110,6 +110,18 @@ describe("approve", () => {
       post("https://slide.example.org/oauth/approve", { tx, decision: "allow" })
     );
     expect(response.status).toBe(403);
+  });
+
+  it("stops reading a form larger than any consent", async () => {
+    const response = await approve(
+      env,
+      post(
+        "https://slide.example.org/oauth/approve",
+        { tx, decision: "allow", pad: "x".repeat(FORM_LIMIT) },
+        { origin: "https://slide.example.org" }
+      )
+    );
+    expect(response.status).toBe(413);
   });
 });
 
@@ -233,5 +245,53 @@ describe("token", () => {
       post("https://slide.example.org/oauth/token", { grant_type: "password" })
     );
     expect(await other.json()).toEqual({ error: "unsupported_grant_type" });
+  });
+
+  it("refuses a body over the limit, sent or declared, without asking Keycloak", async () => {
+    keycloak.mockClear();
+    const sent = await token(
+      env,
+      post("https://slide.example.org/oauth/token", {
+        grant_type: "refresh_token",
+        refresh_token: "r".repeat(FORM_LIMIT),
+      }),
+      keycloak as unknown as typeof fetch
+    );
+    expect(sent.status).toBe(413);
+    expect(await sent.json()).toEqual({ error: "invalid_request" });
+    // A declared length over the limit is refused before a byte is read.
+    const declared = await token(
+      env,
+      {
+        headers: new Headers({ "content-length": String(FORM_LIMIT + 1) }),
+        get body(): never {
+          throw new Error("the body was read");
+        },
+      } as unknown as Request,
+      keycloak as unknown as typeof fetch
+    );
+    expect(declared.status).toBe(413);
+    expect(keycloak).not.toHaveBeenCalled();
+  });
+
+  it("answers a body that breaks off midway instead of throwing", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode("grant_type=refresh_"));
+        controller.error(new Error("aborted"));
+      },
+    });
+    const response = await token(
+      env,
+      new Request("https://slide.example.org/oauth/token", {
+        method: "POST",
+        body,
+        duplex: "half",
+        headers: { "content-type": "application/x-www-form-urlencoded" },
+      } as RequestInit),
+      keycloak as unknown as typeof fetch
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: "invalid_request" });
   });
 });

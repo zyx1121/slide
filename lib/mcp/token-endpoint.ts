@@ -1,7 +1,13 @@
 // POST /oauth/token: relays a client's code or refresh token to Keycloak
 // with the shared client. A wrapped code must come back from the client it
 // was issued to, with the same redirect URI; Keycloak checks PKCE.
-import { callbackUrl, keycloakUrl, type McpEnv, unsign } from "./oauth";
+import {
+  callbackUrl,
+  keycloakUrl,
+  type McpEnv,
+  readForm,
+  unsign,
+} from "./oauth";
 
 const oauthError = (error: string, status = 400) =>
   Response.json(
@@ -14,9 +20,9 @@ export async function token(
   request: Request,
   send: typeof fetch = fetch
 ): Promise<Response> {
-  const form = await request.formData().catch(() => null);
-  if (!form) return oauthError("invalid_request");
-  const field = (name: string) => form.get(name)?.toString() ?? "";
+  const read = await readForm(request);
+  if (!read.ok) return oauthError("invalid_request", read.status);
+  const field = (name: string) => read.form.get(name)?.toString() ?? "";
   const grant = field("grant_type");
   const body = new URLSearchParams({ client_id: env.clientId });
 

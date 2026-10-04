@@ -10,7 +10,7 @@ import {
   titleBody,
   titleText,
 } from "../render/svg";
-import { TITLE } from "../render/template";
+import { TITLE, type TemplateId } from "../render/template";
 import { layoutText, type TextDefaults, type TextLayout } from "../render/text";
 import { tidy, toLocal } from "./geometry";
 import { deleteOps } from "./ops";
@@ -56,12 +56,16 @@ export type TextFrame = {
   paragraphs: boolean;
 };
 
-export function frameOf(slide: Slide, target: string): TextFrame | null {
+export function frameOf(
+  slide: Slide,
+  target: string,
+  template: TemplateId
+): TextFrame | null {
   if (target === TITLE_ID) {
     return {
       box: TITLE.box,
       rotation: 0,
-      defaults: titleText(slide.title),
+      defaults: titleText(slide.title, template),
       paragraphs: false,
     };
   }

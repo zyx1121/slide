@@ -3,6 +3,7 @@
 // .pptx export and import map one to one. Every write is validated here.
 import * as z from "zod";
 
+import { TEMPLATE_IDS } from "../render/template";
 import { DECK_TITLE_MAX, SHAPE_TEXT_MAX, SLIDE_TEXT_MAX } from "./limits";
 import { parsePath, PATH_MAX } from "./path";
 
@@ -260,6 +261,8 @@ export const DeckDocument = z
   .strictObject({
     schema: z.literal(SCHEMA_VERSION),
     title: z.string().trim().min(1).max(DECK_TITLE_MAX).refine(noNul, NUL),
+    /** The template the slides are drawn on; plain when left out. */
+    template: z.enum(TEMPLATE_IDS).optional(),
     slides: z.array(Slide).min(1).max(500),
   })
   .superRefine((document, ctx) => {

@@ -6,7 +6,7 @@ import { join } from "node:path";
 import { renderAsync, Resvg, type ResvgRenderOptions } from "@resvg/resvg-js";
 
 import { SLIDE_WIDTH } from "../deck/schema";
-import { BACKGROUND_PATH } from "./template";
+import { TEMPLATES, type TemplateId } from "./template";
 import { inSpan } from "../otel/span";
 
 const FONT_FILES = [
@@ -36,14 +36,23 @@ export function slideFontFiles(): string[] {
   return files;
 }
 
-let background: string | undefined;
+const backgrounds = new Map<string, string>();
 
-/** The template background as a data URI, read once from public/. */
-export function backgroundDataUri(): string {
-  background ??= `data:image/png;base64,${readFileSync(
-    join(process.cwd(), "public", BACKGROUND_PATH)
-  ).toString("base64")}`;
-  return background;
+/**
+ * A template's background as a data URI, read once from public/; null for
+ * a template without one.
+ */
+export function backgroundDataUri(template: TemplateId): string | null {
+  const path = TEMPLATES[template].background;
+  if (!path) return null;
+  let uri = backgrounds.get(path);
+  if (!uri) {
+    uri = `data:image/png;base64,${readFileSync(
+      join(process.cwd(), "public", path)
+    ).toString("base64")}`;
+    backgrounds.set(path, uri);
+  }
+  return uri;
 }
 
 function options(width: number): ResvgRenderOptions {

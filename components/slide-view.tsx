@@ -1,7 +1,7 @@
 import type { Slide } from "@/lib/deck/schema";
 import { assetUrl } from "@/lib/editor/upload";
 import { renderSlideSvg } from "@/lib/render/svg";
-import { BACKGROUND_PATH } from "@/lib/render/template";
+import { TEMPLATES, type TemplateId } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,12 +11,14 @@ import { cn } from "@/lib/utils";
 export function SlideView({
   slide,
   number,
+  template,
   decorative = false,
   assetHref = assetUrl,
   className,
 }: {
   slide: Slide;
   number: number;
+  template: TemplateId;
   /** Hidden from screen readers, as a thumbnail inside a labelled link. */
   decorative?: boolean;
   /** Where pictures load from: the member's assets by default. */
@@ -25,7 +27,8 @@ export function SlideView({
 }) {
   const svg = renderSlideSvg(slide, {
     slideNumber: number,
-    background: BACKGROUND_PATH,
+    template,
+    background: TEMPLATES[template].background,
     assetHref,
   });
   return (

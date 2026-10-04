@@ -84,7 +84,7 @@ export function snapEnd(
   };
 }
 
-/** A new connector in WinLab's usual style: blue, with an arrowhead at its end. */
+/** A new connector in the usual style: blue, with an arrowhead at its end. */
 export function newLine(start: End, end: End): LineShape {
   return {
     id: newId("ln"),

@@ -24,7 +24,7 @@ COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
 COPY --from=build --chown=node:node /app/fonts/slide ./fonts/slide
-COPY --from=build --chown=node:node /app/template/winlab.pptx ./template/winlab.pptx
+COPY --from=build --chown=node:node /app/template/*.pptx ./template/
 COPY --from=build --chown=node:node /app/dist/migrate.mjs ./dist/migrate.mjs
 COPY --from=build --chown=node:node /app/dist/import-worker.mjs ./dist/import-worker.mjs
 COPY --from=build --chown=node:node /app/migrations ./migrations

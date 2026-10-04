@@ -12,7 +12,13 @@ import {
 import { type Point, routeConnector } from "./connector";
 import { presetPath } from "./preset";
 import { parsePath, PATH_UNITS } from "../deck/path";
-import { DEFAULT_TEXT, SLIDE_NUMBER, TITLE } from "./template";
+import {
+  DEFAULT_TEXT,
+  SLIDE_NUMBER,
+  TEMPLATES,
+  TITLE,
+  type TemplateId,
+} from "./template";
 import {
   DEFAULT_INSET,
   layoutText,
@@ -30,6 +36,8 @@ export const EMOJI_FONT = "Noto Emoji";
 export type RenderOptions = {
   /** 1-based, drawn in the template's slide number placeholder. */
   slideNumber: number;
+  /** The deck's template: the title's and slide number's colors. */
+  template: TemplateId;
   /** The template background's href; null draws a plain white slide. */
   background: string | null;
   /**
@@ -170,10 +178,10 @@ export function shapeTextDefaults(kind: TextShape["kind"]): TextDefaults {
   };
 }
 
-/** How the title placeholder lays out the slide's title. */
+/** How the title placeholder lays out the slide's title, in black. */
 export const TITLE_TEXT: TextDefaults = {
   size: TITLE.size,
-  color: TITLE.color,
+  color: "#000000",
   bold: TITLE.bold,
   align: "center",
   anchor: "middle",
@@ -202,9 +210,13 @@ export function titleScale(title: string): number {
   return TITLE_SCALES[TITLE_SCALES.length - 1];
 }
 
-/** How a title is laid out, shrunk to fit. */
-export function titleText(title: string): TextDefaults {
-  return { ...TITLE_TEXT, size: TITLE.size * titleScale(title) };
+/** How a title is laid out on a template, shrunk to fit. */
+export function titleText(title: string, template: TemplateId): TextDefaults {
+  return {
+    ...TITLE_TEXT,
+    color: TEMPLATES[template].titleColor,
+    size: TITLE.size * titleScale(title),
+  };
 }
 
 /** A slide title as the text body the title placeholder draws. */
@@ -414,7 +426,11 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
   }
   if (slide.title) {
     parts.push(
-      textSvg(titleBody(slide.title), TITLE.box, titleText(slide.title))
+      textSvg(
+        titleBody(slide.title),
+        TITLE.box,
+        titleText(slide.title, options.template)
+      )
     );
   }
   for (const shape of slide.shapes)
@@ -425,8 +441,7 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
       SLIDE_NUMBER.box,
       {
         size: SLIDE_NUMBER.size,
-        color: SLIDE_NUMBER.color,
-        bold: SLIDE_NUMBER.bold,
+        ...TEMPLATES[options.template].slideNumber,
         align: "right",
         anchor: "middle",
         inset: SLIDE_NUMBER.inset,

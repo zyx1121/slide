@@ -11,6 +11,7 @@ import {
   GlobeIcon,
   ImageIcon,
   LayoutGridIcon,
+  LayoutTemplateIcon,
   TypeIcon,
   Redo2Icon,
   SendToBackIcon,
@@ -130,6 +131,11 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText } from "@/lib/render/svg";
+import {
+  TEMPLATE_IDS,
+  templateOf,
+  type TemplateId,
+} from "@/lib/render/template";
 import {
   blankSlide,
   deleteSlideOps,
@@ -495,7 +501,7 @@ export function Editor({
     const slideNow = docRef.current.slides[at];
     const next = startDraft(slideNow, at, target, (body) => {
       if (!point || isEmpty(body)) return selectAll(body);
-      const frame = frameOf(slideNow, target)!;
+      const frame = frameOf(slideNow, target, templateOf(docRef.current).id)!;
       const { pos } = pointInFrame(frame, draftLayout(frame, body), point);
       return wordAt(body, pos);
     });
@@ -940,6 +946,15 @@ export function Editor({
     if (clip) place(index, clip);
   };
 
+  /** Moves the deck on to the next template, as one edit that undoes. */
+  const switchTemplate = () => {
+    flushNudge();
+    const current = templateOf(docRef.current).id;
+    const next: TemplateId =
+      TEMPLATE_IDS[(TEMPLATE_IDS.indexOf(current) + 1) % TEMPLATE_IDS.length];
+    commit([{ op: "add", path: "/template", value: next }], visible);
+  };
+
   /** Keys on the canvas of slide `at`; selection lives on the active slide. */
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>, at: number) => {
     // Keys typed into a text belong to it.
@@ -1022,7 +1037,7 @@ export function Editor({
   const style = selectionStyle(slide, new Set(selection));
   // While a text is edited, the text tools show and change its selection.
   if (draft && draft.slide === index) {
-    const frame = frameOf(slide, draft.target);
+    const frame = frameOf(slide, draft.target, templateOf(doc).id);
     if (draft.target === TITLE_ID || !frame) {
       delete style.text;
     } else {
@@ -1060,6 +1075,8 @@ export function Editor({
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
   const paused = !saving.accepting || invalid !== null || previewing;
+  // A suggestion being previewed may change the template too.
+  const shownTemplate = templateOf(previewDoc ?? doc).id;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   const problem = invalid ?? refusal ?? saving.message;
@@ -1097,6 +1114,7 @@ export function Editor({
                   className="w-[calc(100dvw-2rem)]"
                   slide={!previewing && i === index ? shown : item}
                   number={i + 1}
+                  template={shownTemplate}
                   selection={!previewing && i === index ? selection : NONE}
                   onSelect={(ids) => select(i, ids)}
                   onMove={(ids, dx, dy) =>
@@ -1197,6 +1215,12 @@ export function Editor({
               href={`/api/decks/${deckId}/export`}
               tip="下載 PowerPoint"
               icon={DownloadIcon}
+            />
+            <Tool
+              tip={`範本：${templateOf(doc).name}（按一下切換）`}
+              icon={LayoutTemplateIcon}
+              disabled={paused}
+              onClick={switchTemplate}
             />
             <Separator orientation="vertical" className="mx-1 my-2" />
             <Tool
@@ -1302,6 +1326,7 @@ export function Editor({
             />
             <PageList
               slides={doc.slides}
+              template={templateOf(doc).id}
               index={visible}
               onPick={(target) => goTo(target)}
             />
@@ -1403,10 +1428,12 @@ export function Editor({
  */
 function PageList({
   slides,
+  template,
   index,
   onPick,
 }: {
   slides: DeckDocument["slides"];
+  template: TemplateId;
   index: number;
   onPick: (index: number) => void;
 }) {
@@ -1457,6 +1484,7 @@ function PageList({
                 <SlideView
                   slide={slide}
                   number={i + 1}
+                  template={template}
                   decorative
                   className={cn(i === index && "ring-2 ring-foreground")}
                 />

@@ -7,6 +7,7 @@ import { cornerLink } from "@/components/corners";
 import { ownedAssets, slideAssets } from "@/lib/assets/store";
 import { sql } from "@/lib/db";
 import { getPublishedDeck } from "@/lib/deck/store";
+import { templateOf } from "@/lib/render/template";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +37,7 @@ export default async function PublicDeck({
   ]);
   const assetHref = (sha256: string) =>
     owned.has(sha256) ? `/s/${publicId}/assets/${sha256}` : null;
+  const template = templateOf(deck.document).id;
 
   return (
     <TaskShell
@@ -51,7 +53,12 @@ export default async function PublicDeck({
       <ol className="flex flex-col gap-6">
         {deck.document.slides.map((slide, i) => (
           <li key={slide.id}>
-            <SlideView slide={slide} number={i + 1} assetHref={assetHref} />
+            <SlideView
+              slide={slide}
+              number={i + 1}
+              template={template}
+              assetHref={assetHref}
+            />
           </li>
         ))}
       </ol>

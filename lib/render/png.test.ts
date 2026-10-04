@@ -15,7 +15,8 @@ import { renderSlideSvg } from "./svg";
 const svg = () =>
   renderSlideSvg(sampleDocument().slides[0], {
     slideNumber: 1,
-    background: backgroundDataUri(),
+    template: "winlab",
+    background: backgroundDataUri("winlab"),
   });
 
 function pixel(image: ReturnType<typeof render>, x: number, y: number) {
@@ -98,6 +99,7 @@ describe("renderPng", () => {
     const image = render(
       renderSlideSvg(slide, {
         slideNumber: 1,
+        template: "plain",
         background: null,
         assetHref: () => picture,
       })
@@ -119,7 +121,12 @@ describe("renderPng", () => {
             },
           ],
         },
-        { slideNumber: 1, background: null, assetHref: () => picture }
+        {
+          slideNumber: 1,
+          template: "plain",
+          background: null,
+          assetHref: () => picture,
+        }
       )
     );
     expect(pixel(padded, 410, 500)).not.toBe("#ff0000");
@@ -147,7 +154,13 @@ describe("renderPng", () => {
       shapes: [],
     };
     expect(() =>
-      renderPng(renderSlideSvg(slide, { slideNumber: 3, background: null }))
+      renderPng(
+        renderSlideSvg(slide, {
+          slideNumber: 3,
+          template: "plain",
+          background: null,
+        })
+      )
     ).not.toThrow();
   });
 });
@@ -174,7 +187,7 @@ describe("renderPngAsync", () => {
           text: { paragraphs: [{ runs: [{ text: "word ".repeat(1000) }] }] },
         })),
       },
-      { slideNumber: 1, background: null }
+      { slideNumber: 1, template: "plain", background: null }
     );
     const failed = await renderPngAsync(heavy, 1920, {
       running: 2,

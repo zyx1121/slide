@@ -4,6 +4,7 @@
 import type postgres from "postgres";
 
 import { newId } from "../ids";
+import type { TemplateId } from "../render/template";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
 import { DeckDocument, SCHEMA_VERSION, type Slide } from "./schema";
@@ -35,6 +36,7 @@ export type DeckSummary = Pick<
   slideCount: number;
   /** The first slide, drawn as the deck's thumbnail. */
   firstSlide: Slide;
+  template: TemplateId;
 };
 
 export type MutationResult = {
@@ -90,11 +92,12 @@ export async function ensureUser(
   `;
 }
 
-/** A deck with one empty slide. */
+/** A deck with one empty slide, on the plain template. */
 export function blankDocument(title = DEFAULT_TITLE): DeckDocument {
   return DeckDocument.parse({
     schema: SCHEMA_VERSION,
     title,
+    template: "plain",
     slides: [{ id: newId("sl"), title: "", shapes: [] }],
   });
 }
@@ -118,11 +121,13 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
     (Pick<DeckRow, "id" | "title" | "version" | "published" | "updated_at"> & {
       slide_count: number;
       first_slide: Slide;
+      template: TemplateId | null;
     })[]
   >`
     select id, title, version, published, updated_at,
       jsonb_array_length(document -> 'slides') as slide_count,
-      document -> 'slides' -> 0 as first_slide
+      document -> 'slides' -> 0 as first_slide,
+      document ->> 'template' as template
     from decks
     where owner_sub = ${owner}
     order by updated_at desc
@@ -135,6 +140,7 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
     updatedAt: row.updated_at,
     slideCount: row.slide_count,
     firstSlide: row.first_slide,
+    template: row.template ?? "plain",
   }));
 }
 

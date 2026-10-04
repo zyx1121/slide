@@ -27,7 +27,8 @@ const box = (
   text: { paragraphs: [{ runs: [{ text }] }] },
   ...extra,
 });
-const rules = (s: Slide) => checkSlide(s, 0).map((v) => [v.shape, v.rule]);
+const rules = (s: Slide) =>
+  checkSlide(s, 0, "winlab").map((v) => [v.shape, v.rule]);
 
 describe("checkSlide", () => {
   it("passes a tidy slide", () => {
@@ -50,9 +51,16 @@ describe("checkSlide", () => {
 
   it("flags colors outside the palette", () => {
     const odd = box("sh_a1", 100, 300, "Capture", { fill: "#123456" });
-    const [violation] = checkSlide(slide([odd]), 0);
+    const [violation] = checkSlide(slide([odd]), 0, "winlab");
     expect(violation.rule).toBe("palette");
     expect(violation.message).toContain("#123456");
+  });
+
+  it("leaves colors free on the plain template", () => {
+    const odd = box("sh_a1", 100, 300, "Capture", { fill: "#fafad2" });
+    expect(checkSlide(slide([odd]), 0, "plain")).toEqual([]);
+    const plain = { ...sampleDocument(), template: "plain" as const };
+    expect(checkDeck(plain).some((v) => v.rule === "palette")).toBe(false);
   });
 
   it("flags text that overflows its box, and a title too long to shrink", () => {

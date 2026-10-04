@@ -53,7 +53,7 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText, renderSlideSvg } from "@/lib/render/svg";
-import { BACKGROUND_PATH, TITLE } from "@/lib/render/template";
+import { TEMPLATES, TITLE, type TemplateId } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
 /** Screen px within which a click picks a connector or a handle, and snaps. */
@@ -150,6 +150,7 @@ const points = (list: Point[]) => list.map((p) => `${p.x},${p.y}`).join(" ");
 export function Canvas({
   slide,
   number,
+  template,
   selection,
   onSelect,
   onMove,
@@ -169,6 +170,8 @@ export function Canvas({
 }: {
   slide: Slide;
   number: number;
+  /** The deck's template: its background and title color. */
+  template: TemplateId;
   selection: string[];
   onSelect: (ids: string[]) => void;
   onMove: (ids: ReadonlySet<string>, dx: number, dy: number) => void;
@@ -195,6 +198,7 @@ export function Canvas({
   className?: string;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const { background } = TEMPLATES[template];
   const [width, setWidth] = useState(SLIDE_WIDTH);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [cursor, setCursor] = useState("default");
@@ -279,18 +283,19 @@ export function Canvas({
               : base,
     [base, drag]
   );
-  const frame = text ? frameOf(base, text.draft.target) : null;
+  const frame = text ? frameOf(base, text.draft.target, template) : null;
   const shown = text ? shownBody(text.draft) : null;
   const layout = frame && shown ? draftLayout(frame, shown.body) : null;
   const svg = useMemo(
     () =>
       renderSlideSvg(preview, {
         slideNumber: number,
+        template,
         background: null,
         bare: true,
         assetHref: assetUrl,
       }),
-    [preview, number]
+    [preview, number, template]
   );
 
   const single =
@@ -683,7 +688,7 @@ export function Canvas({
         // The template background lives on the frame, not in the slide's
         // SVG: rebuilt with every edit, the 4K image was decoded again each
         // time, which Safari showed as a white flash.
-        backgroundImage: `url(${BACKGROUND_PATH})`,
+        backgroundImage: background ? `url(${background})` : undefined,
       }}
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}

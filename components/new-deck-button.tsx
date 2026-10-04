@@ -9,7 +9,7 @@ function Submit() {
   // Held while the deck is created, so a double click makes one deck.
   const { pending } = useFormStatus();
   return (
-    <CornerTip tip="用 WinLab 範本建立簡報">
+    <CornerTip tip="建立空白簡報">
       <button type="submit" disabled={pending} className={cornerLink}>
         新增
       </button>

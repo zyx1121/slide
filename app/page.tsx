@@ -27,8 +27,8 @@ export default async function Home() {
     >
       {decks.length === 0 ? (
         <p className="text-muted-foreground">
-          還沒有簡報。按右上角的「新增」，從 WinLab 範本開始；或按「匯入」，從
-          PowerPoint 檔開始。
+          還沒有簡報。按右上角的「新增」，從空白簡報開始；或按「匯入」，從
+          PowerPoint 檔開始。範本可以在編輯器裡切換。
         </p>
       ) : (
         <ul className="grid grid-cols-1 gap-x-5 gap-y-10 sm:grid-cols-2 2xl:grid-cols-3">

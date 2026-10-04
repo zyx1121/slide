@@ -33,7 +33,7 @@ describe("styleOps", () => {
   });
 
   it("gives an outline to a shape without one, and takes it away", () => {
-    // tx_note has no outline; setting a dash gives it WinLab's blue.
+    // tx_note has no outline; setting a dash gives it the default blue.
     const dashed = styleOps(slide, 0, ids("tx_note"), {
       kind: "stroke",
       dash: "dash",

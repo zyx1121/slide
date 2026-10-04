@@ -8,6 +8,7 @@ import {
   renderPngAsync,
 } from "@/lib/render/png";
 import { renderSlideSvg } from "@/lib/render/svg";
+import { templateOf } from "@/lib/render/template";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -28,9 +29,11 @@ export async function GET(
     return Response.json({ error: "no such slide" }, { status: 404 });
   }
   const assets = await slideAssetUris(sql, user.sub, slide);
+  const template = templateOf(deck.document).id;
   const svg = renderSlideSvg(slide, {
     slideNumber: index + 1,
-    background: backgroundDataUri(),
+    template,
+    background: backgroundDataUri(template),
     assetHref: (sha256) => assets.get(sha256) ?? null,
   });
   let png: Buffer;

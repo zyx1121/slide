@@ -1,13 +1,14 @@
-// Server only: a deck as a .pptx file. The WinLab template supplies the
-// master, its layouts and theme, untouched; its sample slides are replaced
-// by the deck's, each on the "Title & Bullets" layout, so the title and the
-// slide number land in the master's placeholders.
+// Server only: a deck as a .pptx file. The deck's template (template/*.pptx)
+// supplies the master, its layouts and theme, untouched; its sample slides,
+// if any, are replaced by the deck's, each on the "Title & Bullets" layout,
+// so the title and the slide number land in the master's placeholders.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 import type { DeckDocument } from "../deck/schema";
+import { templateOf } from "../render/template";
 import { esc, slideXml } from "./slide";
 
 /** The layout every exported slide uses: "Title & Bullets". */
@@ -26,17 +27,16 @@ const EXTENSIONS: Record<string, string> = {
 
 export type Media = { mime: string; data: Uint8Array };
 
-function templateFile(): string {
-  return (
-    process.env.SLIDE_TEMPLATE || join(process.cwd(), "template", "winlab.pptx")
-  );
-}
+const templates = new Map<string, Record<string, Uint8Array>>();
 
-let template: Record<string, Uint8Array> | undefined;
-
-function templateParts(): Record<string, Uint8Array> {
-  template ??= unzipSync(readFileSync(templateFile()));
-  return template;
+/** A template's .pptx parts, read once. */
+function templateParts(file: string): Record<string, Uint8Array> {
+  let parts = templates.get(file);
+  if (!parts) {
+    parts = unzipSync(readFileSync(join(process.cwd(), "template", file)));
+    templates.set(file, parts);
+  }
+  return parts;
 }
 
 function relationships(entries: string[]): string {
@@ -53,7 +53,8 @@ export function exportPptx(
   media: ReadonlyMap<string, Media>
 ): Uint8Array {
   const parts: Record<string, Uint8Array> = {};
-  for (const [name, bytes] of Object.entries(templateParts())) {
+  const base = templateParts(templateOf(document).pptx);
+  for (const [name, bytes] of Object.entries(base)) {
     if (!name.startsWith("ppt/slides/")) parts[name] = bytes;
   }
 

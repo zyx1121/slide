@@ -53,7 +53,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 
 ## Use
 
-1. Sign in with your Keycloak account. The home page lists your decks: **新增** starts one from the WinLab template, **匯入** turns a `.pptx` into one.
+1. Sign in with your Keycloak account. The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one. The dock's template button switches a deck between the plain template and the WinLab one.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors and styles what you select; the check mark shows the rule check.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it asks you to allow the agent, then signs you in with Keycloak.
 4. Select shapes and ask your agent to change them. Its edits wait under the history button in the dock (**建議與紀錄**), where you preview, accept or reject each one.
@@ -103,7 +103,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 
 ## Limitations
 
-- Slides use the WinLab master; an imported deck keeps its shapes, not its own master
+- Slides use one of two templates, plain or WinLab; an imported deck keeps its shapes, not its own master
 - Import turns a table into a rectangle per cell (its text stays editable, but not as one table), and leaves out charts, SmartArt, freeforms drawn with guide formulas, and pictures in EMF, SVG or TIFF, and says so
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two

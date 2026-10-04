@@ -41,6 +41,13 @@ describe("DeckDocument", () => {
     expect(issuesOf(doc)[0]).toMatch(/^slides\.0\.shapes\.0: .*shadow/);
   });
 
+  it("takes a known template, or none", () => {
+    const { template: _winlab, ...none } = sampleDocument();
+    expect(issuesOf(none)).toEqual([]);
+    expect(issuesOf({ ...none, template: "plain" })).toEqual([]);
+    expect(issuesOf({ ...none, template: "keynote" })).toHaveLength(1);
+  });
+
   it("rejects an unknown shape kind", () => {
     const doc = sampleDocument() as unknown as {
       slides: { shapes: { kind: string }[] }[];

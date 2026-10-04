@@ -16,7 +16,7 @@ export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const MALFORMED: ActionResult = { ok: false, error: "請求格式不正確。" };
 
-/** Creates a deck on the WinLab template and opens it. */
+/** Creates a deck on the plain template and opens it. */
 export async function createDeckAction(): Promise<void> {
   const user = await requireUser();
   const deck = await createDeck(sql, user.sub);

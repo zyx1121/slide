@@ -59,7 +59,7 @@ export const TEXT_BOX = {
 };
 
 /**
- * A new shape in WinLab's usual style (light blue fill, blue outline), or
+ * A new shape in the usual style (light blue fill, blue outline), or
  * an empty text box without either,
  * centered on the slide, or stepped down and right when another shape
  * already sits there, so repeated inserts stay visible.

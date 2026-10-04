@@ -35,7 +35,7 @@ export type StyleChange =
   | { kind: "route"; route: Route }
   | { kind: "arrow"; end: "start" | "end"; head: ArrowHead };
 
-/** The outline a shape gets when one is first set on it: WinLab's blue. */
+/** The outline a shape gets when one is first set on it: blue. */
 export const DEFAULT_STROKE = { color: "#4f81bd", width: 3 };
 
 type Text = NonNullable<Extract<Shape, { kind: "rect" }>["text"]>;

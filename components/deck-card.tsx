@@ -10,7 +10,12 @@ import { formatDateTime } from "@/lib/format";
 export function DeckCard({ deck }: { deck: DeckSummary }) {
   return (
     <li className="relative flex flex-col gap-3">
-      <SlideView slide={deck.firstSlide} number={1} decorative />
+      <SlideView
+        slide={deck.firstSlide}
+        number={1}
+        template={deck.template}
+        decorative
+      />
       <DeckRow
         id={deck.id}
         title={deck.title}

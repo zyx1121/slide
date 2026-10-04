@@ -173,3 +173,43 @@ describe("exportPptx", () => {
     );
   });
 });
+
+describe("exportPptx on the plain template", () => {
+  const plain: DeckDocument = { ...doc, template: "plain" };
+  const parts = unzipSync(exportPptx(plain, new Map()));
+  const text = (name: string) => strFromU8(parts[name]);
+  const master = text("ppt/slideMasters/slideMaster1.xml");
+
+  it("starts from plain.pptx: no WinLab artwork, one layout", () => {
+    expect(Object.keys(parts).some((n) => n.startsWith("ppt/media/"))).toBe(
+      false
+    );
+    expect(master).not.toContain("<p:pic>");
+    expect(master).not.toMatch(/3297FC|gradFill/);
+    expect(master).toContain(
+      '<a:srgbClr val="FFFFFF"/></a:solidFill><a:effectLst/></p:bgPr>'
+    );
+    expect(master.match(/<p:sldLayoutId /g)).toHaveLength(1);
+    expect(parts["ppt/slideLayouts/slideLayout2.xml"]).toBeDefined();
+    expect(parts["ppt/slideLayouts/slideLayout1.xml"]).toBeUndefined();
+    expect(text("ppt/theme/theme1.xml")).not.toContain("WinLAB");
+  });
+
+  it("keeps the placeholders the renderer draws", () => {
+    expect(master).toContain('<p:ph type="title"/>');
+    expect(master).toContain('<p:ph type="sldNum" sz="quarter" idx="2"/>');
+    expect(master).toContain('<a:off x="1127448" y="61319"/>');
+    const slides = Object.keys(parts).filter((name) =>
+      /^ppt\/slides\/slide\d+\.xml$/.test(name)
+    );
+    expect(slides).toHaveLength(doc.slides.length);
+    expect(text("ppt/presentation.xml").match(/<p:sldId /g)).toHaveLength(
+      doc.slides.length
+    );
+  });
+
+  it("leaves the WinLab template to WinLab decks", () => {
+    const winlab = unzipSync(exportPptx(doc, new Map()));
+    expect(winlab["ppt/media/image1.png"]).toBeDefined();
+  });
+});

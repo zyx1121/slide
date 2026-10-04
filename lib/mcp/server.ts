@@ -17,6 +17,7 @@ import {
   renderPngAsync,
 } from "../render/png";
 import { holdsText, renderSlideSvg } from "../render/svg";
+import { templateOf } from "../render/template";
 import { checkDeck } from "../rules/check";
 import {
   addShapes,
@@ -57,7 +58,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: "0.1.0" },
     {
       instructions:
-        "Slide decks of the signed-in member. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. Use list_decks, then get_deck for the document, render_slide to see a slide, and check_deck for the lab's slide rules. Edits (add_shapes, update_shapes, delete_shapes, add_slide, delete_slide, move_slide) address shapes and slides by id and arrive as suggestions the member accepts or rejects in the editor; render_slide shows the deck as it is, without pending suggestions.",
+        "Slide decks of the signed-in member. A deck is a JSON document: slides with a title and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, and check_deck for the slide rules. Edits (add_shapes, update_shapes, delete_shapes, add_slide, delete_slide, move_slide) address shapes and slides by id and arrive as suggestions the member accepts or rejects in the editor; render_slide shows the deck as it is, without pending suggestions.",
     }
   );
   const { db, sub } = context;
@@ -150,9 +151,11 @@ export function createServer(context: ToolContext): McpServer {
       if (!deck || !page)
         return failure(`No slide ${slide} in deck ${deck_id}.`);
       const assets = await slideAssetUris(db, sub, page);
+      const template = templateOf(deck.document).id;
       const svg = renderSlideSvg(page, {
         slideNumber: slide,
-        background: backgroundDataUri(),
+        template,
+        background: backgroundDataUri(template),
         assetHref: (sha256) => assets.get(sha256) ?? null,
       });
       try {
@@ -178,7 +181,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Check a deck",
       description:
-        "The deck's violations of WinLab's slide rules (font size, palette, overflow, overlapping text, connectors through text, contrast, shapes off the slide), each with its slide, shape id, rule and message.",
+        "The deck's violations of the slide rules (font size, overflow, overlapping text, connectors through text, contrast, shapes off the slide, and on the WinLab template its palette), each with its slide, shape id, rule and message.",
       inputSchema: { deck_id: DeckId },
       annotations: { readOnlyHint: true },
     },
@@ -244,9 +247,11 @@ export function createServer(context: ToolContext): McpServer {
           }
         : { x: 0, y: 0, w: 1920, h: 1080 };
       const assets = await slideAssetUris(db, sub, page);
+      const template = templateOf(deck.document).id;
       const svg = renderSlideSvg(page, {
         slideNumber: index + 1,
-        background: backgroundDataUri(),
+        template,
+        background: backgroundDataUri(template),
         assetHref: (sha256) => assets.get(sha256) ?? null,
       }).replace(
         /^<svg ([^>]*?)viewBox="0 0 1920 1080" width="1920" height="1080"/,
@@ -376,7 +381,7 @@ export function createServer(context: ToolContext): McpServer {
     "add_slide",
     {
       title: "Add a slide",
-      description: `Suggests a new slide with the WinLab template: after slide number after (0 puts it first; last by default), with a title and optional shapes. ${SHAPES_HELP}`,
+      description: `Suggests a new slide on the deck's template: after slide number after (0 puts it first; last by default), with a title and optional shapes. ${SHAPES_HELP}`,
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),

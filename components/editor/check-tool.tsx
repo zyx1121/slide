@@ -67,7 +67,7 @@ export function CheckTool({
       >
         {count === 0 ? (
           <p className="text-xs text-muted-foreground">
-            依 WinLab 投影片規則，沒有發現問題。
+            依投影片規則，沒有發現問題。
           </p>
         ) : (
           <ol className="flex max-h-[50dvh] flex-col gap-1 overflow-y-auto">

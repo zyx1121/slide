@@ -244,8 +244,17 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
       id: deck.id,
       title: "Agent Sense",
       slideCount: deck.document.slides.length,
+      template: "winlab",
     });
     expect(summary.firstSlide).toEqual(deck.document.slides[0]);
+  });
+
+  it("starts a new deck on the plain template", async () => {
+    await ensureUser(db, { sub: "dave-sub", name: "Dave" });
+    const deck = await createDeck(db, "dave-sub");
+    expect(deck.document.template).toBe("plain");
+    const [summary] = await listDecks(db, "dave-sub");
+    expect(summary.template).toBe("plain");
   });
 
   it("renames a deck as a revision, whatever version it is at", async () => {

@@ -1,7 +1,8 @@
-// WinLab's slide rules as code: the editor's check panel and the MCP tool
+// The slide rules as code: the editor's check panel and the MCP tool
 // check_deck run this one rule set (PLAN.md, Rule check). Sources: the
 // WinLab slide guidelines (winlab:slides) and the QA checklist of the
-// winlab-pptx skill. Every violation names its slide, its shape, the rule
+// winlab-pptx skill; the palette rule holds only on a template that asks for
+// it (the WinLab one). Every violation names its slide, its shape, the rule
 // and a message a member can act on.
 import type { DeckDocument, Shape, Slide, TextBody } from "../deck/schema";
 import { fittedHeight } from "../editor/text-session";
@@ -14,7 +15,13 @@ import {
   titleBody,
   titleText,
 } from "../render/svg";
-import { DEFAULT_TEXT, TITLE } from "../render/template";
+import {
+  DEFAULT_TEXT,
+  TEMPLATES,
+  templateOf,
+  TITLE,
+  type TemplateId,
+} from "../render/template";
 import { layoutText, type TextLayout } from "../render/text";
 
 export type Rule =
@@ -158,7 +165,11 @@ function runsOf(body: TextBody) {
 }
 
 /** The rule violations of one slide. */
-export function checkSlide(slide: Slide, index: number): Violation[] {
+export function checkSlide(
+  slide: Slide,
+  index: number,
+  template: TemplateId
+): Violation[] {
   const out: Violation[] = [];
   const add = (shape: string | null, rule: Rule, message: string) =>
     out.push({ slide: index + 1, slideId: slide.id, shape, rule, message });
@@ -166,14 +177,14 @@ export function checkSlide(slide: Slide, index: number): Violation[] {
 
   if (slide.title) {
     // The title shrinks to fit, down to half its size; past that it runs
-    // into the title rule.
-    const fitted = titleText(slide.title);
+    // out of its placeholder.
+    const fitted = titleText(slide.title, template);
     const layout = layoutText(titleBody(slide.title), TITLE.box, fitted);
     if (layout.height + 2 * TITLE_TEXT.inset.y > TITLE.box.h + 1) {
       add(
         null,
         "title-overflow",
-        "標題太長，縮到一半字級仍放不下，會壓到標題線：縮短標題，細節放進內文。"
+        "標題太長，縮到一半字級仍放不下，會超出標題區：縮短標題，細節放進內文。"
       );
     }
   }
@@ -191,7 +202,8 @@ export function checkSlide(slide: Slide, index: number): Violation[] {
         add(shape.id, "off-slide", "這個物件在投影片外面，播放時看不到。");
     }
 
-    // Colors: fills, outlines and text from the WinLab palette.
+    // Colors: fills, outlines and text from the palette, on a template
+    // that holds to it.
     const colors: string[] = [];
     if (shape.kind !== "line" && shape.kind !== "image" && shape.fill) {
       colors.push(shape.fill);
@@ -204,7 +216,7 @@ export function checkSlide(slide: Slide, index: number): Violation[] {
     const foreign = [
       ...new Set(colors.map((c) => c.slice(0, 7).toLowerCase())),
     ].filter((c) => !PALETTE_COLORS.has(c));
-    if (foreign.length > 0) {
+    if (TEMPLATES[template].palette && foreign.length > 0) {
       add(
         shape.id,
         "palette",
@@ -321,5 +333,6 @@ export function checkSlide(slide: Slide, index: number): Violation[] {
 
 /** The rule violations of a whole deck, slide by slide. */
 export function checkDeck(document: DeckDocument): Violation[] {
-  return document.slides.flatMap((slide, i) => checkSlide(slide, i));
+  const template = templateOf(document).id;
+  return document.slides.flatMap((slide, i) => checkSlide(slide, i, template));
 }

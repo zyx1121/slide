@@ -6,6 +6,7 @@ import { renderSlideSvg } from "./svg";
 
 const options = {
   slideNumber: 1,
+  template: "winlab" as const,
   background: "/template/winlab-background.png",
 };
 
@@ -143,5 +144,22 @@ describe("renderSlideSvg", () => {
       /<text[^>]*class="cjk"(?![^>]*font-style)[^>]*>語音 <\/text>/
     );
     expect(svg).toMatch(/<text[^>]*font-style="italic"[^>]*>speech<\/text>/);
+  });
+});
+
+describe("renderSlideSvg on the plain template", () => {
+  it("draws a black title and a gray number on white, with no background", () => {
+    const svg = renderSlideSvg(sampleDocument().slides[0], {
+      slideNumber: 4,
+      template: "plain",
+      background: null,
+    });
+    expect(svg).not.toContain("<image");
+    expect(svg).toMatch(
+      /fill="#000000" font-weight="700"[^>]*>System overview</
+    );
+    expect(svg).toMatch(
+      /font-size="28" fill="#7f7f7f"(?![^>]*font-weight)[^>]*>4<\/text>/
+    );
   });
 });

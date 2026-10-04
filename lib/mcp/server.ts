@@ -25,6 +25,7 @@ import {
 import {
   addComment,
   addToThread,
+  Body,
   type CommentResult,
   listThreads,
 } from "../deck/comments";
@@ -320,11 +321,22 @@ export function createServer(context: ToolContext): McpServer {
     return targets.map((target) => {
       const shape = byId.get(target.shape);
       if (!shape) return { shape: target.shape, gone: true };
-      const words =
-        target.text && holdsText(shape) && shape.text
-          ? plainText(shape.text, target.text.from, target.text.to)
-          : undefined;
-      return { shape, ...(target.text ? { text: target.text, words } : {}) };
+      if (!target.text) return { shape };
+      // The words may have gone since: a paragraph removed, the text
+      // shortened. Then the range is stale and has no words.
+      const body = holdsText(shape) ? shape.text : undefined;
+      const paragraphs = body?.paragraphs.length ?? 0;
+      const fits =
+        body &&
+        target.text.from.p < paragraphs &&
+        target.text.to.p < paragraphs;
+      return fits
+        ? {
+            shape,
+            text: target.text,
+            words: plainText(body, target.text.from, target.text.to),
+          }
+        : { shape, text: target.text, stale: true };
     });
   };
 
@@ -864,14 +876,22 @@ export function createServer(context: ToolContext): McpServer {
         deck_id: DeckId,
         status: z.enum(["open", "resolved", "all"]).optional(),
         images: z.boolean().optional(),
+        limit: z
+          .number()
+          .int()
+          .min(1)
+          .max(200)
+          .optional()
+          .describe("The latest threads to list; 50 by default"),
       },
       annotations: { readOnlyHint: true },
     },
-    async ({ deck_id, status, images }) => {
+    async ({ deck_id, status, images, limit }) => {
       const deck = await getDeck(db, sub, deck_id);
       if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
       const threads = await listThreads(db, sub, deck_id, {
         status: status === "all" ? undefined : (status ?? "open"),
+        limit: limit ?? 50,
       });
       const content: (
         | { type: "text"; text: string }
@@ -888,7 +908,8 @@ export function createServer(context: ToolContext): McpServer {
           slide: page ? { number: index + 1, title: page.title } : null,
           targets: page ? resolveTargets(page, thread.targets) : [],
         });
-        if (images && page && content.length < 40) {
+        // At most 10 pictures, so a long list stays a few MB at most.
+        if (images && page && content.length < 20) {
           const png = await cropOf(
             deck,
             index,
@@ -918,8 +939,8 @@ export function createServer(context: ToolContext): McpServer {
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
-        targets: z.array(Target).max(200).optional(),
-        body: z.string().trim().min(1).max(5000),
+        targets: z.array(Target).max(1000).optional(),
+        body: Body,
       },
     },
     async ({ deck_id, slide, targets, body }) => {
@@ -959,7 +980,7 @@ export function createServer(context: ToolContext): McpServer {
       inputSchema: {
         deck_id: DeckId,
         comment: CommentId,
-        body: z.string().trim().min(1).max(5000),
+        body: Body,
         entry: EntryId.optional(),
       },
     },

@@ -13,11 +13,17 @@ type Db = postgres.Sql;
 
 export const COMMENT_MAX = 5000;
 
-export const Body = z.string().trim().min(1).max(COMMENT_MAX);
+export const Body = z
+  .string()
+  .trim()
+  .min(1)
+  .max(COMMENT_MAX)
+  // Postgres cannot store U+0000 in text.
+  .refine((value) => !value.includes("\u0000"), "a comment cannot hold U+0000");
 
 export const CommentInput = z.strictObject({
   slideId: z.string().regex(/^[a-z]+_[0-9a-z_-]{2,48}$/),
-  targets: z.array(Target).max(200),
+  targets: z.array(Target).max(1000),
   body: Body,
 });
 

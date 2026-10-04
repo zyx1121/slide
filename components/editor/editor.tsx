@@ -160,6 +160,10 @@ type Commit = "applied" | "unchanged" | "paused" | "refused";
 /** The selection of every slide but the one being edited. */
 const NONE: string[] = [];
 
+/** A comment cut to a pin's label. */
+const short = (body: string) =>
+  [...body].length > 80 ? `${[...body].slice(0, 80).join("")}…` : body;
+
 /** The keyboard and mouse help, shown from the dock and read with the canvas. */
 const HELP = [
   "點選形狀來選取，Shift 加選，拖曳空白處框選，Tab 換選下一個。",
@@ -1194,8 +1198,8 @@ export function Editor({
                     <button
                       key={pin.id}
                       type="button"
-                      aria-label={`評論 ${pin.n}：${pin.body}`}
-                      title={pin.body}
+                      aria-label={`評論 ${pin.n}：${short(pin.body)}`}
+                      title={short(pin.body)}
                       className="absolute flex size-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-background text-xs text-foreground tabular-nums shadow ring-1 ring-foreground/50 outline-offset-2 focus-visible:outline-2"
                       style={{
                         left: `${Math.min(100, Math.max(0, (pin.x / 1920) * 100))}%`,

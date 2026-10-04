@@ -462,6 +462,29 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     ).toBe("added");
   });
 
+  it("lists a comment whose words were deleted since", async () => {
+    const deck = await createDeck(db, "alice-sub", sampleDocument());
+    const doc = deck.document;
+    const slide = doc.slides[0];
+    const note = slide.shapes.find((shape) => shape.id === "tx_note")!;
+    const { addComment } = await import("@/lib/deck/comments");
+    await addComment(db, "alice-sub", deck.id, {
+      slideId: slide.id,
+      targets: [
+        {
+          shape: "tx_note",
+          text: { from: { p: 5, o: 0 }, to: { p: 5, o: 3 } },
+        },
+      ],
+      body: "Drop this bullet",
+    });
+    const listed = await call("list_comments", { deck_id: deck.id });
+    expect(listed.isError).toBeFalsy();
+    const [thread] = JSON.parse(listed.content[0].text);
+    expect(thread.targets[0]).toMatchObject({ stale: true });
+    expect(note).toBeDefined();
+  });
+
   it("keeps every tool to the member's own decks", async () => {
     const [bobs] = await db<{ id: string }[]>`
       select id from decks where owner_sub = 'bob-sub' limit 1`;
@@ -473,6 +496,11 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       ["list_history", {}],
       ["accept", { entry: "1" }],
       ["revert", { entry: "1" }],
+      ["list_comments", {}],
+      ["add_comment", { slide: 1, body: "x" }],
+      ["reply_comment", { comment: "1", body: "x" }],
+      ["resolve_comment", { comment: "1" }],
+      ["reopen_comment", { comment: "1" }],
     ] as const) {
       const result = await call(tool, { deck_id: bobs.id, ...args });
       expect(result.isError, tool).toBe(true);

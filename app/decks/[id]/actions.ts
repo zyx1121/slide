@@ -22,6 +22,7 @@ import {
 import {
   addComment,
   addToThread,
+  Body,
   type CommentResult,
   CommentInput,
   listThreads,
@@ -182,8 +183,8 @@ export async function threadAction(
   ) {
     return { outcome: "invalid", message: "malformed" };
   }
-  if (typeof body === "string" && body.length > 5000) {
-    return { outcome: "invalid", message: "too long" };
+  if (typeof body === "string" && !Body.safeParse(body).success) {
+    return { outcome: "invalid", message: "malformed" };
   }
   return addToThread(sql, user.sub, deckId, threadId, {
     kind,

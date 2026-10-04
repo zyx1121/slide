@@ -16,9 +16,21 @@ function routes(dir: string): string[] {
     const route = `/${relative("app", dir)}`;
     return [
       ...read(path).matchAll(
-        /export async function (GET|POST|PUT|PATCH|DELETE)\b/g
+        /export\s+(?:async\s+function|function|const)\s+(GET|POST|PUT|PATCH|DELETE)\b/g
       ),
     ].map((match) => `${match[1]} ${route}`);
+  });
+}
+
+/** Every file under app/ that starts with "use server". */
+function serverActionFiles(dir: string): string[] {
+  return readdirSync(join(root, dir)).flatMap((name) => {
+    const path = join(dir, name);
+    if (statSync(join(root, path)).isDirectory()) {
+      return serverActionFiles(path);
+    }
+    if (!/\.tsx?$/.test(name)) return [];
+    return /^\s*["']use server["']/.test(read(path)) ? [path] : [];
   });
 }
 
@@ -28,11 +40,10 @@ describe("MCP parity with the web app", () => {
       ...read("lib/mcp/server.ts").matchAll(/registerTool\(\s*"([a-z_]+)"/g),
     ].map((match) => match[1])
   );
-  const actions = ["app/actions.ts", "app/decks/[id]/actions.ts"].flatMap(
-    (path) =>
-      [...read(path).matchAll(/export async function (\w+Action)\b/g)].map(
-        (match) => match[1]
-      )
+  const actions = serverActionFiles("app").flatMap((path) =>
+    [
+      ...read(path).matchAll(/export\s+(?:async\s+function|const)\s+(\w+)\b/g),
+    ].map((match) => match[1])
   );
   const apis = routes("app/api").filter(
     (route) => !NOT_MEMBER_ACTIONS.includes(route)

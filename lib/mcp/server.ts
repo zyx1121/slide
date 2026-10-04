@@ -78,8 +78,15 @@ const SHAPES_HELP =
 /** The most a .pptx sent over MCP may weigh: base64 in a JSON body. */
 export const MCP_IMPORT_MAX_BYTES = 20 * 1024 * 1024;
 
-/** Bytes from base64, or null when the text is not base64 or too long. */
-function fromBase64(data: string, max: number): Buffer | null {
+/** The largest .pptx export_deck returns; larger ones are downloaded in the editor. */
+const MCP_EXPORT_MAX_BYTES = 20 * 1024 * 1024;
+
+/**
+ * Bytes from base64 (line breaks allowed, as the base64 command writes it),
+ * or null when the text is not base64 or too long.
+ */
+function fromBase64(raw: string, max: number): Buffer | null {
+  const data = raw.replace(/\s+/g, "");
   if (data.length > Math.ceil((max * 4) / 3) + 4) return null;
   if (!/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return null;
   const bytes = Buffer.from(data, "base64");
@@ -516,7 +523,7 @@ export function createServer(context: ToolContext): McpServer {
       }
       const result = await importDeck(db, sub, bytes, {
         fallbackTitle: file_name?.replace(/\.pptx$/i, "").trim() || undefined,
-        source: "mcp import_deck",
+        source: "mcp:import_deck",
       });
       return result.ok
         ? text({ id: result.deckId, report: result.report })
@@ -584,6 +591,11 @@ export function createServer(context: ToolContext): McpServer {
       const deck = await getDeck(db, sub, deck_id);
       if (!deck) return failure(`No deck ${deck_id} among the member's decks.`);
       const bytes = await pptxBytes(db, deck);
+      if (bytes.length > MCP_EXPORT_MAX_BYTES) {
+        return failure(
+          `The .pptx is ${bytes.length} bytes, over the ${MCP_EXPORT_MAX_BYTES} an agent can be sent; download it from the editor.`
+        );
+      }
       return {
         content: [
           {

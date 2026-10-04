@@ -349,6 +349,23 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect((await call("get_deck", { deck_id: deck.id })).isError).toBeFalsy();
   });
 
+  it("takes files past the SDK's 4 MiB body cap, up to the tools' own", async () => {
+    // Not a picture nor a .pptx: the tools must get to say so, rather than
+    // the endpoint refusing the body.
+    const big = Buffer.alloc(5 * 1024 * 1024, 7).toString("base64");
+    const upload = await call("upload_image", { data: big });
+    expect(upload.isError).toBe(true);
+    expect(upload.content[0].text).toMatch(/refused/);
+    const imported = await call("import_deck", { data: big });
+    expect(imported.isError).toBe(true);
+    expect(imported.content[0].text).toMatch(/import failed/);
+    // Line breaks in base64 are fine.
+    const png =
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+    const wrapped = png.replace(/(.{20})/g, "$1\n");
+    expect(json(await call("upload_image", { data: wrapped })).width).toBe(1);
+  });
+
   it("keeps every tool to the member's own decks", async () => {
     const [bobs] = await db<{ id: string }[]>`
       select id from decks where owner_sub = 'bob-sub' limit 1`;

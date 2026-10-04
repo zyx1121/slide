@@ -9,10 +9,14 @@ import { sitePoint } from "../render/connector";
 import { type Point, tidy } from "./geometry";
 
 /** The clipboard type the editor writes; text/plain carries the same JSON. */
-export const CLIP_TYPE = "application/x-slide-winlab-shapes+json";
+export const CLIP_TYPE = "application/x-slide-shapes+json";
+
+/** What a clip is called; copies made before the rename still paste. */
+const FORMAT = "slide/shapes";
+const LEGACY_FORMAT = "slide.winlab.tw/shapes";
 
 const Clip = z.strictObject({
-  format: z.literal("slide.winlab.tw/shapes"),
+  format: z.literal([FORMAT, LEGACY_FORMAT]).transform(() => FORMAT),
   version: z.literal(1),
   shapes: z.array(Shape).min(1).max(1000),
 });
@@ -41,7 +45,7 @@ export function copyShapes(
         : shape
     );
   if (shapes.length === 0) return null;
-  return { format: "slide.winlab.tw/shapes", version: 1, shapes };
+  return { format: FORMAT, version: 1, shapes };
 }
 
 /** A clip read back from clipboard text; null for anything else. */

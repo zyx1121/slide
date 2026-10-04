@@ -10,8 +10,8 @@ describe("redactPath", () => {
     expect(redactPath("/auth/callback?code=abc&state=def")).toBe(
       "/auth/callback"
     );
-    expect(redactPath("https://slide.winlab.tw/s/abc?x=1")).toBe(
-      "https://slide.winlab.tw/s/[publicId]"
+    expect(redactPath("https://slide.zyx.tw/s/abc?x=1")).toBe(
+      "https://slide.zyx.tw/s/[publicId]"
     );
     expect(redactPath("/api/decks/dk_abc/slides/2")).toBe(
       "/api/decks/dk_abc/slides/2"

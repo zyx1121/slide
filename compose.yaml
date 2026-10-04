@@ -9,7 +9,7 @@
 name: slide
 
 x-slide: &slide
-  image: ghcr.io/zyx1121/slide.winlab.tw:${SLIDE_VERSION:-latest}
+  image: ghcr.io/zyx1121/slide:${SLIDE_VERSION:-latest}
   init: true
   restart: unless-stopped
   env_file: .env

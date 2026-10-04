@@ -1,7 +1,7 @@
 import type { DeckDocument } from "./schema";
 
 /**
- * A small deck in the shape WinLab slides take: boxes with text, connectors
+ * A small deck in the shape these slides take: boxes with text, connectors
  * glued to them, a text box and a picture. Tests and renderer snapshots use it.
  */
 export function sampleDocument(): DeckDocument {

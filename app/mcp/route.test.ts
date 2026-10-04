@@ -121,7 +121,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       capabilities: {},
       clientInfo: { name: "test", version: "1" },
     });
-    expect(init.body.result.serverInfo.name).toBe("slide.winlab.tw");
+    expect(init.body.result.serverInfo.name).toBe("slide");
     const tools = (await rpc("tools/list", {})).body.result.tools;
     expect(tools.map((tool: { name: string }) => tool.name).sort()).toEqual([
       "add_shapes",

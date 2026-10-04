@@ -10,7 +10,7 @@ export const SESSION_SECONDS = 7 * 24 * 60 * 60;
 /**
  * A cookie's name for this deployment. Over https it takes the __Host-
  * prefix: the browser then refuses a Domain attribute on it, so a page on a
- * sibling *.winlab.tw host cannot plant one (cookie tossing) to swap a
+ * sibling subdomain cannot plant one (cookie tossing) to swap a
  * member's session or sign-in. Plain-http development cannot use the prefix.
  */
 export function cookieName(

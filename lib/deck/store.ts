@@ -7,6 +7,7 @@ import { newId } from "../ids";
 import type { TemplateId } from "../render/template";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
+import { actOnDeck } from "./revisions";
 import { DeckDocument, SCHEMA_VERSION, type Slide } from "./schema";
 
 type Db = postgres.Sql;
@@ -129,7 +130,7 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
       document -> 'slides' -> 0 as first_slide,
       document ->> 'template' as template
     from decks
-    where owner_sub = ${owner}
+    where owner_sub = ${owner} and deleted_at is null
     order by updated_at desc
   `;
   return rows.map((row) => ({
@@ -151,37 +152,10 @@ export async function getDeck(
   id: string
 ): Promise<Deck | null> {
   const [row] = await db<DeckRow[]>`
-    select * from decks where id = ${id} and owner_sub = ${owner}
+    select * from decks
+    where id = ${id} and owner_sub = ${owner} and deleted_at is null
   `;
   return row ? toDeck(row) : null;
-}
-
-/**
- * Publishes or unpublishes a member's deck. The public id is made on the
- * first publish and kept, so publishing again brings the same link back.
- * Publishing changes no part of the document, so it writes no revision.
- * Null when the deck is missing or not the member's.
- */
-export async function setPublished(
-  db: Db,
-  owner: string,
-  id: string,
-  published: boolean
-): Promise<{ published: boolean; publicId: string | null } | null> {
-  const [row] = await db<Pick<DeckRow, "published" | "public_id">[]>`
-    update decks
-    set published = ${published},
-        public_id = case when ${published}::boolean
-          then coalesce(public_id, ${newPublicId()}) else public_id end
-    where id = ${id} and owner_sub = ${owner}
-    returning published, public_id
-  `;
-  return row ? { published: row.published, publicId: row.public_id } : null;
-}
-
-/** A public id: 16 characters, about 79 bits, so links cannot be guessed. */
-function newPublicId(): string {
-  return newId("p", 16).slice(2);
 }
 
 /** A published deck by its public id, for anyone with the link. */
@@ -191,7 +165,8 @@ export async function getPublishedDeck(
 ): Promise<Deck | null> {
   if (!/^[0-9a-z]{16}$/.test(publicId)) return null;
   const [row] = await db<DeckRow[]>`
-    select * from decks where public_id = ${publicId} and published
+    select * from decks
+    where public_id = ${publicId} and published and deleted_at is null
   `;
   return row ? toDeck(row) : null;
 }
@@ -211,7 +186,7 @@ export async function mutateDeck(
   return db.begin(async (tx) => {
     const [row] = await tx<Pick<DeckRow, "document" | "version">[]>`
       select document, version from decks
-      where id = ${deckId} and owner_sub = ${actor.sub}
+      where id = ${deckId} and owner_sub = ${actor.sub} and deleted_at is null
       for update
     `;
     if (!row) throw new DeckError("not_found", `no deck ${deckId}`);
@@ -278,7 +253,8 @@ export async function renameDeck(
   const value = title.trim();
   for (let attempt = 1; ; attempt++) {
     const [row] = await db<Pick<DeckRow, "title" | "version">[]>`
-      select title, version from decks where id = ${id} and owner_sub = ${owner}
+      select title, version from decks
+      where id = ${id} and owner_sub = ${owner} and deleted_at is null
     `;
     if (!row) return false;
     if (row.title === value) return true;
@@ -303,18 +279,43 @@ export async function renameDeck(
 }
 
 /**
- * Deletes a deck with its revisions. Returns false when the deck is missing
- * or someone else's.
+ * Deletes a member's deck: it leaves the lists but stays, with its
+ * history, and an entry in that history restores it. Returns false when the
+ * deck is missing, someone else's, or already deleted.
  */
 export async function deleteDeck(
   db: Db,
   owner: string,
   id: string
 ): Promise<boolean> {
-  const rows = await db`
-    delete from decks where id = ${id} and owner_sub = ${owner} returning id
+  return (await actOnDeck(db, owner, id, "delete")).outcome === "applied";
+}
+
+/** Brings a deleted deck back; false when there is none to restore. */
+export async function restoreDeck(
+  db: Db,
+  owner: string,
+  id: string
+): Promise<boolean> {
+  return (await actOnDeck(db, owner, id, "restore")).outcome === "applied";
+}
+
+/** The member's deleted decks, most recently deleted first. */
+export async function listDeletedDecks(
+  db: Db,
+  owner: string
+): Promise<{ id: string; title: string; deletedAt: Date }[]> {
+  const rows = await db<{ id: string; title: string; deleted_at: Date }[]>`
+    select id, title, deleted_at from decks
+    where owner_sub = ${owner} and deleted_at is not null
+    order by deleted_at desc
+    limit 50
   `;
-  return rows.length > 0;
+  return rows.map((row) => ({
+    id: row.id,
+    title: row.title,
+    deletedAt: row.deleted_at,
+  }));
 }
 
 export type { Operation };

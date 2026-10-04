@@ -10,7 +10,12 @@ import { requireUser } from "@/lib/auth/session";
 import { sql } from "@/lib/db";
 import { DeckError } from "@/lib/deck/errors";
 import { DECK_TITLE_MAX } from "@/lib/deck/limits";
-import { createDeck, deleteDeck, renameDeck } from "@/lib/deck/store";
+import {
+  createDeck,
+  deleteDeck,
+  renameDeck,
+  restoreDeck,
+} from "@/lib/deck/store";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
@@ -55,6 +60,16 @@ export async function renameDeckAction(form: FormData): Promise<ActionResult> {
   } catch (error) {
     return refused(error);
   }
+  refresh();
+  return { ok: true };
+}
+
+/** Brings back a deck the member deleted, from the home page's list. */
+export async function restoreDeckAction(form: FormData): Promise<ActionResult> {
+  const user = await requireUser();
+  const id = form.get("id");
+  if (typeof id !== "string") return MALFORMED;
+  await restoreDeck(sql, user.sub, id);
   refresh();
   return { ok: true };
 }

@@ -240,7 +240,7 @@ function DeleteForm({
     >
       <input type="hidden" name="id" value={id} />
       <p id={messageId} className="text-xs text-muted-foreground">
-        簡報和它的修改紀錄會一起刪除，無法復原。
+        簡報會移到下方的「最近刪除」，隨時可以還原。
       </p>
       <div className="flex gap-2">
         <Button

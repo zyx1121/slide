@@ -1,9 +1,9 @@
 "use client";
 
-// The dock's suggestions and history: what the member's agent suggested,
-// to preview, accept or reject, one by one or all at once; and the deck's
-// recent changes, each revertible on its own. Suggestions are checked for
-// every 10 seconds while the page is visible.
+// The dock's suggestions and history: what the member's agent suggested or
+// asked for (publishing, deleting), to preview, accept or reject, one by one
+// or all at once; and the deck's recent changes, each revertible on its own.
+// Suggestions are checked for every 10 seconds while the page is visible.
 import { HistoryIcon } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
@@ -30,6 +30,19 @@ const time = (date: Date | string) =>
     hour: "2-digit",
     minute: "2-digit",
   });
+
+const ACTIONS: Record<Exclude<Revision["kind"], "edit">, string> = {
+  publish: "公開分享",
+  unpublish: "取消公開",
+  delete: "刪除簡報",
+  restore: "還原簡報",
+};
+
+/** What an entry does, in a few words. */
+const what = (entry: Revision) =>
+  entry.kind === "edit" ? `${entry.changes} 處修改` : ACTIONS[entry.kind];
+
+const WHO = { member: "你", agent: "代理程式" } as const;
 
 const MESSAGES: Record<string, string> = {
   already: "這個建議的內容已經在簡報裡了。",
@@ -84,7 +97,11 @@ export function ReviewTool({
     for (const id of ids) {
       const result = await reviseAction(deckId, id, action).catch(() => null);
       if (!result) problems.push("連線中斷，請再試一次。");
-      else if (result.outcome === "applied") changed = true;
+      else if (result.outcome === "applied" && result.kind === "delete") {
+        // The deck is gone from the lists; it waits under 最近刪除.
+        window.location.assign("/");
+        return;
+      } else if (result.outcome === "applied") changed = true;
       else if (result.outcome === "conflict") problems.push(result.message);
       else if (MESSAGES[result.outcome])
         problems.push(MESSAGES[result.outcome]);
@@ -135,7 +152,7 @@ export function ReviewTool({
       >
         <section className="flex flex-col gap-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-xs font-medium">代理程式的建議</h2>
+            <h2 className="text-xs font-medium">代理程式的建議與請求</h2>
             {pending > 1 && (
               <div className="flex gap-1">
                 <Button
@@ -178,7 +195,7 @@ export function ReviewTool({
                 >
                   <div className="flex min-w-0 flex-1 flex-col">
                     <span className="text-xs">
-                      {suggestion.changes} 處修改 · {time(suggestion.createdAt)}
+                      {what(suggestion)} · {time(suggestion.createdAt)}
                     </span>
                     {suggestion.stale && (
                       <span className="text-xs text-muted-foreground">
@@ -186,13 +203,15 @@ export function ReviewTool({
                       </span>
                     )}
                   </div>
-                  <Button
-                    variant="ghost"
-                    disabled={disabled}
-                    onClick={() => onPreview(suggestion)}
-                  >
-                    預覽
-                  </Button>
+                  {suggestion.kind === "edit" && (
+                    <Button
+                      variant="ghost"
+                      disabled={disabled}
+                      onClick={() => onPreview(suggestion)}
+                    >
+                      預覽
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     disabled={disabled}
@@ -223,10 +242,14 @@ export function ReviewTool({
                   className="flex items-center gap-2 rounded-md px-2 py-1 hover:bg-foreground/5"
                 >
                   <span className="min-w-0 flex-1 text-xs text-muted-foreground">
-                    {time(revision.createdAt)} ·{" "}
-                    {revision.author === "agent" ? "代理程式" : "你"} ·{" "}
-                    {revision.changes} 處
-                    {revision.status === "rejected" ? " · 未採用" : ""}
+                    {time(revision.createdAt)} · {WHO[revision.author]} ·{" "}
+                    {what(revision)}
+                    {revision.decidedBy &&
+                    revision.decidedBy !== revision.author
+                      ? ` · ${WHO[revision.decidedBy]}${revision.status === "rejected" ? "拒絕" : "接受"}`
+                      : revision.status === "rejected"
+                        ? " · 未採用"
+                        : ""}
                   </span>
                   {revision.status === "applied" && (
                     <Button

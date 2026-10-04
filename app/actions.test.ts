@@ -6,6 +6,7 @@ vi.mock("@/lib/deck/store", () => ({
   createDeck: vi.fn(),
   renameDeck: vi.fn(),
   deleteDeck: vi.fn(),
+  restoreDeck: vi.fn(),
 }));
 vi.mock("next/cache", () => ({ refresh: vi.fn(), revalidatePath: vi.fn() }));
 vi.mock("next/navigation", () => ({
@@ -15,11 +16,16 @@ vi.mock("next/navigation", () => ({
 }));
 
 const { requireUser } = await import("@/lib/auth/session");
-const { createDeck, deleteDeck, renameDeck } = await import("@/lib/deck/store");
+const { createDeck, deleteDeck, renameDeck, restoreDeck } =
+  await import("@/lib/deck/store");
 const { refresh, revalidatePath } = await import("next/cache");
 const { DeckError } = await import("@/lib/deck/errors");
-const { createDeckAction, deleteDeckAction, renameDeckAction } =
-  await import("./actions");
+const {
+  createDeckAction,
+  deleteDeckAction,
+  renameDeckAction,
+  restoreDeckAction,
+} = await import("./actions");
 
 function form(fields: Record<string, string>): FormData {
   const data = new FormData();
@@ -111,6 +117,18 @@ describe("deck actions", () => {
     expect(deleteDeck).toHaveBeenCalledWith({}, "alice-sub", "dk_1");
     expect(refresh).toHaveBeenCalledOnce();
     expect(await deleteDeckAction(form({}))).toEqual({
+      ok: false,
+      error: expect.any(String),
+    });
+  });
+
+  it("restore as the member", async () => {
+    vi.mocked(restoreDeck).mockResolvedValue(true);
+    expect(await restoreDeckAction(form({ id: "dk_1" }))).toEqual({
+      ok: true,
+    });
+    expect(restoreDeck).toHaveBeenCalledWith({}, "alice-sub", "dk_1");
+    expect(await restoreDeckAction(form({}))).toEqual({
       ok: false,
       error: expect.any(String),
     });

@@ -12,10 +12,12 @@ import {
   getDeck,
   getPublishedDeck,
   listDecks,
+  listDeletedDecks,
   mutateDeck,
   renameDeck,
-  setPublished,
+  restoreDeck,
 } from "./store";
+import { actOnDeck } from "./revisions";
 
 const alice: Actor = { kind: "member", sub: "alice-sub" };
 const bob: Actor = { kind: "member", sub: "bob-sub" };
@@ -58,26 +60,39 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
 
   it("publishes a deck under a public id it keeps", async () => {
     const deck = await createDeck(db, alice.sub, sampleDocument());
+    const state = async () => {
+      const now = (await getDeck(db, alice.sub, deck.id))!;
+      return { published: now.published, publicId: now.publicId };
+    };
     expect(await getPublishedDeck(db, "x".repeat(16))).toBeNull();
-    // Unpublishing a deck never published makes no link.
-    expect(await setPublished(db, alice.sub, deck.id, false)).toEqual({
-      published: false,
-      publicId: null,
+    // Unpublishing a deck never published changes nothing and makes no link.
+    expect(await actOnDeck(db, alice.sub, deck.id, "unpublish")).toEqual({
+      outcome: "already",
     });
-    expect(await setPublished(db, bob.sub, deck.id, true)).toBeNull();
+    expect(await state()).toEqual({ published: false, publicId: null });
+    expect(await actOnDeck(db, bob.sub, deck.id, "publish")).toEqual({
+      outcome: "gone",
+    });
 
-    const first = await setPublished(db, alice.sub, deck.id, true);
-    expect(first?.published).toBe(true);
-    expect(first?.publicId).toMatch(/^[0-9a-z]{16}$/);
-    expect((await getPublishedDeck(db, first!.publicId!))?.id).toBe(deck.id);
+    expect((await actOnDeck(db, alice.sub, deck.id, "publish")).outcome).toBe(
+      "applied"
+    );
+    const first = await state();
+    expect(first.published).toBe(true);
+    expect(first.publicId).toMatch(/^[0-9a-z]{16}$/);
+    expect((await getPublishedDeck(db, first.publicId!))?.id).toBe(deck.id);
 
-    const off = await setPublished(db, alice.sub, deck.id, false);
-    expect(off).toEqual({ published: false, publicId: first!.publicId });
-    expect(await getPublishedDeck(db, first!.publicId!)).toBeNull();
+    await actOnDeck(db, alice.sub, deck.id, "unpublish");
+    expect(await state()).toEqual({
+      published: false,
+      publicId: first.publicId,
+    });
+    expect(await getPublishedDeck(db, first.publicId!)).toBeNull();
 
     // Publishing again brings the same link back.
-    expect(await setPublished(db, alice.sub, deck.id, true)).toEqual(first);
-    expect(await getPublishedDeck(db, "../" + first!.publicId)).toBeNull();
+    await actOnDeck(db, alice.sub, deck.id, "publish");
+    expect(await state()).toEqual(first);
+    expect(await getPublishedDeck(db, "../" + first.publicId)).toBeNull();
   });
 
   it("hides a deck from everyone but its owner", async () => {
@@ -311,14 +326,47 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
     });
   });
 
-  it("deletes a deck with its revisions", async () => {
-    const deck = await createDeck(db, alice.sub);
+  it("deletes a deck into a list it can be restored from, history kept", async () => {
+    const deck = await createDeck(db, alice.sub, sampleDocument());
     await renameDeck(db, alice.sub, deck.id, "Doomed");
-    expect(await revisionCount(deck.id)).toBe(1);
+    await actOnDeck(db, alice.sub, deck.id, "publish");
+    const { publicId } = (await getDeck(db, alice.sub, deck.id))!;
     expect(await deleteDeck(db, alice.sub, deck.id)).toBe(true);
+
+    // Gone from every list and path, the public link included.
     expect(await getDeck(db, alice.sub, deck.id)).toBeNull();
-    expect(await revisionCount(deck.id)).toBe(0);
-    expect(await deleteDeck(db, alice.sub, deck.id)).toBe(false);
+    expect((await listDecks(db, alice.sub)).map((d) => d.id)).not.toContain(
+      deck.id
+    );
+    expect(await getPublishedDeck(db, publicId!)).toBeNull();
     expect(await renameDeck(db, alice.sub, deck.id, "Back")).toBe(false);
+    expect(await deleteDeck(db, alice.sub, deck.id)).toBe(false);
+    expect(
+      (
+        await refusal(
+          mutateDeck(db, {
+            deckId: deck.id,
+            actor: alice,
+            baseVersion: 1,
+            ops: [{ op: "replace", path: "/title", value: "Sneaky" }],
+          })
+        )
+      ).code
+    ).toBe("not_found");
+    // Rename, publish and delete are all entries.
+    expect(await revisionCount(deck.id)).toBe(3);
+    expect((await listDeletedDecks(db, alice.sub)).map((d) => d.id)).toContain(
+      deck.id
+    );
+    expect(await listDeletedDecks(db, bob.sub)).toEqual([]);
+
+    expect(await restoreDeck(db, bob.sub, deck.id)).toBe(false);
+    expect(await restoreDeck(db, alice.sub, deck.id)).toBe(true);
+    expect(await getDeck(db, alice.sub, deck.id)).toMatchObject({
+      title: "Doomed",
+      published: true,
+    });
+    expect((await getPublishedDeck(db, publicId!))?.id).toBe(deck.id);
+    expect(await restoreDeck(db, alice.sub, deck.id)).toBe(false);
   });
 });

@@ -116,6 +116,46 @@ export function unsign<T>(
   }
 }
 
+// ---------------------------------------------------------------- forms
+
+/** The most a form posted to /oauth/token or /oauth/approve may hold, in bytes. */
+export const FORM_LIMIT = 16 * 1024;
+
+/**
+ * A posted form, read no further than `limit` bytes: anyone may post to
+ * these endpoints, so a body is never buffered whole before it is judged.
+ * Real ones hold a wrapped code, a PKCE verifier or a refresh token.
+ */
+export async function readForm(
+  request: Request,
+  limit = FORM_LIMIT
+): Promise<{ ok: true; form: FormData } | { ok: false; status: 400 | 413 }> {
+  if (Number(request.headers.get("content-length")) > limit) {
+    return { ok: false, status: 413 };
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  if (request.body) {
+    const reader = request.body.getReader();
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > limit) {
+        await reader.cancel().catch(() => {});
+        return { ok: false, status: 413 };
+      }
+      chunks.push(value);
+    }
+  }
+  const form = await new Response(Buffer.concat(chunks), {
+    headers: { "content-type": request.headers.get("content-type") ?? "" },
+  })
+    .formData()
+    .catch(() => null);
+  return form ? { ok: true, form } : { ok: false, status: 400 };
+}
+
 // ---------------------------------------------------------------- clients
 
 /**

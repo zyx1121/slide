@@ -9,6 +9,7 @@ import {
   issuerUrl,
   keycloakAuthorize,
   type McpEnv,
+  readForm,
   sign,
   unsign,
 } from "./oauth";
@@ -91,7 +92,9 @@ export async function approve(
   ) {
     return page(403, "Forbidden");
   }
-  const form = await request.formData().catch(() => null);
+  const read = await readForm(request);
+  if (!read.ok && read.status === 413) return page(413, "Payload Too Large");
+  const form = read.ok ? read.form : null;
   const tx = unsign<{ r: AuthorizeRequest }>(
     env,
     "consent",

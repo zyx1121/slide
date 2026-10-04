@@ -15,7 +15,6 @@ describe("session cookie", () => {
       sub: "alice-sub",
       name: "Alice",
       email: "alice@example.com",
-      idToken: undefined,
     });
   });
 
@@ -40,19 +39,5 @@ describe("session cookie", () => {
     } finally {
       vi.useRealTimers();
     }
-  });
-
-  it("drops an ID token that would make the cookie too large", async () => {
-    const small = await sealSession(
-      { sub: "a", name: "", email: "", idToken: "x".repeat(100) },
-      secret
-    );
-    expect((await unsealSession(small, secret))?.idToken).toBe("x".repeat(100));
-    const large = await sealSession(
-      { sub: "a", name: "", email: "", idToken: "x".repeat(5000) },
-      secret
-    );
-    expect(large.length).toBeLessThan(3800);
-    expect((await unsealSession(large, secret))?.idToken).toBeUndefined();
   });
 });

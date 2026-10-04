@@ -210,10 +210,9 @@ async function act(
   await applyAction(tx, deckId, action);
   const [entry] = await tx<{ id: string }[]>`
     insert into revisions
-      (deck_id, kind, base_version, version, author_kind, author_sub, status,
-       decided_kind, decided_at)
+      (deck_id, kind, base_version, version, author_kind, author_sub, status)
     values (${deckId}, ${action}, ${deck.version}, ${deck.version}, ${by},
-      ${owner}, 'applied', ${by}, now())
+      ${owner}, 'applied')
     returning id`;
   return { outcome: "applied", revisionId: String(entry.id) };
 }
@@ -278,11 +277,11 @@ export async function revertRevision(
     await tx`
       insert into revisions
         (deck_id, base_version, version, author_kind, author_sub, status,
-         patch, inverse, decided_kind, decided_at)
+         patch, inverse)
       values
         (${deckId}, ${deck.version}, ${applied.next}, ${by}, ${owner}, 'applied',
          ${tx.json(asJson(applied.result.operations))},
-         ${tx.json(asJson(applied.result.inverse))}, ${by}, now())`;
+         ${tx.json(asJson(applied.result.inverse))})`;
     return { outcome: "applied", version: applied.next, kind: "edit" };
   });
 }

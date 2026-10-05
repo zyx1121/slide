@@ -75,6 +75,19 @@ async function handle(request: Request): Promise<Response> {
   ) {
     return legacy(request, authInfo);
   }
+  // Slide sends no notifications, so it opens no subscription stream: one
+  // would stay open past the token's life and share the handler's cap.
+  const call = await request
+    .clone()
+    .json()
+    .catch(() => null);
+  if (call?.method === "subscriptions/listen") {
+    return Response.json({
+      jsonrpc: "2.0",
+      id: call.id ?? null,
+      error: { code: -32601, message: "Method not found" },
+    });
+  }
   return modern.fetch(request, { authInfo });
 }
 

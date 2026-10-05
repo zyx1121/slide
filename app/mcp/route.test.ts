@@ -197,6 +197,27 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     }
   });
 
+  it("opens no subscription stream", async () => {
+    const response = await POST(
+      new Request("https://slide.example.org/mcp", {
+        method: "POST",
+        headers: {
+          authorization: "Bearer good",
+          "content-type": "application/json",
+          accept: "application/json, text/event-stream",
+        },
+        body: JSON.stringify({
+          jsonrpc: "2.0",
+          id: 1,
+          method: "subscriptions/listen",
+          params: {},
+        }),
+      })
+    );
+    expect(response.headers.get("content-type")).toContain("application/json");
+    expect((await response.json()).error.code).toBe(-32601);
+  });
+
   it("lists and reads only the member's decks", async () => {
     const decks = JSON.parse((await call("list_decks", {})).content[0].text);
     expect(decks.map((deck: { id: string }) => deck.id)).toEqual([deckId]);

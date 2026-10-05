@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.5.0](https://github.com/zyx1121/slide/compare/v0.4.0...v0.5.0) (2026-10-05)
+
+
+### Features
+
+* draw decks on .pptx slide masters instead of a template id ([#152](https://github.com/zyx1121/slide/issues/152)) ([12916a6](https://github.com/zyx1121/slide/commit/12916a61a982d6148d36a7ce5a6ced222315e46a))
+* draw picture backgrounds, path gradients and theme background styles ([#158](https://github.com/zyx1121/slide/issues/158)) ([b336ca2](https://github.com/zyx1121/slide/commit/b336ca25714ca8dcd3b977a48066a8ae6b9e74f4))
+* draw slide Chinese in Microsoft JhengHei where the viewer has it ([#160](https://github.com/zyx1121/slide/issues/160)) ([89f6138](https://github.com/zyx1121/slide/commit/89f613885b34f83fbc60679050cb9c25c9b7c41a))
+* draw slide Latin text in Calibri where the viewer has it ([#162](https://github.com/zyx1121/slide/issues/162)) ([e5bc19a](https://github.com/zyx1121/slide/commit/e5bc19a90d7d4fce3f53e647315e60a4e14aaabc))
+* give new slides their layout's title and text placeholders ([#166](https://github.com/zyx1121/slide/issues/166)) ([78d854e](https://github.com/zyx1121/slide/commit/78d854e6ca399c29c0f8d194c7ea26e1a2832f5b))
+* pick a slide's layout and the deck's master in the editor ([#156](https://github.com/zyx1121/slide/issues/156)) ([2dceb66](https://github.com/zyx1121/slide/commit/2dceb66f222ad08509cea9ed5d97a7b1d7e7bdbe))
+* pick a slide's own layout again to bring back its placeholders ([#169](https://github.com/zyx1121/slide/issues/169)) ([40127e0](https://github.com/zyx1121/slide/commit/40127e05b86fe91a61dc4f2f8b79e87426a19b39))
+* pick the master when a deck is made, and keep it ([#164](https://github.com/zyx1121/slide/issues/164)) ([5d45693](https://github.com/zyx1121/slide/commit/5d456934a8a61c78c467753f6634a9bfdc5935f5))
+* speak MCP 2026-07-28 on /mcp ([#151](https://github.com/zyx1121/slide/issues/151)) ([d48c392](https://github.com/zyx1121/slide/commit/d48c39283e39182b4f72bb27b1038ac38ff8a172))
+
+
+### Bug fixes
+
+* forgive one retry of a spent refresh token, not more ([#149](https://github.com/zyx1121/slide/issues/149)) ([b21760c](https://github.com/zyx1121/slide/commit/b21760cd5e8a835f3f64bc3bc96b40ee1f925402))
+* keep only the master lists, sizes and text style of presentation.xml ([#154](https://github.com/zyx1121/slide/issues/154)) ([d1f4e0a](https://github.com/zyx1121/slide/commit/d1f4e0aa5d749c5db0c861980ce3a9c9de7aec63))
+* refuse a patch whose revert could not be checked ([#176](https://github.com/zyx1121/slide/issues/176)) ([c64ab82](https://github.com/zyx1121/slide/commit/c64ab82a4c4ef8dcfcc2efecae304e5bfbd23ee8))
+* revert an older entry without dropping later edits ([#170](https://github.com/zyx1121/slide/issues/170)) ([6a2ad9d](https://github.com/zyx1121/slide/commit/6a2ad9dfe398c7a5525938eb3e8dd59c63cb0adf))
+* test each id-less element once per stored inverse ([#173](https://github.com/zyx1121/slide/issues/173)) ([6264db0](https://github.com/zyx1121/slide/commit/6264db06b9f422028d1ade74cfac5c0dc71fbc75))
+
 ## [0.4.0](https://github.com/zyx1121/slide/compare/v0.3.0...v0.4.0) (2026-10-04)
 
 

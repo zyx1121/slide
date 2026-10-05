@@ -122,7 +122,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: packageJson.version },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's slide master (document.master, from a .pptx, fixed when the deck is made) has layouts; each slide's layout draws its background, artwork, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's slide master (document.master, from a .pptx, fixed when the deck is made) has layouts; each slide's layout draws its background, artwork, title and number, and its text placeholders (master.layouts[].bodies) are text boxes on the slide whose placeholder names them: fill those for body text, as in PowerPoint. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
     }
   );
   const { db, sub } = context;
@@ -474,7 +474,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Add a slide",
       description:
-        "Adds a slide on the master's default layout: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes, as add_shapes describes them.",
+        "Adds a slide on the master's default layout: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes, as add_shapes describes them. The slide also gets the layout's text placeholders as empty text boxes (each with placeholder set to the layout's key); write their text with update_shapes, and it takes the layout's styles (bullets, sizes) where it sets none.",
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),
@@ -708,7 +708,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Set a slide's layout",
       description:
-        "Puts a slide on another layout of the deck's master (get_deck lists them under master.layouts), by index or name. The layout draws the slide's background, artwork, title and number.",
+        "Puts a slide on another layout of the deck's master (get_deck lists them under master.layouts), by index or name. The layout draws the slide's background, artwork, title and number. Its text placeholders follow as in PowerPoint: one the new layout also has stays (and moves with it if it was in place), one it lacks becomes a plain text box that looks the same, and the new layout's others arrive empty.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,

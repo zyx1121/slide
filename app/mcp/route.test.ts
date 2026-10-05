@@ -356,6 +356,82 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     // The deck keeps its master; the slide is on its Section layout.
     expect(changed.document.master.name).toBe("WinLab");
     expect(changed.document.slides[0].layout).toBe(2);
+
+    // A new slide brings its layout's placeholders; another layout's arrive.
+    const added = json(
+      await call("add_slide", { deck_id: created.id, title: "Body" })
+    );
+    expect(added.status).toBe("applied");
+    const withBody = json(await call("get_deck", { deck_id: created.id }));
+    const last = withBody.document.slides.at(-1);
+    expect(last.shapes).toEqual([
+      expect.objectContaining({ kind: "text", placeholder: "1" }),
+    ]);
+    const at = withBody.document.slides.length;
+    const keys = async () =>
+      json(await call("get_deck", { deck_id: created.id }))
+        .document.slides.at(-1)
+        .shapes.map((shape: { placeholder?: string }) => shape.placeholder);
+    const toColumns = json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Two Columns",
+      })
+    );
+    expect(toColumns.status).toBe("applied");
+    expect(await keys()).toEqual(["21", "1"]);
+
+    // A layout change is undone on its own, as any edit is.
+    expect(
+      json(
+        await call("revert", { deck_id: created.id, entry: toColumns.entry })
+      ).outcome
+    ).toBe("applied");
+    expect(await keys()).toEqual(["1"]);
+
+    // Two Columns with its left column typed in, then back to Title &
+    // Bullets: that change reverts too.
+    json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Two Columns",
+      })
+    );
+    const typed = json(await call("get_deck", { deck_id: created.id }));
+    const left = typed.document.slides
+      .at(-1)
+      .shapes.find(
+        (shape: { placeholder?: string }) => shape.placeholder === "1"
+      );
+    expect(
+      json(
+        await call("update_shapes", {
+          deck_id: created.id,
+          slide: at,
+          updates: [
+            {
+              id: left.id,
+              set: { text: { paragraphs: [{ runs: [{ text: "Left" }] }] } },
+            },
+          ],
+        })
+      ).status
+    ).toBe("applied");
+    const back = json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Title & Bullets",
+      })
+    );
+    expect(await keys()).toEqual(["1"]);
+    expect(
+      json(await call("revert", { deck_id: created.id, entry: back.entry }))
+        .outcome
+    ).toBe("applied");
+    expect(await keys()).toEqual(["21", "1"]);
     expect(changed.document.slides).toHaveLength(2);
     expect(
       changed.document.slides.map((slide: { title: string }) => slide.title)

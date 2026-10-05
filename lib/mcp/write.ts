@@ -7,7 +7,14 @@ import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { guard } from "../editor/guard";
 import { deleteOps } from "../editor/ops";
-import { duplicateSlide, insertSlideOps, notesOps } from "../editor/slides";
+import { placeholderShapes } from "../editor/placeholders";
+import {
+  duplicateSlide,
+  insertSlideOps,
+  notesOps,
+  relayoutOps,
+} from "../editor/slides";
+import { layoutOf } from "../master/layout";
 
 export class WriteError extends Error {}
 
@@ -184,7 +191,15 @@ export function addSlide(
   let id = newId("sl");
   while (taken.has(id)) id = newId("sl");
   taken.add(id);
-  const shapes = withIds(input.shapes ?? [], taken);
+  // The default layout's empty placeholders first, behind what is added;
+  // a shape given for one of them takes its place.
+  const given = withIds(input.shapes ?? [], taken);
+  const filled = new Set(given.map((shape) => shape.placeholder));
+  const placeholders = placeholderShapes(
+    layoutOf(document, undefined),
+    taken
+  ).filter((shape) => !filled.has(shape.placeholder));
+  const shapes = [...placeholders, ...given];
   const notes = input.notes?.trim() ? { notes: input.notes } : {};
   const slide = {
     id,
@@ -321,11 +336,13 @@ export function setSlideLayout(
   if ((found.layout ?? document.master.layout) === at) {
     throw new WriteError("the slide is on that layout");
   }
+  const ops = relayoutOps(document, index, at);
+  const arriving = ops
+    .filter((op) => op.op === "add" && /\/shapes\/\d+$/.test(op.path))
+    .map((op) => (op as { value: Shape }).value.id);
   return {
-    ops: guard(document, [
-      { op: "add", path: `/slides/${index}/layout`, value: at },
-    ]),
-    created: [],
+    ops: guard(document, ops),
+    created: arriving,
     changed: [found.id],
   };
 }

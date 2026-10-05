@@ -37,6 +37,16 @@ const Color = z
     "colors look like #3297fc, or #3297fc80 with alpha"
   );
 
+const BulletChar = z
+  .string()
+  .refine(
+    (c) => [...c].length === 1 && !/[\u0000-\u001f\u007f-\u009f\s]/.test(c),
+    "a bullet is one visible character"
+  );
+
+/** Which of its layout's text placeholders a text box is: the placeholder's key. */
+const PlaceholderKey = z.string().regex(/^[0-9A-Za-z]{1,20}$/);
+
 export const Run = z.strictObject({
   text: Text(10_000),
   /** px on the 1920 x 1080 canvas; PowerPoint points are half of it. */
@@ -53,13 +63,7 @@ export const Paragraph = z.strictObject({
   align: z.enum(["left", "center", "right", "justify"]).optional(),
   bullet: z.enum(["none", "bullet", "number"]).optional(),
   /** The bullet's character, when it is not "•" (as "–" or "»"). */
-  bulletChar: z
-    .string()
-    .refine(
-      (c) => [...c].length === 1 && !/[\u0000-\u001f\u007f-\u009f\s]/.test(c),
-      "a bullet is one visible character"
-    )
-    .optional(),
+  bulletChar: BulletChar.optional(),
   level: z.number().int().min(0).max(8).optional(),
   /** Line pitch as a multiple of single spacing (lnSpc in percent). */
   lineSpacing: z.number().min(0.1).max(10).optional(),
@@ -202,6 +206,13 @@ export const TextBox = z.strictObject({
   ...box,
   ...paint,
   text: TextBody,
+  /**
+   * The text placeholder of the slide's layout this box is (a key of the
+   * layout's `bodies`): its text takes that placeholder's styles, level by
+   * level, where it sets none of its own, and an empty one prompts in the
+   * editor.
+   */
+  placeholder: PlaceholderKey.optional(),
 });
 
 /** How much of the picture each side cuts away (or pads), as a fraction of it. */
@@ -278,17 +289,53 @@ export const Shape = z.discriminatedUnion("kind", [
 ]);
 
 /** Where a layout puts the title or the slide number, and how it looks. */
+const Inset = z.strictObject({
+  x: z.number().min(0).max(1000),
+  y: z.number().min(0).max(1000),
+});
+const Align = z.enum(["left", "center", "right", "justify"]);
+const Anchor = z.enum(["top", "middle", "bottom"]);
+/** What the editor shows in an empty placeholder, when the layout says. */
+const Prompt = Text(200);
+
 export const Placeholder = z.strictObject({
   ...box,
   size: z.number().min(1).max(800),
   bold: z.boolean(),
   color: Color,
-  align: z.enum(["left", "center", "right", "justify"]),
-  anchor: z.enum(["top", "middle", "bottom"]),
-  inset: z.strictObject({
-    x: z.number().min(0).max(1000),
-    y: z.number().min(0).max(1000),
-  }),
+  align: Align,
+  anchor: Anchor,
+  inset: Inset,
+  prompt: Prompt.optional(),
+});
+
+/** How a paragraph at one level of a text placeholder looks, by default. */
+export const LevelStyle = z.strictObject({
+  size: z.number().min(1).max(800),
+  color: Color,
+  bold: z.boolean(),
+  bullet: z.enum(["none", "bullet", "number"]),
+  bulletChar: BulletChar.optional(),
+  align: Align,
+  lineSpacing: z.number().min(0.1).max(10).optional(),
+  spaceBefore: z.number().min(0).max(2000).optional(),
+  spaceAfter: z.number().min(0).max(2000).optional(),
+});
+
+/**
+ * A text placeholder of a layout other than its title and slide number: a
+ * body, content or subtitle placeholder, as the .pptx lays it out.
+ */
+export const BodyPlaceholder = z.strictObject({
+  /** Its idx in the .pptx, or its type when it has none. */
+  key: PlaceholderKey,
+  type: z.enum(["body", "obj", "subTitle"]),
+  ...box,
+  anchor: Anchor,
+  inset: Inset,
+  /** Level 0 first; deeper paragraphs take the last one given. */
+  levels: z.array(LevelStyle).min(1).max(9),
+  prompt: Prompt.optional(),
 });
 
 /**
@@ -311,6 +358,8 @@ export const Layout = z.strictObject({
   shapes: z.array(Shape).max(200),
   title: Placeholder.nullable(),
   number: Placeholder.nullable(),
+  /** Its other text placeholders; a new slide on it gets one box for each. */
+  bodies: z.array(BodyPlaceholder).max(16).optional(),
 });
 
 /**
@@ -422,6 +471,28 @@ export const DeckDocument = z
     }
     document.slides.forEach((slide, s) => {
       claim(slide.id, ["slides", s, "id"]);
+      const layout =
+        document.master.layouts[slide.layout ?? document.master.layout];
+      const keys = new Set((layout?.bodies ?? []).map((body) => body.key));
+      const linked = new Set<string>();
+      slide.shapes.forEach((shape, i) => {
+        if (shape.kind !== "text" || shape.placeholder === undefined) return;
+        const path = ["slides", s, "shapes", i, "placeholder"];
+        if (!keys.has(shape.placeholder)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `the slide's layout has no placeholder ${shape.placeholder}`,
+            path,
+          });
+        } else if (linked.has(shape.placeholder)) {
+          ctx.addIssue({
+            code: "custom",
+            message: `placeholder ${shape.placeholder} is already on this slide`,
+            path,
+          });
+        }
+        linked.add(shape.placeholder);
+      });
       if (slide.layout !== undefined && slide.layout >= layouts) {
         ctx.addIssue({
           code: "custom",
@@ -488,6 +559,8 @@ export type DeckDocument = z.infer<typeof DeckDocument>;
 export type Master = z.infer<typeof Master>;
 export type Layout = z.infer<typeof Layout>;
 export type Placeholder = z.infer<typeof Placeholder>;
+export type BodyPlaceholder = z.infer<typeof BodyPlaceholder>;
+export type LevelStyle = z.infer<typeof LevelStyle>;
 export type Fill = z.infer<typeof Fill>;
 export type Background = NonNullable<Layout["background"]>;
 export type Slide = z.infer<typeof Slide>;

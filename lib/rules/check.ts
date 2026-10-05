@@ -17,11 +17,16 @@ import { routeConnector } from "../render/connector";
 import {
   holdsText,
   placeholderBox,
-  shapeTextDefaults,
+  textDefaultsOf,
   titleBody,
   titleText,
 } from "../render/svg";
-import { DEFAULT_TEXT, layoutText, type TextLayout } from "../render/text";
+import {
+  layoutText,
+  levelOf,
+  type TextDefaults,
+  type TextLayout,
+} from "../render/text";
 
 export type Rule =
   | "font-size"
@@ -156,10 +161,22 @@ export function describeShape(shape: Shape): string {
     : KIND_NAMES[shape.kind];
 }
 
-function runsOf(body: TextBody) {
-  return body.paragraphs.flatMap((paragraph) =>
-    paragraph.runs.filter((run) => run.text.trim() !== "")
-  );
+/**
+ * The runs of a text that show, with the size, color and weight they are
+ * drawn in: their own, else their placeholder level's, else the shape's.
+ */
+function runsOf(body: TextBody, defaults: TextDefaults) {
+  return body.paragraphs.flatMap((paragraph) => {
+    const lv = levelOf(defaults, paragraph.level ?? 0);
+    return paragraph.runs
+      .filter((run) => run.text.trim() !== "")
+      .map((run) => ({
+        ...run,
+        size: run.size ?? lv?.size ?? defaults.size,
+        color: run.color ?? lv?.color ?? defaults.color,
+        bold: run.bold ?? lv?.bold ?? defaults.bold,
+      }));
+  });
 }
 
 /** The rule violations of one slide. */
@@ -214,9 +231,11 @@ export function checkSlide(
       else colors.push(...shape.fill.stops.map((stop) => stop.color));
     }
     if (shape.stroke) colors.push(shape.stroke.color);
+    // Only colors set on the text: the master's own are its palette's.
     if (holdsText(shape) && shape.text) {
-      for (const run of runsOf(shape.text))
-        if (run.color) colors.push(run.color);
+      for (const paragraph of shape.text.paragraphs)
+        for (const run of paragraph.runs)
+          if (run.color && run.text.trim() !== "") colors.push(run.color);
     }
     const foreign = [
       ...new Set(colors.map((c) => c.slice(0, 7).toLowerCase())),
@@ -230,11 +249,12 @@ export function checkSlide(
     }
 
     if (!holdsText(shape) || !shape.text) continue;
-    const runs = runsOf(shape.text);
+    const defaults = textDefaultsOf(shape, layout);
+    const runs = runsOf(shape.text, defaults);
     if (runs.length === 0) continue;
 
     // Size: readable from the back of the lab, and not shouting.
-    const sizes = runs.map((run) => run.size ?? DEFAULT_TEXT.size);
+    const sizes = runs.map((run) => run.size);
     const small = Math.min(...sizes);
     const large = Math.max(...sizes);
     if (small < MIN_SIZE) {
@@ -259,11 +279,8 @@ export function checkSlide(
     const behind = fill ? fill.slice(0, 7) : BACKGROUND;
     const worst = runs.reduce<{ ratio: number; large: boolean } | null>(
       (acc, run) => {
-        const size = run.size ?? DEFAULT_TEXT.size;
-        const ratio = contrast(
-          (run.color ?? DEFAULT_TEXT.color).slice(0, 7),
-          behind
-        );
+        const size = run.size;
+        const ratio = contrast(run.color.slice(0, 7), behind);
         const big = size >= 36 || (size >= 28 && run.bold === true);
         const need = big ? 3 : 4.5;
         if (ratio >= need) return acc;
@@ -280,11 +297,10 @@ export function checkSlide(
     }
 
     // Overflow: text taller than its box (plain text boxes grow instead).
-    const defaults = shapeTextDefaults(shape.kind);
-    const layout = layoutText(shape.text, shape, defaults);
+    const laid = layoutText(shape.text, shape, defaults);
     if (
       fittedHeight(shape, shape.text) === null &&
-      layout.height + 2 * defaults.inset.y > shape.h + 1
+      laid.height + 2 * defaults.inset.y > shape.h + 1
     ) {
       add(
         shape.id,
@@ -292,7 +308,7 @@ export function checkSlide(
         "文字超出框外：縮短文字、把框拉大，或拆成兩頁。"
       );
     }
-    const rect = textRect(shape, layout);
+    const rect = textRect(shape, laid);
     if (rect && !shape.rotation) texts.push({ shape, rect });
   }
 

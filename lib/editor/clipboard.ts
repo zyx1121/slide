@@ -3,10 +3,11 @@
 // unglued at copy time, where its shape still is, so it pastes where it was.
 import * as z from "zod";
 
-import { Shape, type Slide } from "../deck/schema";
+import { type Layout, Shape, type Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { sitePoint } from "../render/connector";
 import { type Point, tidy } from "./geometry";
+import { bakePlaceholder } from "./placeholders";
 
 /** The clipboard type the editor writes; text/plain carries the same JSON. */
 export const CLIP_TYPE = "application/x-slide-shapes+json";
@@ -23,10 +24,15 @@ export type Clip = z.infer<typeof Clip>;
 
 type End = Extract<Shape, { kind: "line" }>["start"];
 
-/** The selected shapes as a clip; null when nothing is selected. */
+/**
+ * The selected shapes as a clip; null when nothing is selected. A
+ * placeholder box goes as a plain text box that looks the same, since the
+ * slide it lands on may have no such placeholder.
+ */
 export function copyShapes(
   slide: Slide,
-  ids: ReadonlySet<string>
+  ids: ReadonlySet<string>,
+  layout?: Layout
 ): Clip | null {
   const byId = new Map(slide.shapes.map((shape) => [shape.id, shape]));
   const unglue = (end: End): End => {
@@ -41,7 +47,9 @@ export function copyShapes(
     .map((shape) =>
       shape.kind === "line"
         ? { ...shape, start: unglue(shape.start), end: unglue(shape.end) }
-        : shape
+        : shape.kind === "text" && shape.placeholder !== undefined
+          ? bakePlaceholder(shape, layout)
+          : shape
     );
   if (shapes.length === 0) return null;
   return { format: FORMAT, version: 1, shapes };
@@ -63,9 +71,15 @@ const prefixOf = (id: string) => id.slice(0, id.indexOf("_"));
 /**
  * The clip's shapes ready to add: each gets a new id (connectors glued
  * within the clip follow their shapes' new ids) and moves by `offset` px
- * right and down, so a paste over its originals stays visible.
+ * right and down, so a paste over its originals stays visible. Pasted
+ * boxes are plain text boxes, unless `samePlace` (a slide copied whole onto
+ * its own layout) keeps them its placeholders.
  */
-export function pasteShapes(clip: Clip, offset: number): Shape[] {
+export function pasteShapes(
+  clip: Clip,
+  offset: number,
+  samePlace = false
+): Shape[] {
   const ids = new Map(
     clip.shapes.map((shape) => [shape.id, newId(prefixOf(shape.id))])
   );
@@ -78,12 +92,14 @@ export function pasteShapes(clip: Clip, offset: number): Shape[] {
     if (shape.kind === "line") {
       return { ...shape, id, start: shift(shape.start), end: shift(shape.end) };
     }
-    return {
+    const moved = {
       ...shape,
       id,
       x: tidy(shape.x + offset),
       y: tidy(shape.y + offset),
     };
+    if (moved.kind === "text" && !samePlace) delete moved.placeholder;
+    return moved;
   });
 }
 

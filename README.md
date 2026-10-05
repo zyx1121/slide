@@ -105,7 +105,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 
 ## Limitations
 
-- A deck keeps the slide master it is made on: plain, WinLab, or an imported file's own (its layouts' backgrounds, artwork and placeholders). Path gradients are drawn as circles
+- A deck keeps the slide master it is made on: plain, WinLab, or an imported file's own (its layouts' backgrounds, artwork and placeholders). A new slide gets its layout's title and text placeholders to type in, as in PowerPoint. Path gradients are drawn as circles
 - Import turns a table into a rectangle per cell (its text stays editable, but not as one table), and leaves out charts, SmartArt, freeforms drawn with guide formulas, and pictures in EMF, SVG or TIFF, and says so
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two

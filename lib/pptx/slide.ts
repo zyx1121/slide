@@ -2,9 +2,21 @@
 // native PowerPoint object: preset geometry for boxes, a picture for an
 // image, a connector glued with stCxn and endCxn for a line. Sizes go from
 // canvas px to EMU (1 px = 6350 EMU, half a point).
-import type { Fill, Layout, Shape, Slide, TextBody } from "../deck/schema";
+import type {
+  BodyPlaceholder,
+  Fill,
+  Layout,
+  Shape,
+  Slide,
+  TextBody,
+} from "../deck/schema";
 import { type Point, routeConnector } from "../render/connector";
-import { shapeTextDefaults, type TextShape, titleScale } from "../render/svg";
+import {
+  bodyOf,
+  shapeTextDefaults,
+  type TextShape,
+  titleScale,
+} from "../render/svg";
 import { isEastAsian } from "../render/metrics";
 import { DEFAULT_TEXT } from "../render/text";
 import { parsePath, PATH_UNITS } from "../deck/path";
@@ -252,6 +264,104 @@ function boxXml(shape: TextShape, id: number): string {
   return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr${textBox}/><p:nvPr/></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation, flips[0], flips[1])}${geom}${fill}${line(shape.stroke)}</p:spPr>${textBodyXml(shape.text, defaults, { autofit })}</p:sp>`;
 }
 
+/**
+ * A run's properties with only what it sets: a placeholder's text takes the
+ * rest from its layout and master, as PowerPoint's own do. The typefaces are
+ * written, as everywhere, so Chinese is drawn in Microsoft JhengHei.
+ */
+function ownRunProps(run: Partial<Run>, tag: "a:rPr" | "a:endParaRPr") {
+  const english =
+    run.text !== undefined && run.text.trim() !== "" && !isEastAsian(run.text);
+  const attrs = [
+    english ? 'lang="en-US"' : 'lang="zh-TW"',
+    english ? 'altLang="zh-TW"' : 'altLang="en-US"',
+    run.size !== undefined ? `sz="${Math.round(run.size * 50)}"` : "",
+    run.bold !== undefined ? `b="${run.bold ? 1 : 0}"` : "",
+    run.italic ? 'i="1"' : "",
+    run.underline ? 'u="sng"' : "",
+    run.strike ? 'strike="sngStrike"' : "",
+    'dirty="0"',
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const fill = run.color ? solid(run.color) : "";
+  return `<${tag} ${attrs}>${fill}<a:latin typeface="${LATIN_TYPEFACE}"/><a:ea typeface="${EA_TYPEFACE}"/><a:cs typeface="${LATIN_TYPEFACE}"/></${tag}>`;
+}
+
+/** A placeholder's text, with only the paragraph and run styles it sets. */
+function placeholderTextXml(body: TextBody): string {
+  const anchor = body.anchor ? ` anchor="${ANCHOR[body.anchor]}"` : "";
+  const wrap = body.wrap === false ? ' wrap="none"' : "";
+  const paragraphs = body.paragraphs.map((paragraph) => {
+    const attrs = [
+      paragraph.level ? `lvl="${Math.min(paragraph.level, 8)}"` : "",
+      paragraph.align ? `algn="${ALIGN[paragraph.align]}"` : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const spacing =
+      (paragraph.lineSpacing !== undefined
+        ? `<a:lnSpc><a:spcPct val="${Math.round(paragraph.lineSpacing * 100000)}"/></a:lnSpc>`
+        : "") +
+      (paragraph.spaceBefore !== undefined
+        ? `<a:spcBef><a:spcPts val="${Math.round(paragraph.spaceBefore * 50)}"/></a:spcBef>`
+        : "") +
+      (paragraph.spaceAfter !== undefined
+        ? `<a:spcAft><a:spcPts val="${Math.round(paragraph.spaceAfter * 50)}"/></a:spcAft>`
+        : "");
+    const bu =
+      paragraph.bullet === undefined
+        ? ""
+        : paragraph.bullet === "bullet"
+          ? `<a:buChar char="${esc(paragraph.bulletChar ?? "•")}"/>`
+          : paragraph.bullet === "number"
+            ? '<a:buAutoNum type="arabicPeriod"/>'
+            : "<a:buNone/>";
+    const pPr =
+      attrs || spacing || bu
+        ? `<a:pPr${attrs ? ` ${attrs}` : ""}>${spacing}${bu}</a:pPr>`
+        : "";
+    const runs = paragraph.runs
+      .map((run) =>
+        run.text
+          .split(/[\n\u000b]/)
+          .map((piece) =>
+            piece === ""
+              ? ""
+              : `<a:r>${ownRunProps(run, "a:rPr")}<a:t>${esc(piece)}</a:t></a:r>`
+          )
+          .join(`<a:br>${ownRunProps(run, "a:rPr")}</a:br>`)
+      )
+      .join("");
+    const last = paragraph.runs[paragraph.runs.length - 1] ?? {};
+    return `<a:p>${pPr}${runs}${ownRunProps(last, "a:endParaRPr")}</a:p>`;
+  });
+  return `<p:txBody><a:bodyPr${wrap}${anchor}/><a:lstStyle/>${paragraphs.join("")}</p:txBody>`;
+}
+
+/**
+ * A text placeholder of the slide's layout: where it is on this slide, and
+ * its text; PowerPoint finds the rest on the layout by the placeholder's
+ * type and idx, and prompts in an empty one.
+ */
+function placeholderXml(
+  shape: Extract<TextShape, { kind: "text" }>,
+  body: BodyPlaceholder,
+  id: number
+): string {
+  const numbered = /^[0-9]+$/.test(body.key);
+  const ph = [
+    body.type === "obj" && numbered ? "" : ` type="${body.type}"`,
+    numbered ? ` idx="${body.key}"` : "",
+  ].join("");
+  // No fill and no outline unless the box sets them, as Slide draws it: a
+  // master's placeholder may have an outline of its own (WinLab's is light
+  // blue), which PowerPoint would otherwise draw.
+  const fill = shape.fill ? fillXml(shape.fill) : "<a:noFill/>";
+  const stroke = line(shape.stroke);
+  return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph${ph}/></p:nvPr></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation, false, false)}${fill}${stroke}</p:spPr>${placeholderTextXml(shape.text)}</p:sp>`;
+}
+
 /** A crop in DrawingML's thousandths of a percent. */
 function srcRect(crop: ImageShape["crop"]): string {
   if (!crop) return "";
@@ -297,7 +407,11 @@ function connectorXml(
  * way, since PowerPoint draws the stored scale until the text is edited.
  */
 function titleXml(title: string, layout: Layout): string {
-  if (!title || !layout.title) return "";
+  if (!layout.title) return "";
+  // An empty title stays a placeholder, for PowerPoint to prompt in.
+  if (!title) {
+    return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang="zh-TW" altLang="en-US" dirty="0"/></a:p></p:txBody></p:sp>`;
+  }
   const scale = titleScale(title, layout.title);
   const bodyPr =
     scale < 1
@@ -311,8 +425,10 @@ function titleXml(title: string, layout: Layout): string {
   return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody>${bodyPr}<a:lstStyle/><a:p>${runs}</a:p></p:txBody></p:sp>`;
 }
 
-function slideNumberXml(number: number): string {
-  return `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Slide Number"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldNum" sz="quarter" idx="2"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id="{86CB4B4D-7CA3-9044-876B-883B54F8677D}" type="slidenum"><a:rPr lang="en-US"/><a:t>${number}</a:t></a:fld></a:p></p:txBody></p:sp>`;
+function slideNumberXml(number: number, layout: Layout): string {
+  // idx 2 by custom, unless a text placeholder of the layout has it.
+  const idx = layout.bodies?.some((body) => body.key === "2") ? "" : ' idx="2"';
+  return `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Slide Number"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldNum" sz="quarter"${idx}/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id="{86CB4B4D-7CA3-9044-876B-883B54F8677D}" type="slidenum"><a:rPr lang="en-US"/><a:t>${number}</a:t></a:fld></a:p></p:txBody></p:sp>`;
 }
 
 const NS =
@@ -358,11 +474,18 @@ export function slideXml(
         }
         return pictureXml(shape, id, picture.rId);
       }
-      default:
-        return boxXml(shape, id);
+      default: {
+        const body =
+          shape.kind === "text"
+            ? bodyOf(context.layout, shape.placeholder)
+            : undefined;
+        return shape.kind === "text" && body
+          ? placeholderXml(shape, body, id)
+          : boxXml(shape, id);
+      }
     }
   });
   const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title, context.layout)}${context.layout.number ? slideNumberXml(number) : ""}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title, context.layout)}${context.layout.number ? slideNumberXml(number, context.layout) : ""}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
   return { xml, pictures };
 }

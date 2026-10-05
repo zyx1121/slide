@@ -1612,10 +1612,8 @@ export function Editor({
               index={visible}
               disabled={paused}
               onLayout={(layout) => {
-                if (
-                  (doc.slides[visible].layout ?? doc.master.layout) === layout
-                )
-                  return;
+                // The slide's own layout again brings back what it lacks of
+                // its placeholders, as PowerPoint's Reset does.
                 commit(relayoutOps(docRef.current, visible, layout), visible);
               }}
             />

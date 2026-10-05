@@ -261,7 +261,11 @@ export async function revertRevision(
     }
 
     if (deck.deleted || !row.inverse?.length) return { outcome: "gone" };
-    const ops = [...stillThere(row.patch), ...row.inverse];
+    // An inverse that tests the places it changes checks itself; an older
+    // one is checked by finding what the edit set still where it set it.
+    const ops = row.inverse.some((op) => op.op === "test")
+      ? row.inverse
+      : [...stillThere(row.patch), ...row.inverse];
     let applied;
     try {
       applied = await applyToDeck(tx, deckId, deck.document, deck.version, ops);

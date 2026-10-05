@@ -2,7 +2,7 @@ import { applyPatch } from "fast-json-patch";
 import { describe, expect, it } from "vitest";
 
 import { DeckError } from "./errors";
-import { applyOperations } from "./patch";
+import { applyOperations, type Operation } from "./patch";
 import { sampleDocument } from "./sample";
 
 function refusal(fn: () => unknown): DeckError {
@@ -150,5 +150,55 @@ describe("applyOperations", () => {
       applyOperations(doc, [{ op: "add", path: "/slides/0/layout", value: 2 }])
         .document.slides[0].layout
     ).toBe(2);
+  });
+
+  it("builds an inverse that undoes each operation exactly", () => {
+    const doc = sampleDocument();
+    const patches: Operation[][] = [
+      [
+        {
+          op: "add",
+          path: "/slides/0/shapes/0",
+          value: { ...doc.slides[0].shapes[0], id: "sh_new" },
+        },
+        { op: "remove", path: "/slides/0/shapes/6" },
+        { op: "replace", path: "/slides/0/title", value: "Other" },
+        { op: "add", path: "/slides/0/notes", value: "Notes" },
+      ],
+      [
+        {
+          op: "add",
+          path: "/slides/-",
+          value: { id: "sl_two", title: "Two", shapes: [] },
+        },
+        { op: "move", from: "/slides/1", path: "/slides/0" },
+        { op: "add", path: "/slides/1/layout", value: 2 },
+      ],
+      [{ op: "replace", path: "/slides/0/shapes/1/x", value: 10 }],
+    ];
+    for (const ops of patches) {
+      const { document, inverse } = applyOperations(doc, ops);
+      expect(applyOperations(document, inverse).document).toEqual(doc);
+    }
+  });
+
+  it("undoes an insertion without touching what moved", () => {
+    const doc = sampleDocument();
+    const inserted = applyOperations(doc, [
+      {
+        op: "add",
+        path: "/slides/0/shapes/0",
+        value: { ...doc.slides[0].shapes[0], id: "sh_new" },
+      },
+    ]);
+    // Later, a shape after it changes at its new place.
+    const edited = applyOperations(inserted.document, [
+      { op: "replace", path: "/slides/0/shapes/2/x", value: 999 },
+    ]).document;
+    const undone = applyOperations(edited, inserted.inverse).document;
+    expect(undone.slides[0].shapes.map((shape) => shape.id)).toEqual(
+      doc.slides[0].shapes.map((shape) => shape.id)
+    );
+    expect(undone.slides[0].shapes[1]).toMatchObject({ x: 999 });
   });
 });

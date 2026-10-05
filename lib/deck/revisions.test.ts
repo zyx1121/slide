@@ -1,7 +1,16 @@
 import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { updateShapes } from "../mcp/write";
+import {
+  addSlide,
+  copySlide,
+  deleteShapes,
+  setSlideLayout,
+  setSlideTitle,
+  updateShapes,
+} from "../mcp/write";
+import type { Operation } from "./patch";
+import type { DeckDocument } from "./schema";
 import { createTestDb, TEST_DATABASE_URL } from "../test-db";
 import { actOnDeck, listRevisions, revertRevision } from "./revisions";
 import { sampleDocument } from "./sample";
@@ -106,6 +115,75 @@ describe.skipIf(!TEST_DATABASE_URL)("history (Postgres)", () => {
       outcome: "conflict",
     });
     expect((await asr(deck.id)).x).toBe(333);
+  });
+
+  /** Applies a planned edit as the member; returns its entry. */
+  async function planned(
+    deckId: string,
+    plan: (document: DeckDocument) => Operation[]
+  ) {
+    const result = await mutateDeck(db, {
+      deckId,
+      actor: { kind: "member", sub: "alice" },
+      plan,
+    });
+    return result.revisionId;
+  }
+  const documentOf = async (deckId: string) =>
+    (await getDeck(db, "alice", deckId))!.document;
+
+  it("keeps later edits to shapes an entry moved, when it is reverted", async () => {
+    // A shape deleted, one after it edited, the deletion reverted.
+    const deck = await fresh();
+    const removed = await planned(
+      deck.id,
+      (d) => deleteShapes(d, 1, ["sh_capture"]).ops
+    );
+    await edit(deck.id, { fill: "#fff2cc" });
+    expect(await revertRevision(db, "alice", deck.id, removed)).toMatchObject({
+      outcome: "applied",
+    });
+    const after = await documentOf(deck.id);
+    expect(after.slides[0].shapes.map((shape) => shape.id)).toEqual(
+      deck.document.slides[0].shapes.map((shape) => shape.id)
+    );
+    expect((await asr(deck.id)).fill).toBe("#fff2cc");
+  });
+
+  it("keeps a later edit to a slide a copy moved, when the copy is reverted", async () => {
+    const deck = await fresh();
+    await planned(deck.id, (d) => addSlide(d, { title: "Second" }).ops);
+    const copied = await planned(deck.id, (d) => copySlide(d, 1).ops);
+    await planned(deck.id, (d) => setSlideTitle(d, 3, "Second, renamed").ops);
+    expect(await revertRevision(db, "alice", deck.id, copied)).toMatchObject({
+      outcome: "applied",
+    });
+    expect(
+      (await documentOf(deck.id)).slides.map((slide) => slide.title)
+    ).toEqual(["System overview", "Second, renamed"]);
+  });
+
+  it("keeps a later edit on a slide whose layout change is reverted", async () => {
+    const deck = await fresh();
+    const relaid = await planned(
+      deck.id,
+      (d) => setSlideLayout(d, 1, "Two Columns").ops
+    );
+    expect(
+      (await documentOf(deck.id)).slides[0].shapes
+        .slice(0, 2)
+        .map((shape) => (shape.kind === "text" ? shape.placeholder : undefined))
+    ).toEqual(["1", "21"]);
+    await edit(deck.id, { fill: "#fff2cc" });
+    expect(await revertRevision(db, "alice", deck.id, relaid)).toMatchObject({
+      outcome: "applied",
+    });
+    const after = await documentOf(deck.id);
+    expect(after.slides[0].layout).toBeUndefined();
+    expect(after.slides[0].shapes.map((shape) => shape.id)).toEqual(
+      deck.document.slides[0].shapes.map((shape) => shape.id)
+    );
+    expect((await asr(deck.id)).fill).toBe("#fff2cc");
   });
 
   it("publishes and deletes for an agent at once, each undone by its opposite", async () => {

@@ -356,6 +356,32 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     // The deck keeps its master; the slide is on its Section layout.
     expect(changed.document.master.name).toBe("WinLab");
     expect(changed.document.slides[0].layout).toBe(2);
+
+    // A new slide brings its layout's placeholders; another layout's arrive.
+    const added = json(
+      await call("add_slide", { deck_id: created.id, title: "Body" })
+    );
+    expect(added.status).toBe("applied");
+    const withBody = json(await call("get_deck", { deck_id: created.id }));
+    const last = withBody.document.slides.at(-1);
+    expect(last.shapes).toEqual([
+      expect.objectContaining({ kind: "text", placeholder: "1" }),
+    ]);
+    expect(
+      json(
+        await call("set_slide_layout", {
+          deck_id: created.id,
+          slide: withBody.document.slides.length,
+          layout: "Two Columns",
+        })
+      ).status
+    ).toBe("applied");
+    const columns = json(await call("get_deck", { deck_id: created.id }));
+    expect(
+      columns.document.slides
+        .at(-1)
+        .shapes.map((shape: { placeholder?: string }) => shape.placeholder)
+    ).toEqual(["21", "1"]);
     expect(changed.document.slides).toHaveLength(2);
     expect(
       changed.document.slides.map((slide: { title: string }) => slide.title)

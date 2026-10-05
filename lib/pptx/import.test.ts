@@ -858,3 +858,42 @@ describe("importPptx reads backgrounds", () => {
     expect(layouts[3].background).toBe("#ff0000");
   });
 });
+
+describe("placeholders through export and import", () => {
+  it("go out as PowerPoint placeholders and come back linked", async () => {
+    const { blankSlide } = await import("../editor/slides");
+    const { layoutOf } = await import("../master/layout");
+    const doc = sampleDocument();
+    const bullets = layoutOf(doc, undefined);
+    const typed = blankSlide(bullets);
+    const box = typed.shapes[0] as Extract<Shape, { kind: "text" }>;
+    box.text = { paragraphs: [{ runs: [{ text: "Capture" }] }] };
+    doc.slides = [typed, blankSlide(bullets)];
+    const parts = unzipSync(exportPptx(doc, new Map()));
+    const first = strFromU8(parts["ppt/slides/slide1.xml"]);
+    expect(first).toContain('<p:ph type="body" idx="1"/>');
+    // Only what the text sets: the layout gives the size and the bullet.
+    expect(first).not.toMatch(/<a:rPr[^>]* sz="/);
+    expect(first).not.toContain("<a:buNone/>");
+    const second = strFromU8(parts["ppt/slides/slide2.xml"]);
+    expect(second).toContain('<p:ph type="title"/>');
+    expect(second).toContain('<p:ph type="body" idx="1"/>');
+
+    const { document } = await importPptx(zipSync(parts), saveImage);
+    const [a, b] = document.slides;
+    expect(a.shapes).toHaveLength(1);
+    expect(a.shapes[0]).toMatchObject({
+      kind: "text",
+      placeholder: "1",
+      text: { paragraphs: [{ runs: [{ text: "Capture" }] }] },
+    });
+    // The empty one stays, to prompt; the empty title too.
+    expect(b.title).toBe("");
+    expect(b.shapes).toEqual([
+      expect.objectContaining({
+        placeholder: "1",
+        text: { paragraphs: [{ runs: [] }] },
+      }),
+    ]);
+  });
+});

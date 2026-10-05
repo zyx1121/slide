@@ -2,7 +2,7 @@
 // any character boundary for CJK, with kinsoku so closing punctuation never
 // starts a line), bullets and numbering, alignment and vertical anchoring.
 // The output positions every run, so drawing never re-wraps.
-import type { TextBody } from "../deck/schema";
+import type { LevelStyle, TextBody } from "../deck/schema";
 import {
   ASCENT,
   charWidth,
@@ -27,7 +27,16 @@ export type TextDefaults = {
   inset: { x: number; y: number };
   /** False keeps every paragraph on one line, as PowerPoint's wrap="none". */
   wrap: boolean;
+  /**
+   * A placeholder's styles by paragraph level, for what a paragraph and its
+   * runs leave unset; deeper levels than given take the last one.
+   */
+  levels?: readonly LevelStyle[];
 };
+
+/** The level style a paragraph at `level` takes, if the defaults have them. */
+export const levelOf = (defaults: TextDefaults, level: number) =>
+  defaults.levels?.[Math.min(level, defaults.levels.length - 1)];
 
 export type Segment = {
   text: string;
@@ -266,7 +275,8 @@ export function layoutText(
 
   body.paragraphs.forEach((paragraph, paragraphIndex) => {
     const level = paragraph.level ?? 0;
-    const bulletKind = paragraph.bullet ?? "none";
+    const lv = levelOf(defaults, level);
+    const bulletKind = paragraph.bullet ?? lv?.bullet ?? "none";
     const hang =
       bulletKind === "number"
         ? NUMBER_HANG
@@ -274,15 +284,15 @@ export function layoutText(
           ? BULLET_HANG
           : 0;
     const marL = level * LEVEL_INDENT + hang;
-    const align = paragraph.align ?? defaults.align;
+    const align = paragraph.align ?? lv?.align ?? defaults.align;
 
     const chars: Char[] = [];
     let at = 0;
     for (const run of paragraph.runs) {
       const style: RunStyle = {
-        size: run.size ?? defaults.size,
-        color: run.color ?? defaults.color,
-        bold: run.bold ?? defaults.bold,
+        size: run.size ?? lv?.size ?? defaults.size,
+        color: run.color ?? lv?.color ?? defaults.color,
+        bold: run.bold ?? lv?.bold ?? defaults.bold,
         italic: run.italic ?? false,
         underline: run.underline ?? false,
         strike: run.strike ?? false,
@@ -317,7 +327,7 @@ export function layoutText(
     const offsetAt = (index: number) =>
       index < chars.length ? chars[index].at : at;
     const first = paragraph.runs[0];
-    const paraSize = first?.size ?? defaults.size;
+    const paraSize = first?.size ?? lv?.size ?? defaults.size;
 
     let label: string | undefined;
     // PowerPoint draws no bullet or number on an empty paragraph, and the
@@ -331,12 +341,13 @@ export function layoutText(
       label = `${counters[level]}.`;
     } else {
       counters.length = level;
-      if (bulletKind === "bullet") label = paragraph.bulletChar ?? "•";
+      if (bulletKind === "bullet")
+        label = paragraph.bulletChar ?? lv?.bulletChar ?? "•";
     }
     const labelStyle = {
       size: paraSize,
-      color: first?.color ?? defaults.color,
-      bold: first?.bold ?? defaults.bold,
+      color: first?.color ?? lv?.color ?? defaults.color,
+      bold: first?.bold ?? lv?.bold ?? defaults.bold,
       italic: false,
     };
     // A label wider than its hanging indent pushes the first line's text
@@ -348,8 +359,8 @@ export function layoutText(
     const limitFor = (line: number) =>
       Math.max(1, inner - (line === 0 ? firstIndent : marL));
 
-    const pitch = paragraph.lineSpacing ?? 1;
-    if (paragraphIndex > 0) y += paragraph.spaceBefore ?? 0;
+    const pitch = paragraph.lineSpacing ?? lv?.lineSpacing ?? 1;
+    if (paragraphIndex > 0) y += paragraph.spaceBefore ?? lv?.spaceBefore ?? 0;
     breakLines(chars, limitFor, wrap).forEach((range, index) => {
       const lineChars = chars.slice(range.start, range.end);
       const visible = trimTrailingSpaces(lineChars);
@@ -401,7 +412,7 @@ export function layoutText(
       lines.push(line);
       y += height;
     });
-    y += paragraph.spaceAfter ?? 0;
+    y += paragraph.spaceAfter ?? lv?.spaceAfter ?? 0;
   });
 
   const room = box.h - 2 * defaults.inset.y;

@@ -57,7 +57,7 @@ import {
   type TextDraft,
   TITLE_ID,
 } from "@/lib/editor/text-session";
-import { holdsText, renderSlideSvg } from "@/lib/render/svg";
+import { holdsText, isEmptyText, renderSlideSvg } from "@/lib/render/svg";
 import { Backdrop } from "@/components/backdrop";
 import { cn } from "@/lib/utils";
 
@@ -302,6 +302,7 @@ export function Canvas({
   const frame = text ? frameOf(base, text.draft.target, slideLayout) : null;
   const shown = text ? shownBody(text.draft) : null;
   const layout = frame && shown ? draftLayout(frame, shown.body) : null;
+  const typingIn = text?.draft.target ?? null;
   const svg = useMemo(
     () =>
       renderSlideSvg(preview, {
@@ -309,9 +310,29 @@ export function Canvas({
         layout: slideLayout,
         bare: true,
         assetHref: assetUrl,
+        // Empty placeholders prompt, but for the one being typed in.
+        prompts: { except: typingIn },
       }),
-    [preview, number, slideLayout]
+    [preview, number, slideLayout, typingIn]
   );
+
+  /** Whether a shape is a placeholder with nothing in it yet. */
+  const emptyPlaceholder = (id: string) => {
+    const shape = shapes.get(id);
+    return (
+      shape?.kind === "text" &&
+      shape.placeholder !== undefined &&
+      isEmptyText(shape.text)
+    );
+  };
+  /** Whether a point is in the title's place while the slide has no title. */
+  const onEmptyTitle = (p: Point) =>
+    !slide.title &&
+    !!slideLayout.title &&
+    p.x >= slideLayout.title.x &&
+    p.x <= slideLayout.title.x + slideLayout.title.w &&
+    p.y >= slideLayout.title.y &&
+    p.y <= slideLayout.title.y + slideLayout.title.h;
 
   const single =
     selection.length === 1
@@ -624,7 +645,11 @@ export function Canvas({
     }
     if (drag.kind === "move") {
       if (drag.dx || drag.dy) onMove(drag.ids, drag.dx, drag.dy);
-      else if (!event.shiftKey && drag.ids.size > 1) onSelect([drag.hit]);
+      else if (!event.shiftKey) {
+        if (drag.ids.size > 1) onSelect([drag.hit]);
+        // A click in an empty placeholder types in it, as PowerPoint does.
+        if (emptyPlaceholder(drag.hit)) onEditText(drag.hit, drag.origin);
+      }
     } else if (drag.kind === "resize") {
       const { start, box: end } = drag;
       if (
@@ -637,7 +662,13 @@ export function Canvas({
       }
     } else if (drag.kind === "marquee") {
       const rect = rectBetween(drag.origin, drag.current);
-      if (rect.w < 2 * scale && rect.h < 2 * scale) return;
+      if (rect.w < 2 * scale && rect.h < 2 * scale) {
+        // So does a click on the prompt of a slide without a title.
+        if (!event.shiftKey && onEmptyTitle(drag.origin)) {
+          onEditText(TITLE_ID, drag.origin);
+        }
+        return;
+      }
       const inside = shapesInRect(slide, rect);
       onSelect([...new Set([...drag.base, ...inside])]);
     }

@@ -5,6 +5,7 @@
 import type postgres from "postgres";
 
 import { newId } from "../ids";
+import { blankSlide } from "../editor/slides";
 import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
@@ -101,7 +102,10 @@ export async function ensureUser(
   `;
 }
 
-/** A deck with one empty slide, on the plain master unless given another. */
+/**
+ * A deck of one slide on the master's default layout, its placeholders
+ * empty; on the plain master unless given another.
+ */
 export function blankDocument(
   title = DEFAULT_TITLE,
   master: Master = BUILTIN_MASTERS.plain
@@ -110,7 +114,7 @@ export function blankDocument(
     schema: SCHEMA_VERSION,
     title,
     master,
-    slides: [{ id: newId("sl"), title: "", shapes: [] }],
+    slides: [blankSlide(layoutOf({ master }, undefined))],
   });
 }
 

@@ -146,6 +146,7 @@ import {
   duplicateSlide,
   followSlide,
   insertSlideOps,
+  relayoutOps,
   moveSlideOps,
   notesOps,
 } from "@/lib/editor/slides";
@@ -706,7 +707,13 @@ export function Editor({
     const slides = docRef.current.slides;
     const plan: { ops: Operation[]; show: number } =
       action === "add"
-        ? { ops: insertSlideOps(at + 1, blankSlide()), show: at + 1 }
+        ? {
+            ops: insertSlideOps(
+              at + 1,
+              blankSlide(layoutOf(docRef.current, undefined))
+            ),
+            show: at + 1,
+          }
         : action === "duplicate"
           ? {
               ops: insertSlideOps(at + 1, duplicateSlide(slides[at])),
@@ -1120,7 +1127,12 @@ export function Editor({
   const copy = (event: ClipboardEvent, from: number) => {
     flushNudge();
     if (from !== index) return false;
-    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    const onSlide = docRef.current.slides[index];
+    const clip = copyShapes(
+      onSlide,
+      new Set(selection),
+      layoutOf(docRef.current, onSlide)
+    );
     if (!clip) return false;
     if (!event.clipboardData) return false;
     event.preventDefault();
@@ -1260,7 +1272,7 @@ export function Editor({
           .filter((shape) => shape !== undefined)
           .map((shape) => shapeBounds(shape, selectedShapes))
       );
-  const style = selectionStyle(slide, new Set(selection));
+  const style = selectionStyle(slide, new Set(selection), layoutOf(doc, slide));
   // While a text is edited, the text tools show and change its selection.
   if (draft && draft.slide === index) {
     const frame = frameOf(slide, draft.target, layoutOf(doc, slide));
@@ -1599,16 +1611,7 @@ export function Editor({
                   (doc.slides[visible].layout ?? doc.master.layout) === layout
                 )
                   return;
-                commit(
-                  [
-                    {
-                      op: "add",
-                      path: `/slides/${visible}/layout`,
-                      value: layout,
-                    },
-                  ],
-                  visible
-                );
+                commit(relayoutOps(docRef.current, visible, layout), visible);
               }}
             />
             <NotesTool

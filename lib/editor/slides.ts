@@ -1,16 +1,76 @@
 // Edits to the slide list: a blank slide, a copy of one, moving and
 // deleting. Each is one patch, so one undo step, guarded like every edit.
 import type { Operation } from "../deck/patch";
-import type { DeckDocument, Slide } from "../deck/schema";
+import type { DeckDocument, Layout, Slide } from "../deck/schema";
 import { newId } from "../ids";
+import { layoutOf } from "../master/layout";
+import { bodyOf, isEmptyText } from "../render/svg";
 import { pasteShapes } from "./clipboard";
+import { atPlace, bakePlaceholder, placeholderShapes } from "./placeholders";
 
-/** A slide with only its layout's title and number. */
-export const blankSlide = (): Slide => ({
+/** A slide with only its layout's title, number and empty placeholders. */
+export const blankSlide = (layout?: Layout): Slide => ({
   id: newId("sl"),
   title: "",
-  shapes: [],
+  shapes: placeholderShapes(layout),
 });
+
+/**
+ * Puts the slide at `index` on layout `to`, as PowerPoint does: a
+ * placeholder box the new layout also has stays one, and moves with it if
+ * it was where the old layout put it; one it lacks becomes a plain text box
+ * that looks as before, or goes if it is empty; the new layout's other
+ * placeholders arrive empty, behind the slide's shapes.
+ */
+export function relayoutOps(
+  document: DeckDocument,
+  index: number,
+  to: number
+): Operation[] {
+  const slide = document.slides[index];
+  const from = layoutOf(document, slide);
+  const next = document.master.layouts[to];
+  const ops: Operation[] = [
+    { op: "add", path: `/slides/${index}/layout`, value: to },
+  ];
+  const kept = new Set<string>();
+  const gone: number[] = [];
+  slide.shapes.forEach((shape, i) => {
+    if (shape.kind !== "text" || shape.placeholder === undefined) return;
+    const path = `/slides/${index}/shapes/${i}`;
+    const target = bodyOf(next, shape.placeholder);
+    if (!target) {
+      if (isEmptyText(shape.text)) gone.push(i);
+      else
+        ops.push({ op: "replace", path, value: bakePlaceholder(shape, from) });
+      return;
+    }
+    kept.add(shape.placeholder);
+    const was = bodyOf(from, shape.placeholder);
+    if (was && atPlace(shape, was) && !atPlace(shape, target)) {
+      ops.push({
+        op: "replace",
+        path,
+        value: { ...shape, x: target.x, y: target.y, w: target.w, h: target.h },
+      });
+    }
+  });
+  // Removed last to first, so each index still names its shape.
+  for (const i of gone.reverse()) {
+    ops.push({ op: "remove", path: `/slides/${index}/shapes/${i}` });
+  }
+  const taken = new Set(
+    document.slides.flatMap((s) => [s.id, ...s.shapes.map((x) => x.id)])
+  );
+  const arriving = placeholderShapes(
+    { bodies: (next.bodies ?? []).filter((body) => !kept.has(body.key)) },
+    taken
+  );
+  for (const shape of arriving.reverse()) {
+    ops.push({ op: "add", path: `/slides/${index}/shapes/0`, value: shape });
+  }
+  return ops;
+}
 
 /**
  * A copy of a slide: new ids for it and every shape, connectors glued to
@@ -25,7 +85,8 @@ export function duplicateSlide(slide: Slide): Slide {
             version: 1,
             shapes: slide.shapes,
           },
-          0
+          0,
+          true
         )
       : [];
   return { ...slide, id: newId("sl"), shapes };

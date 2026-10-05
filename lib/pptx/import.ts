@@ -7,6 +7,7 @@
 import { newId } from "../ids";
 import {
   type Background,
+  type BodyPlaceholder,
   DeckDocument,
   type Fill,
   type Layout,
@@ -231,6 +232,9 @@ type Context = {
   artwork?: boolean;
   /** The theme, for its background styles. */
   themeXml?: El;
+  /** The text placeholders of the slide's layout, and those it has used. */
+  bodies?: readonly BodyPlaceholder[];
+  linked?: Set<string>;
 };
 
 const clean = (text: string) => text.replace(/\u0000/g, "");
@@ -1124,7 +1128,19 @@ async function readSp(
       align: "left",
       anchor: "top",
     });
-    if (!hasText(body)) return;
+    // The layout's placeholder it is, once per slide: by idx, else type.
+    const match =
+      ctx.bodies?.find(
+        (b) => ph.attrs.idx !== undefined && b.key === ph.attrs.idx
+      ) ??
+      ctx.bodies?.find(
+        (b) =>
+          b.type === type ||
+          (b.type !== "subTitle" && type !== "subTitle" && b.key === type)
+      );
+    const key = match && !ctx.linked?.has(match.key) ? match.key : undefined;
+    // An empty one stays when it is the layout's, to prompt in the editor.
+    if (!hasText(body) && key === undefined) return;
     const inherited = layoutPh?.xfrm ? layoutPh : masterPh;
     const box = boxOf(child(spPr, "a:xfrm") ?? inherited?.xfrm, ctx, place);
     if (!box) {
@@ -1138,8 +1154,10 @@ async function readSp(
       y: coord(box.y),
       w: length(box.w),
       h: length(box.h),
-      text: body!,
+      text: hasText(body) ? body! : { paragraphs: [{ runs: [] }] },
+      ...(key !== undefined ? { placeholder: key } : {}),
     };
+    if (key !== undefined) ctx.linked?.add(key);
     if (box.rotation) shape.rotation = clamp(box.rotation, -360, 360);
     out.push(shape);
     if (numericId) ids.set(numericId, shape);
@@ -1627,7 +1645,154 @@ function readPlaceholder(
       x: Math.round(inset("lIns", 91440) * 100) / 100,
       y: Math.round(inset("tIns", 45720) * 100) / 100,
     },
+    ...promptOf(own),
   };
+}
+
+/** A layout placeholder's own prompt, when it says it has one. */
+function promptOf(sp: El | undefined): { prompt?: string } {
+  const ph = path(sp, "p:nvSpPr", "p:nvPr", "p:ph");
+  if (ph?.attrs.hasCustomPrompt !== "1") return {};
+  const text = clean(
+    children(child(sp, "p:txBody"), "a:p")
+      .map((p) =>
+        p.children
+          .filter((c) => c.tag === "a:r" || c.tag === "a:fld")
+          .map((c) => textOf(child(c, "a:t")))
+          .join("")
+      )
+      .join(" ")
+  )
+    .trim()
+    .slice(0, 200);
+  return text ? { prompt: text } : {};
+}
+
+/** Placeholder types a slide types its body text in. */
+const BODY_TYPES = new Set(["body", "obj", "subTitle"]);
+
+/** Levels a body placeholder keeps: PowerPoint offers five in its lists. */
+const BODY_LEVELS = 5;
+
+/**
+ * A layout's text placeholders other than its title and slide number: where
+ * each is and how its text looks, level by level, through the layout's own
+ * list style, the master's body placeholder and the master's body style.
+ */
+function readBodies(
+  layoutTree: El | undefined,
+  masterTree: El | undefined,
+  bodyStyle: El | undefined,
+  ctx: Context
+): BodyPlaceholder[] {
+  const base = { theme: ctx.theme, colorMap: ctx.colorMap, k: ctx.k };
+  const inherited = placeholderSp(masterTree, ["body"]);
+  const textColor = readColor(
+    {
+      tag: "a:solidFill",
+      attrs: {},
+      text: "",
+      children: [
+        { tag: "a:schemeClr", attrs: { val: "tx1" }, text: "", children: [] },
+      ],
+    },
+    ctx.theme,
+    ctx.colorMap
+  );
+  const out: BodyPlaceholder[] = [];
+  for (const sp of children(layoutTree, "p:sp")) {
+    const ph = path(sp, "p:nvSpPr", "p:nvPr", "p:ph");
+    const type = ph?.attrs.type ?? "obj";
+    if (!ph || !BODY_TYPES.has(type)) continue;
+    const key = ph.attrs.idx ?? type;
+    if (!/^[0-9A-Za-z]{1,20}$/.test(key) || out.some((b) => b.key === key)) {
+      continue;
+    }
+    const box = boxOf(
+      path(sp, "p:spPr", "a:xfrm") ?? path(inherited, "p:spPr", "a:xfrm"),
+      ctx,
+      slidePlace(ctx)
+    );
+    if (!box) continue;
+    const levels = mergeLevels(
+      readLevels(bodyStyle, base),
+      readLevels(path(inherited, "p:txBody", "a:lstStyle"), base),
+      readLevels(path(sp, "p:txBody", "a:lstStyle"), base)
+    )
+      .slice(0, BODY_LEVELS)
+      .map((level) => {
+        const size =
+          Math.round(clamp(level.size ?? 36 * ctx.k, 1, 800) * 100) / 100;
+        const line = size * 1.2;
+        const px = (v: { pct: number } | { px: number }) =>
+          "pct" in v ? v.pct * line : v.px;
+        const lineSpacing = level.spacing?.line
+          ? "pct" in level.spacing.line
+            ? level.spacing.line.pct
+            : level.spacing.line.px / line
+          : undefined;
+        const before = level.spacing?.before
+          ? px(level.spacing.before)
+          : undefined;
+        const after = level.spacing?.after
+          ? px(level.spacing.after)
+          : undefined;
+        const bullet = level.bullet ?? "none";
+        return {
+          size,
+          color: (level.color ?? textColor ?? "#000000").slice(0, 7),
+          bold: level.bold ?? false,
+          bullet,
+          ...(bullet === "bullet" &&
+          level.bulletChar &&
+          level.bulletChar !== "•"
+            ? { bulletChar: level.bulletChar }
+            : {}),
+          align: level.align ?? "left",
+          ...(lineSpacing !== undefined && Math.abs(lineSpacing - 1) > 0.001
+            ? {
+                lineSpacing:
+                  Math.round(clamp(lineSpacing, 0.1, 10) * 1000) / 1000,
+              }
+            : {}),
+          ...(before
+            ? { spaceBefore: Math.round(clamp(before, 0, 2000) * 100) / 100 }
+            : {}),
+          ...(after
+            ? { spaceAfter: Math.round(clamp(after, 0, 2000) * 100) / 100 }
+            : {}),
+        };
+      });
+    const bodyPr = (el: El | undefined) => path(el, "p:txBody", "a:bodyPr");
+    const attr = (name: string) =>
+      bodyPr(sp)?.attrs[name] ?? bodyPr(inherited)?.attrs[name];
+    const anchor = attr("anchor");
+    const inset = (name: string, fallback: number) => {
+      const value = Number(attr(name));
+      return (
+        Math.round(
+          (attr(name) !== undefined && Number.isFinite(value)
+            ? clamp((value / EMU) * ctx.k, 0, 1000)
+            : (fallback / EMU) * ctx.k) * 100
+        ) / 100
+      );
+    };
+    out.push({
+      key,
+      type: type as BodyPlaceholder["type"],
+      x: coord(box.x),
+      y: coord(box.y),
+      w: length(box.w),
+      h: length(box.h),
+      ...(box.rotation ? { rotation: clamp(box.rotation, -360, 360) } : {}),
+      anchor: anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top",
+      inset: { x: inset("lIns", 91440), y: inset("tIns", 45720) },
+      levels,
+      ...promptOf(sp),
+    });
+    if (out.length === 16) break;
+  }
+  return out;
 }
 
 /** A shape tree's artwork, its connectors glued as on a slide. */
@@ -1743,6 +1908,12 @@ async function readMaster(
         otherStyle,
         layoutTree,
         masterTree,
+        ctx
+      ),
+      bodies: readBodies(
+        layoutTree,
+        masterTree,
+        path(masterXml, "p:txStyles", "p:bodyStyle"),
         ctx
       ),
     });
@@ -1923,6 +2094,10 @@ export async function importPptx(
     );
     const layoutAt = layoutName ? layoutIndex.get(layoutName) : undefined;
     if (layoutAt === undefined) skip("slide on another master");
+    // Its text placeholders link to its layout's, when the deck has it.
+    ctx.bodies =
+      layoutAt !== undefined ? master.layouts[layoutAt].bodies : undefined;
+    ctx.linked = new Set();
 
     const shapes: Shape[] = [];
     const ids = new Map<string, Shape>();

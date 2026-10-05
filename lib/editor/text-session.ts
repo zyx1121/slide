@@ -8,6 +8,7 @@ import {
   holdsText,
   shapeTextDefaults,
   placeholderBox,
+  textDefaultsOf,
   titleBody,
   titleText,
 } from "../render/svg";
@@ -76,7 +77,7 @@ export function frameOf(
   return {
     box: { x: shape.x, y: shape.y, w: shape.w, h: shape.h },
     rotation: shape.rotation ?? 0,
-    defaults: shapeTextDefaults(shape.kind),
+    defaults: textDefaultsOf(shape, layout),
     paragraphs: true,
   };
 }
@@ -138,10 +139,12 @@ export function shownBody(draft: TextDraft): {
 /**
  * The height a text box takes for its text: one without fill or outline
  * grows and shrinks with it, as PowerPoint's text boxes do by default, so
- * the box stays where its text is. Null for every other shape.
+ * the box stays where its text is. Null for every other shape, and for a
+ * placeholder, which keeps the box its layout gives it.
  */
 export function fittedHeight(shape: Shape, body: TextBody): number | null {
   if (shape.kind !== "text" || shape.fill || shape.stroke) return null;
+  if (shape.placeholder !== undefined) return null;
   if ((body.anchor ?? "top") !== "top") return null;
   const defaults = shapeTextDefaults("text");
   const layout = layoutText(body, shape, defaults);
@@ -190,8 +193,8 @@ export function draftLayout(frame: TextFrame, body: TextBody): TextLayout {
 
 /**
  * The patch that writes the draft. When editing ends, an emptied text box
- * is deleted, as PowerPoint does, and a shape left without text loses its
- * text body.
+ * is deleted, as PowerPoint does (a placeholder stays, empty), and a shape
+ * left without text loses its text body.
  */
 export function draftOps(
   slide: Slide,
@@ -210,6 +213,12 @@ export function draftOps(
   if (!shape || !holdsText(shape)) return [];
   const path = `/slides/${slideIndex}/shapes/${index}/text`;
   if (final && isEmpty(draft.body)) {
+    // A placeholder stays, empty, to prompt again; as in PowerPoint.
+    if (shape.kind === "text" && shape.placeholder !== undefined) {
+      return JSON.stringify(shape.text) === JSON.stringify(EMPTY_BODY)
+        ? []
+        : [{ op: "replace", path, value: EMPTY_BODY }];
+    }
     if (shape.kind === "text") {
       return deleteOps(slide, slideIndex, new Set([shape.id]));
     }

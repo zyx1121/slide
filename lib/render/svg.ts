@@ -4,6 +4,7 @@
 // placed explicitly with textLength, so no renderer re-wraps or re-measures.
 import {
   type Background,
+  type BodyPlaceholder,
   type Fill,
   type Layout,
   type Placeholder,
@@ -44,6 +45,11 @@ export type RenderOptions = {
   bare?: boolean;
   /** An image asset's href, or null to draw a placeholder in its place. */
   assetHref?: (sha256: string) => string | null;
+  /**
+   * Draws empty placeholders as the editor shows them, a prompt in a dashed
+   * outline; but for the one being typed in (a shape id, or "title").
+   */
+  prompts?: { except?: string | null };
 };
 
 type Box = { x: number; y: number; w: number; h: number };
@@ -232,9 +238,73 @@ export const titleBody = (title: string): TextBody => ({
   paragraphs: [{ runs: [{ text: title }] }],
 });
 
-function shapeText(shape: TextShape, box: Box): string {
+/** A layout's text placeholder by its key. */
+export const bodyOf = (
+  layout: Layout | undefined,
+  key: string | undefined
+): BodyPlaceholder | undefined =>
+  key === undefined ? undefined : layout?.bodies?.find((b) => b.key === key);
+
+/** How a text placeholder lays its text out: its levels, insets and anchor. */
+export function bodyText(body: BodyPlaceholder): TextDefaults {
+  const [first] = body.levels;
+  return {
+    size: first.size,
+    color: first.color,
+    bold: first.bold,
+    align: first.align,
+    anchor: body.anchor,
+    inset: body.inset,
+    wrap: true,
+    levels: body.levels,
+  };
+}
+
+/**
+ * How a shape's text is laid out: as its layout's placeholder lays it out
+ * when it is one, else as its kind does.
+ */
+export function textDefaultsOf(
+  shape: TextShape,
+  layout: Layout | undefined
+): TextDefaults {
+  const body =
+    shape.kind === "text" ? bodyOf(layout, shape.placeholder) : undefined;
+  return body ? bodyText(body) : shapeTextDefaults(shape.kind);
+}
+
+/** Whether a text body holds nothing to draw. */
+export const isEmptyText = (body: TextBody | undefined) =>
+  !body || body.paragraphs.every((p) => p.runs.every((r) => r.text === ""));
+
+/** What an empty placeholder says in the editor, by its type. */
+export const PROMPTS = {
+  title: "按一下以新增標題",
+  subTitle: "按一下以新增副標題",
+  body: "按一下以新增文字",
+} as const;
+
+/** The dashed outline the editor draws around an empty placeholder. */
+const promptFrame = (box: Box) =>
+  `<rect x="${num(box.x)}" y="${num(box.y)}" width="${num(box.w)}" height="${num(box.h)}" fill="none" stroke="#8c8c8c" stroke-width="2" stroke-dasharray="10 8"/>`;
+
+function shapeText(shape: TextShape, box: Box, options: RenderOptions): string {
+  const defaults = textDefaultsOf(shape, options.layout);
+  if (shape.kind === "text" && shape.placeholder && isEmptyText(shape.text)) {
+    const body = bodyOf(options.layout, shape.placeholder);
+    if (!options.prompts || options.prompts.except === shape.id || !body) {
+      return "";
+    }
+    const prompt =
+      body.prompt ??
+      (body.type === "subTitle" ? PROMPTS.subTitle : PROMPTS.body);
+    return (
+      promptFrame(box) +
+      textSvg({ paragraphs: [{ runs: [{ text: prompt }] }] }, box, defaults)
+    );
+  }
   if (!shape.text) return "";
-  return textSvg(shape.text, box, shapeTextDefaults(shape.kind));
+  return textSvg(shape.text, box, defaults);
 }
 
 function arrowSvg(
@@ -335,7 +405,7 @@ function shapeSvg(
       body =
         defs +
         `<rect ${frame}${radius} ${fill} ${strokeAttrs(shape.stroke)}/>` +
-        shapeText(shape, box);
+        shapeText(shape, box, options);
       break;
     }
     case "ellipse": {
@@ -343,7 +413,7 @@ function shapeSvg(
       body =
         defs +
         `<ellipse cx="${num(box.x + box.w / 2)}" cy="${num(box.y + box.h / 2)}" rx="${num(box.w / 2)}" ry="${num(box.h / 2)}" ${fill} ${strokeAttrs(shape.stroke)}/>` +
-        shapeText(shape, box);
+        shapeText(shape, box, options);
       break;
     }
     case "preset": {
@@ -360,7 +430,7 @@ function shapeSvg(
         const cy = num(box.y + box.h / 2);
         body = `<g transform="translate(${cx} ${cy}) scale(${shape.flipH ? -1 : 1} ${shape.flipV ? -1 : 1}) translate(${-cx} ${-cy})">${body}</g>`;
       }
-      body += shapeText(shape, box);
+      body += shapeText(shape, box, options);
       break;
     }
     case "freeform": {
@@ -381,7 +451,7 @@ function shapeSvg(
       body =
         defs +
         `<path d="${d}" ${fill} ${strokeAttrs(shape.stroke)} stroke-linejoin="round"/>` +
-        shapeText(shape, box);
+        shapeText(shape, box, options);
       break;
     }
     case "text": {
@@ -390,7 +460,7 @@ function shapeSvg(
         shape.fill || shape.stroke
           ? `${defs}<rect ${frame} ${fill} ${strokeAttrs(shape.stroke)}/>`
           : "";
-      body = frameSvg + shapeText(shape, box);
+      body = frameSvg + shapeText(shape, box, options);
       break;
     }
     case "image": {
@@ -546,6 +616,20 @@ export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
         titleBody(slide.title),
         placeholderBox(layout.title),
         titleText(slide.title, layout.title)
+      )
+    );
+  } else if (
+    layout.title &&
+    options.prompts &&
+    options.prompts.except !== "title"
+  ) {
+    const prompt = layout.title.prompt ?? PROMPTS.title;
+    parts.push(
+      promptFrame(placeholderBox(layout.title)),
+      textSvg(
+        titleBody(prompt),
+        placeholderBox(layout.title),
+        titleText(prompt, layout.title)
       )
     );
   }

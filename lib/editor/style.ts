@@ -3,7 +3,8 @@
 // only what changes, and the selection's current style tells the dock what
 // to show.
 import type { Operation } from "../deck/patch";
-import type { Shape, Slide } from "../deck/schema";
+import type { Layout, Shape, Slide } from "../deck/schema";
+import { holdsText, textDefaultsOf } from "../render/svg";
 import { DEFAULT_TEXT } from "../render/text";
 
 export type Dash = "solid" | "dash" | "dot" | "dashDot";
@@ -220,7 +221,9 @@ export function textStyle(
 
 export function selectionStyle(
   slide: Slide,
-  ids: ReadonlySet<string>
+  ids: ReadonlySet<string>,
+  /** The slide's layout, for the styles its placeholders give their text. */
+  layout?: Layout
 ): SelectionStyle {
   const picked = slide.shapes.filter((shape) => ids.has(shape.id));
   if (picked.length === 0) return {};
@@ -257,7 +260,13 @@ export function selectionStyle(
     }
   }
   if (anchors.length > 0) {
-    style.text = textStyle(runs, paragraphs, aligns, anchors);
+    // One placeholder picked shows what its text is drawn with.
+    const [only] = picked;
+    const defaults =
+      picked.length === 1 && holdsText(only)
+        ? textDefaultsOf(only, layout)
+        : undefined;
+    style.text = textStyle(runs, paragraphs, aligns, anchors, defaults);
   }
 
   if (picked.every((shape) => shape.kind === "line")) {

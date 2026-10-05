@@ -19,6 +19,7 @@ import {
 } from "../deck/schema";
 import {
   DECK_TITLE_MAX,
+  MASTER_MAX_LENGTH,
   NOTES_MAX,
   SHAPE_TEXT_MAX,
   SLIDE_TEXT_MAX,
@@ -80,6 +81,12 @@ const shapeTextLength = (body: TextBody) =>
     (sum, p) => sum + p.runs.reduce((n, r) => n + r.text.length, 0),
     0
   );
+
+/** The text one shape holds. */
+const shapeText = (shape: Shape) =>
+  shape.kind !== "line" && shape.kind !== "image" && shape.text
+    ? shapeTextLength(shape.text)
+    : 0;
 
 function slideTextLength(slide: Slide): number {
   let length = slide.title.length;
@@ -1361,6 +1368,8 @@ function placeholdersOf(tree: El | undefined, master: boolean): Placeholder[] {
 
 /** What reading a file's parts needs, shared by its slides and its master. */
 type Reader = {
+  /** When reading began, for the time budget. */
+  started: number;
   parts: Map<string, Uint8Array>;
   xml: (name: string | undefined) => El | undefined;
   relsOf: (name: string) => Context["rels"];
@@ -1573,7 +1582,8 @@ async function readArtwork(
     }
     mine.push(shape);
   }
-  out.push(...mine.slice(0, Math.max(0, 500 - out.length)));
+  if (mine.length > 200) ctx.skip("artwork over 200 shapes");
+  out.push(...mine.slice(0, Math.max(0, 200 - out.length)));
 }
 
 /** Layout types PowerPoint gives a new content slide, best first. */
@@ -1599,6 +1609,8 @@ async function readMaster(
   )
     .map((id) => masterRels.get(id.attrs["r:id"] ?? "")?.target)
     .filter((name): name is string => !!name && reader.parts.has(name))
+    // A layout part listed twice would copy one into many.
+    .filter((name, i, all) => all.indexOf(name) === i)
     .slice(0, 64);
   const layouts: Layout[] = [];
   const layoutIndex = new Map<string, number>();
@@ -1612,15 +1624,18 @@ async function readMaster(
     undefined,
     masterName
   );
+  // The master's artwork is read once; layouts say whether they show it.
+  const masterShapes: Shape[] = [];
+  await readArtwork(masterTree, masterCtx, masterShapes);
   const ranks: number[] = [];
   for (const name of layoutNames) {
+    if (Date.now() - reader.started > TIME_BUDGET_MS) {
+      throw new PptxError("too-large", "the file takes too long to read");
+    }
     const layoutXml = reader.xml(name);
     const ctx = contextFor(reader, name, masterXml, layoutXml, masterName);
     const layoutTree = path(layoutXml, "p:cSld", "p:spTree");
     const shapes: Shape[] = [];
-    if (layoutXml?.attrs.showMasterSp !== "0") {
-      await readArtwork(masterTree, masterCtx, shapes);
-    }
     await readArtwork(layoutTree, ctx, shapes);
     const background = readBackground(
       path(layoutXml, "p:cSld", "p:bg") ?? path(masterXml, "p:cSld", "p:bg"),
@@ -1632,6 +1647,7 @@ async function readMaster(
     layouts.push({
       name: clean(path(layoutXml, "p:cSld")?.attrs.name ?? "").slice(0, 200),
       background,
+      master: layoutXml?.attrs.showMasterSp !== "0",
       shapes,
       title: readPlaceholder(
         ["title", "ctrTitle"],
@@ -1660,11 +1676,29 @@ async function readMaster(
     clean(theme?.attrs.name ?? "").trim() ||
     clean(path(masterXml, "p:cSld")?.attrs.name ?? "").trim() ||
     "母片";
+  // Artwork over the limits a slide has (text, size) is left out whole:
+  // the layouts still give the slides their places.
+  const artwork = [masterShapes, ...layouts.map((layout) => layout.shapes)];
+  for (const shapes of artwork) {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (shapeText(shapes[i]) > SHAPE_TEXT_MAX) {
+        shapes.splice(i, 1);
+        reader.skip("text over the limit");
+      }
+    }
+  }
+  const text = artwork.flat().reduce((sum, shape) => sum + shapeText(shape), 0);
+  const length = JSON.stringify({ masterShapes, layouts }).length;
+  if (text > SLIDE_TEXT_MAX || length > MASTER_MAX_LENGTH * 0.9) {
+    for (const shapes of artwork) shapes.length = 0;
+    reader.skip("artwork over the limit");
+  }
   return {
     master: {
       file: "",
       part: masterName,
       name: name.slice(0, 200),
+      shapes: masterShapes,
       layouts,
       // The layout most slides use, a content layout (by its type) among
       // equals; files often mark every layout one type, so use goes first.
@@ -1731,6 +1765,7 @@ export async function importPptx(
   };
 
   const reader: Reader = {
+    started,
     parts,
     xml,
     relsOf,

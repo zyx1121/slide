@@ -80,6 +80,19 @@ export function exportPptx(
     new Map(Object.entries(base)),
     document.master.part
   );
+  if (layouts.length === 0) {
+    throw new Error(`${document.master.part} has no layouts in its file`);
+  }
+  // Slides take relationship ids past the presentation's own.
+  const firstId =
+    Math.max(
+      0,
+      ...[
+        ...strFromU8(base["ppt/_rels/presentation.xml.rels"]).matchAll(
+          /\bId="rId(\d+)"/g
+        ),
+      ].map((match) => Number(match[1]))
+    ) + 1;
   for (const [name, bytes] of Object.entries(base)) {
     if (!name.startsWith("ppt/slides/") && !name.startsWith("ppt/notesSlides/"))
       parts[name] = bytes;
@@ -131,8 +144,7 @@ export function exportPptx(
       );
     }
     parts[`ppt/slides/_rels/slide${n}.xml.rels`] = strToU8(relationships(rels));
-    // Relationship ids past the master file's own.
-    const rId = `rId${100 + n}`;
+    const rId = `rId${firstId + i}`;
     slideIds.push(`<p:sldId id="${255 + n}" r:id="${rId}"/>`);
     slideRels.push(
       `<Relationship Id="${rId}" Type="${REL}/slide" Target="slides/slide${n}.xml"/>`
@@ -142,14 +154,20 @@ export function exportPptx(
     );
   });
 
-  // The master file keeps no slide list; the schema puts it right before
-  // the slide size, after the master lists.
-  const presentation = strFromU8(parts["ppt/presentation.xml"])
-    .replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/, "")
-    .replace(
-      "<p:sldSz",
-      `<p:sldIdLst>${slideIds.join("")}</p:sldIdLst><p:sldSz`
-    );
+  // The master file keeps no slide list; the schema puts it after the
+  // master lists, before the slide size.
+  const list = `<p:sldIdLst>${slideIds.join("")}</p:sldIdLst>`;
+  const xml = strFromU8(parts["ppt/presentation.xml"]).replace(
+    /<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/,
+    ""
+  );
+  const after = [
+    "</p:handoutMasterIdLst>",
+    "</p:notesMasterIdLst>",
+    "</p:sldMasterIdLst>",
+  ].find((tag) => xml.includes(tag));
+  if (!after) throw new Error("the master file's presentation lists no master");
+  const presentation = xml.replace(after, `${after}${list}`);
   parts["ppt/presentation.xml"] = strToU8(presentation);
 
   const presentationRels = strFromU8(parts["ppt/_rels/presentation.xml.rels"])

@@ -2,7 +2,7 @@ import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTestDb, TEST_DATABASE_URL } from "../test-db";
-import { BUILTIN_MASTERS } from "../master/layout";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
 import { DeckError } from "./errors";
 import { sampleDocument } from "./sample";
 import {
@@ -262,7 +262,7 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
       slideCount: deck.document.slides.length,
     });
     expect(summary.firstLayout).toEqual(
-      deck.document.master.layouts[deck.document.master.layout]
+      layoutOf(deck.document, deck.document.slides[0])
     );
     expect(summary.firstSlide).toEqual(deck.document.slides[0]);
   });

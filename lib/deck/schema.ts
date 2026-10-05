@@ -5,6 +5,7 @@ import * as z from "zod";
 
 import {
   DECK_TITLE_MAX,
+  MASTER_MAX_LENGTH,
   NOTES_MAX,
   SHAPE_TEXT_MAX,
   SLIDE_TEXT_MAX,
@@ -284,13 +285,16 @@ export const Placeholder = z.strictObject({
 
 /**
  * A slide layout of the master, read from the .pptx: its background, the
- * artwork drawn under every slide on it (the master's, when the layout
- * shows it, then the layout's own) and its title and slide number.
+ * artwork drawn under every slide on it (the master's, when `master` says
+ * the layout shows it, then the layout's own) and its title and slide
+ * number.
  */
 export const Layout = z.strictObject({
   name: Text(200),
   background: Fill.nullable(),
-  shapes: z.array(Shape).max(500),
+  /** Whether the master's artwork is drawn under this layout's. */
+  master: z.boolean(),
+  shapes: z.array(Shape).max(200),
   title: Placeholder.nullable(),
   number: Placeholder.nullable(),
 });
@@ -304,6 +308,8 @@ export const Master = z.strictObject({
   /** The master's part in that file; its layouts are listed in order. */
   part: z.string().regex(/^ppt\/slideMasters\/[\w.-]{1,100}\.xml$/),
   name: Text(200),
+  /** The master's own artwork, drawn under the layouts that show it. */
+  shapes: z.array(Shape).max(200),
   layouts: z.array(Layout).min(1).max(64),
   /** The layout a new slide takes. */
   layout: z.number().int().min(0).max(63),
@@ -321,6 +327,16 @@ export const Slide = z.strictObject({
   shapes: z.array(Shape).max(1000),
   notes: Text(NOTES_MAX).optional(),
 });
+
+/** The text a shape holds, in UTF-16 code units. */
+function shapeTextLength(shape: z.infer<typeof Shape>): number {
+  if (shape.kind === "line" || shape.kind === "image" || !shape.text) return 0;
+  let length = 0;
+  for (const paragraph of shape.text.paragraphs) {
+    for (const run of paragraph.runs) length += run.text.length;
+  }
+  return length;
+}
 
 export const DeckDocument = z
   .strictObject({
@@ -345,6 +361,43 @@ export const DeckDocument = z
       }
     };
 
+    // The master's artwork is drawn under slides, so it is held to the
+    // same text limits as a slide, and the master as a whole to a size.
+    const artwork = [
+      { shapes: document.master.shapes, path: ["master", "shapes"] },
+      ...document.master.layouts.map((layout, l) => ({
+        shapes: layout.shapes,
+        path: ["master", "layouts", l, "shapes"],
+      })),
+    ];
+    let artworkText = 0;
+    for (const { shapes, path } of artwork) {
+      shapes.forEach((shape, i) => {
+        const text = shapeTextLength(shape);
+        artworkText += text;
+        if (text > SHAPE_TEXT_MAX) {
+          ctx.addIssue({
+            code: "custom",
+            message: `a shape holds at most ${SHAPE_TEXT_MAX} characters of text`,
+            path: [...path, i, "text"],
+          });
+        }
+      });
+    }
+    if (artworkText > SLIDE_TEXT_MAX) {
+      ctx.addIssue({
+        code: "custom",
+        message: `a master's artwork holds at most ${SLIDE_TEXT_MAX} characters of text`,
+        path: ["master"],
+      });
+    }
+    if (JSON.stringify(document.master).length > MASTER_MAX_LENGTH) {
+      ctx.addIssue({
+        code: "custom",
+        message: `a master is at most ${MASTER_MAX_LENGTH} characters as JSON`,
+        path: ["master"],
+      });
+    }
     const layouts = document.master.layouts.length;
     if (document.master.layout >= layouts) {
       ctx.addIssue({

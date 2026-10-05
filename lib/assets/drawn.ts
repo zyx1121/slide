@@ -16,6 +16,11 @@ export function slideAssets(slide: Slide, layout?: Layout): string[] {
 export function documentAssets(document: DeckDocument): string[] {
   return [
     ...new Set([
+      ...slideAssets({
+        id: "sl_master",
+        title: "",
+        shapes: document.master.shapes,
+      }),
       ...document.master.layouts.flatMap((layout) =>
         slideAssets({ id: "sl_layout", title: "", shapes: layout.shapes })
       ),

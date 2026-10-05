@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import type { Slide } from "../deck/schema";
-import { BUILTIN_MASTERS } from "../master/layout";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
 import { renderBackdropSvg, renderSlideSvg } from "./svg";
 
 const winlab = BUILTIN_MASTERS.winlab;
 const options = {
   slideNumber: 1,
-  layout: winlab.layouts[winlab.layout],
+  layout: layoutOf({ master: winlab }, undefined),
 };
 
 describe("renderSlideSvg", () => {
@@ -172,7 +172,7 @@ describe("renderSlideSvg on the plain master", () => {
 
 describe("renderBackdropSvg", () => {
   it("draws a layout's background and artwork, and no title or number", () => {
-    const svg = renderBackdropSvg(winlab.layouts[winlab.layout], {
+    const svg = renderBackdropSvg(layoutOf({ master: winlab }, undefined), {
       assetHref: (sha) => `/assets/${sha}`,
     });
     expect(svg).toMatch(/<linearGradient id="gr-[0-9a-z]+"/);
@@ -181,8 +181,12 @@ describe("renderBackdropSvg", () => {
   });
 
   it("names gradients by what they hold, so pages of several masters agree", () => {
-    const a = renderBackdropSvg(winlab.layouts[0], { assetHref: () => null });
-    const b = renderBackdropSvg(winlab.layouts[0], { assetHref: () => null });
+    const a = renderBackdropSvg(layoutOf({ master: winlab }, { layout: 0 }), {
+      assetHref: () => null,
+    });
+    const b = renderBackdropSvg(layoutOf({ master: winlab }, { layout: 0 }), {
+      assetHref: () => null,
+    });
     expect(a).toBe(b);
     const ids = (svg: string) =>
       [...svg.matchAll(/id="(gr-[0-9a-z]+)"/g)].map((m) => m[1]);

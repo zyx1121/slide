@@ -236,7 +236,7 @@ describe("importPptx", () => {
     // The master's artwork pictures are counted apart from the slides'.
     expect(report.skipped).toEqual({
       "picture format": 1,
-      "master: picture format": 5,
+      "master: picture format": 4,
     });
     expect(document.slides[1].shapes.some((s) => s.kind === "image")).toBe(
       false
@@ -629,8 +629,8 @@ describe("importPptx", () => {
     const parts = unzipSync(exportPptx(doc, new Map()));
     // List the one slide twice, and make its text longer than a shape may hold.
     const presentation = strFromU8(parts["ppt/presentation.xml"]).replace(
-      /(<p:sldId [^>]*\/>)/,
-      '$1<p:sldId id="999" r:id="rId101"/>'
+      /(<p:sldId [^>]*r:id="([^"]+)"\/>)/,
+      '$1<p:sldId id="999" r:id="$2"/>'
     );
     parts["ppt/presentation.xml"] = strToU8(presentation);
     parts["ppt/slides/slide1.xml"] = strToU8(
@@ -748,7 +748,7 @@ describe("importPptx keeps the slide master", () => {
       exportPptx(sampleDocument(), new Map()),
       realImage
     );
-    const footer = document.master.layouts[1].shapes.find(
+    const footer = document.master.shapes.find(
       (shape) =>
         shape.kind === "text" &&
         shape.text?.paragraphs[0]?.runs[0]?.text === "NYCU CS"
@@ -756,7 +756,7 @@ describe("importPptx keeps the slide master", () => {
     expect(
       footer && "text" in footer && footer.text?.paragraphs[0].runs[0].bold
     ).toBe(true);
-    const bar = document.master.layouts[1].shapes.find(
+    const bar = document.master.shapes.find(
       (shape) =>
         shape.kind === "rect" &&
         typeof shape.fill === "object" &&
@@ -766,5 +766,36 @@ describe("importPptx keeps the slide master", () => {
       angle: 45,
       stops: [{ at: 0, color: "#7fcbf9" }, { at: 0.98 }, { at: 1 }],
     });
+  });
+});
+
+describe("importPptx bounds a master", () => {
+  it("reads a layout listed many times once, and drops artwork over the limits", async () => {
+    const parts = unzipSync(exportPptx(sampleDocument(), new Map()));
+    const masterName = "ppt/slideMasters/slideMaster1.xml";
+    let master = strFromU8(parts[masterName]);
+    // Every layout entry points at the first layout's relationship.
+    const first = /<p:sldLayoutId [^>]*r:id="([^"]+)"[^>]*\/>/.exec(master)!;
+    const entries = Array.from(
+      { length: 64 },
+      (_, i) => `<p:sldLayoutId id="${2147483700 + i}" r:id="${first[1]}"/>`
+    ).join("");
+    master = master.replace(
+      /<p:sldLayoutIdLst>[\s\S]*?<\/p:sldLayoutIdLst>/,
+      `<p:sldLayoutIdLst>${entries}</p:sldLayoutIdLst>`
+    );
+    // And the master carries far more text than a slide may.
+    const box = (i: number) =>
+      `<p:sp><p:nvSpPr><p:cNvPr id="${900 + i}" name="t"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100000" cy="100000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:t>${"x".repeat(4000)}</a:t></a:r></a:p></p:txBody></p:sp>`;
+    master = master.replace(
+      "</p:spTree>",
+      `${Array.from({ length: 10 }, (_, i) => box(i)).join("")}</p:spTree>`
+    );
+    parts[masterName] = strToU8(master);
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(document.master.layouts).toHaveLength(1);
+    expect(document.master.shapes).toEqual([]);
+    expect(report.skipped["master: artwork over the limit"]).toBe(1);
+    expect(JSON.stringify(document.master).length).toBeLessThan(100_000);
   });
 });

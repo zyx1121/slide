@@ -12,8 +12,11 @@ describe("built-in masters", () => {
   it("have their master files and pictures at hand", () => {
     for (const master of Object.values(BUILTIN_MASTERS)) {
       expect(builtinMasterFile(master.file)).toBeDefined();
-      for (const layout of master.layouts) {
-        for (const shape of layout.shapes) {
+      for (const shapes of [
+        master.shapes,
+        ...master.layouts.map((l) => l.shapes),
+      ]) {
+        for (const shape of shapes) {
           if (shape.kind === "image") {
             expect(builtinAsset(shape.asset)).toBeDefined();
           }

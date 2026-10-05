@@ -4,14 +4,14 @@ import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import { builtinAsset } from "../master/builtin-assets";
-import { BUILTIN_MASTERS } from "../master/layout";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
 import { render, RenderBusyError, renderPng, renderPngAsync } from "./png";
 import { renderSlideSvg } from "./svg";
 
 const svg = () =>
   renderSlideSvg(sampleDocument().slides[0], {
     slideNumber: 1,
-    layout: BUILTIN_MASTERS.winlab.layouts[BUILTIN_MASTERS.winlab.layout],
+    layout: layoutOf({ master: BUILTIN_MASTERS.winlab }, undefined),
     assetHref: (sha) => {
       const asset = builtinAsset(sha);
       return asset

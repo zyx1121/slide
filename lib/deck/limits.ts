@@ -19,3 +19,9 @@ export const SLIDE_TEXT_MAX = 20_000;
 export const NOTES_MAX = 50_000;
 /** The largest .pptx a member may import: 100 MB. */
 export const IMPORT_MAX_BYTES = 100 * 1024 * 1024;
+
+/**
+ * The largest slide master a deck carries, as JSON: its layouts and their
+ * artwork, read from a .pptx. It is stored with every deck on it.
+ */
+export const MASTER_MAX_LENGTH = 1_000_000;

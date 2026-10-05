@@ -29,11 +29,16 @@ async function read(
   );
   const { master } = result.document;
   // Stable ids, so the file only changes when a template does.
-  master.layouts.forEach((layout, l) => {
-    const ids = new Map(
-      layout.shapes.map((shape, i) => [shape.id, `ar_${l}_${i}`])
-    );
-    for (const shape of layout.shapes) {
+  const groups = [
+    { shapes: master.shapes, prefix: "ar_m" },
+    ...master.layouts.map((layout, l) => ({
+      shapes: layout.shapes,
+      prefix: `ar_${l}`,
+    })),
+  ];
+  groups.forEach(({ shapes, prefix }) => {
+    const ids = new Map(shapes.map((shape, i) => [shape.id, `${prefix}_${i}`]));
+    for (const shape of shapes) {
       shape.id = ids.get(shape.id)!;
       if (shape.kind !== "line") continue;
       for (const end of [shape.start, shape.end]) {

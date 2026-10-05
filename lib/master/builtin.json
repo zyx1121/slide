@@ -1,0 +1,910 @@
+{
+  "plain": {
+    "file": "a4f8bb3277f93e01c22d7d3dd13c48e18f4c6e25cf08d4336b89065f4169697c",
+    "part": "ppt/slideMasters/slideMaster1.xml",
+    "name": "空白",
+    "shapes": [],
+    "layouts": [
+      {
+        "name": "Title & Bullets",
+        "background": "#ffffff",
+        "master": true,
+        "shapes": [],
+        "title": {
+          "x": 177.55,
+          "y": 9.66,
+          "w": 1587.59,
+          "h": 138.43,
+          "size": 72,
+          "bold": true,
+          "color": "#000000",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.11,
+          "y": 1025.11,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": false,
+          "color": "#7f7f7f",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      }
+    ],
+    "layout": 0
+  },
+  "winlab": {
+    "file": "730171b0c26eda7b35f423d467e891c01248de3c98606935939356114eca605f",
+    "part": "ppt/slideMasters/slideMaster1.xml",
+    "name": "WinLab",
+    "shapes": [
+      {
+        "id": "ar_m_0",
+        "kind": "rect",
+        "x": 0,
+        "y": 1016.27,
+        "w": 1920,
+        "h": 65.2,
+        "fill": {
+          "angle": 45,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#7fcbf9"
+            },
+            {
+              "at": 0.98,
+              "color": "#c1efff"
+            },
+            {
+              "at": 1,
+              "color": "#c1efff"
+            }
+          ]
+        },
+        "stroke": null
+      },
+      {
+        "id": "ar_m_1",
+        "kind": "text",
+        "x": 44.28,
+        "y": 1021,
+        "w": 194.32,
+        "h": 53.57,
+        "text": {
+          "paragraphs": [
+            {
+              "runs": [
+                {
+                  "text": "NYCU CS",
+                  "size": 40,
+                  "color": "#ffffff",
+                  "bold": true
+                }
+              ]
+            }
+          ],
+          "anchor": "middle"
+        }
+      },
+      {
+        "id": "ar_m_2",
+        "kind": "freeform",
+        "x": 961.43,
+        "y": 154.7,
+        "w": 875.99,
+        "h": 19.13,
+        "fill": {
+          "angle": 45,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#9fe6ff"
+            },
+            {
+              "at": 0.5,
+              "color": "#ddf6ff"
+            },
+            {
+              "at": 1,
+              "color": "#f3fcff"
+            }
+          ]
+        },
+        "stroke": null,
+        "path": "M 0 0 C 552.27 0 1000 447.73 1000 1000 L 0 1000 Z"
+      },
+      {
+        "id": "ar_m_3",
+        "kind": "rect",
+        "x": 105.77,
+        "y": 154.7,
+        "w": 856.99,
+        "h": 19.13,
+        "fill": {
+          "angle": 45,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#89e0ff"
+            },
+            {
+              "at": 1,
+              "color": "#a3e7ff"
+            }
+          ]
+        },
+        "stroke": null
+      },
+      {
+        "id": "ar_m_4",
+        "kind": "image",
+        "x": 37.08,
+        "y": 14.23,
+        "w": 117.8,
+        "h": 154.79,
+        "asset": "f19b88aca4625b953da7a4d8a4e854832f53d39d402ab8efa61b9be3a9f8cdef"
+      }
+    ],
+    "layouts": [
+      {
+        "name": "Title",
+        "background": {
+          "angle": 90.01,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.01,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.35,
+              "color": "#ffffff"
+            },
+            {
+              "at": 0.99,
+              "color": "#ffffff"
+            },
+            {
+              "at": 1,
+              "color": "#ffffff"
+            }
+          ]
+        },
+        "master": false,
+        "shapes": [
+          {
+            "id": "ar_0_0",
+            "kind": "rect",
+            "x": 0,
+            "y": 0,
+            "w": 1920,
+            "h": 411.83,
+            "fill": {
+              "angle": 90,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#ebfaff"
+                },
+                {
+                  "at": 0.01,
+                  "color": "#ebfaff"
+                },
+                {
+                  "at": 0.29,
+                  "color": "#ffffff"
+                },
+                {
+                  "at": 0.99,
+                  "color": "#f7fdff"
+                },
+                {
+                  "at": 1,
+                  "color": "#f7fdff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_0_1",
+            "kind": "freeform",
+            "x": 969.8,
+            "y": 375.84,
+            "w": 930.92,
+            "h": 36.28,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#9fe6ff"
+                },
+                {
+                  "at": 0.5,
+                  "color": "#ddf6ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#f3fcff"
+                }
+              ]
+            },
+            "stroke": null,
+            "path": "M 0 0 C 552.27 0 1000 447.73 1000 1000 L 0 1000 Z"
+          },
+          {
+            "id": "ar_0_2",
+            "kind": "rect",
+            "x": 60.48,
+            "y": 375.84,
+            "w": 910.72,
+            "h": 36.28,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#89e0ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#a3e7ff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_0_3",
+            "kind": "rect",
+            "x": 0,
+            "y": 1016.27,
+            "w": 1920,
+            "h": 65.2,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#7fcbf9"
+                },
+                {
+                  "at": 0.98,
+                  "color": "#c1efff"
+                },
+                {
+                  "at": 1,
+                  "color": "#c1efff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_0_4",
+            "kind": "text",
+            "x": 44.28,
+            "y": 1021,
+            "w": 194.32,
+            "h": 53.57,
+            "text": {
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "NYCU CS",
+                      "size": 40,
+                      "color": "#ffffff",
+                      "bold": true
+                    }
+                  ]
+                }
+              ],
+              "anchor": "middle"
+            }
+          },
+          {
+            "id": "ar_0_5",
+            "kind": "image",
+            "x": 37.72,
+            "y": 21.79,
+            "w": 246.53,
+            "h": 323.94,
+            "asset": "8e9e68bb03edccaae119a7f4627552c9f473d3af6aebc753ef67953599cd1519"
+          }
+        ],
+        "title": {
+          "x": 349.59,
+          "y": 63.73,
+          "w": 1309.13,
+          "h": 312.99,
+          "size": 88,
+          "bold": true,
+          "color": "#3297fc",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.11,
+          "y": 1025.11,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      },
+      {
+        "name": "Title & Bullets",
+        "background": {
+          "angle": 90,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.01,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.35,
+              "color": "#ffffff"
+            },
+            {
+              "at": 0.99,
+              "color": "#ffffff"
+            },
+            {
+              "at": 1,
+              "color": "#ffffff"
+            }
+          ]
+        },
+        "master": true,
+        "shapes": [],
+        "title": {
+          "x": 177.55,
+          "y": 9.66,
+          "w": 1587.59,
+          "h": 138.43,
+          "size": 72,
+          "bold": true,
+          "color": "#3297fc",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.11,
+          "y": 1025.11,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      },
+      {
+        "name": "Section",
+        "background": {
+          "angle": 90,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.01,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.35,
+              "color": "#ffffff"
+            },
+            {
+              "at": 0.99,
+              "color": "#ffffff"
+            },
+            {
+              "at": 1,
+              "color": "#ffffff"
+            }
+          ]
+        },
+        "master": true,
+        "shapes": [],
+        "title": {
+          "x": 177.55,
+          "y": 9.66,
+          "w": 1587.59,
+          "h": 138.43,
+          "size": 72,
+          "bold": true,
+          "color": "#3297fc",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.11,
+          "y": 1025.11,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      },
+      {
+        "name": "Title, Bullets & Photo",
+        "background": {
+          "angle": 90,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.01,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.35,
+              "color": "#ffffff"
+            },
+            {
+              "at": 0.99,
+              "color": "#ffffff"
+            },
+            {
+              "at": 1,
+              "color": "#ffffff"
+            }
+          ]
+        },
+        "master": false,
+        "shapes": [
+          {
+            "id": "ar_3_0",
+            "kind": "rect",
+            "x": 0,
+            "y": 1016.27,
+            "w": 1920,
+            "h": 65.2,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#7fcbf9"
+                },
+                {
+                  "at": 0.98,
+                  "color": "#c1efff"
+                },
+                {
+                  "at": 1,
+                  "color": "#c1efff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_3_1",
+            "kind": "text",
+            "x": 44.28,
+            "y": 1021,
+            "w": 194.32,
+            "h": 53.57,
+            "text": {
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "NYCU CS",
+                      "size": 40,
+                      "color": "#ffffff",
+                      "bold": true
+                    }
+                  ]
+                }
+              ],
+              "anchor": "middle"
+            }
+          },
+          {
+            "id": "ar_3_2",
+            "kind": "text",
+            "x": 44.28,
+            "y": 1016.27,
+            "w": 194.3,
+            "h": 53.57,
+            "text": {
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "NYCU CS",
+                      "size": 40,
+                      "color": "#ffffff",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "ar_3_3",
+            "kind": "freeform",
+            "x": 961.43,
+            "y": 154.7,
+            "w": 875.99,
+            "h": 19.13,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#9fe6ff"
+                },
+                {
+                  "at": 0.5,
+                  "color": "#ddf6ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#f3fcff"
+                }
+              ]
+            },
+            "stroke": null,
+            "path": "M 0 0 C 552.27 0 1000 447.73 1000 1000 L 0 1000 Z"
+          },
+          {
+            "id": "ar_3_4",
+            "kind": "rect",
+            "x": 105.77,
+            "y": 154.7,
+            "w": 856.99,
+            "h": 19.13,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#89e0ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#a3e7ff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_3_5",
+            "kind": "image",
+            "x": 37.08,
+            "y": 14.23,
+            "w": 117.8,
+            "h": 154.79,
+            "asset": "f19b88aca4625b953da7a4d8a4e854832f53d39d402ab8efa61b9be3a9f8cdef"
+          }
+        ],
+        "title": {
+          "x": 177.55,
+          "y": 9.66,
+          "w": 1587.59,
+          "h": 138.43,
+          "size": 72,
+          "bold": true,
+          "color": "#3297fc",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.09,
+          "y": 1025.12,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      },
+      {
+        "name": "Two Columns",
+        "background": {
+          "angle": 90,
+          "stops": [
+            {
+              "at": 0,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.01,
+              "color": "#ebfaff"
+            },
+            {
+              "at": 0.35,
+              "color": "#ffffff"
+            },
+            {
+              "at": 0.99,
+              "color": "#ffffff"
+            },
+            {
+              "at": 1,
+              "color": "#ffffff"
+            }
+          ]
+        },
+        "master": false,
+        "shapes": [
+          {
+            "id": "ar_4_0",
+            "kind": "rect",
+            "x": 0,
+            "y": 1016.27,
+            "w": 1920,
+            "h": 65.2,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#7fcbf9"
+                },
+                {
+                  "at": 0.98,
+                  "color": "#c1efff"
+                },
+                {
+                  "at": 1,
+                  "color": "#c1efff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_4_1",
+            "kind": "text",
+            "x": 44.28,
+            "y": 1021,
+            "w": 194.32,
+            "h": 53.57,
+            "text": {
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "NYCU CS",
+                      "size": 40,
+                      "color": "#ffffff",
+                      "bold": true
+                    }
+                  ]
+                }
+              ],
+              "anchor": "middle"
+            }
+          },
+          {
+            "id": "ar_4_2",
+            "kind": "rect",
+            "x": 0,
+            "y": 1016.27,
+            "w": 1920,
+            "h": 63.73,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#7fcbf9"
+                },
+                {
+                  "at": 0.98,
+                  "color": "#c1efff"
+                },
+                {
+                  "at": 1,
+                  "color": "#c1efff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_4_3",
+            "kind": "text",
+            "x": 44.28,
+            "y": 1016.27,
+            "w": 194.32,
+            "h": 53.57,
+            "text": {
+              "paragraphs": [
+                {
+                  "runs": [
+                    {
+                      "text": "NYCU CS",
+                      "size": 40,
+                      "color": "#ffffff",
+                      "bold": true
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          {
+            "id": "ar_4_4",
+            "kind": "freeform",
+            "x": 961.43,
+            "y": 154.7,
+            "w": 875.99,
+            "h": 19.13,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#9fe6ff"
+                },
+                {
+                  "at": 0.5,
+                  "color": "#ddf6ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#f3fcff"
+                }
+              ]
+            },
+            "stroke": null,
+            "path": "M 0 0 C 552.27 0 1000 447.73 1000 1000 L 0 1000 Z"
+          },
+          {
+            "id": "ar_4_5",
+            "kind": "rect",
+            "x": 105.77,
+            "y": 154.7,
+            "w": 856.99,
+            "h": 19.13,
+            "fill": {
+              "angle": 45,
+              "stops": [
+                {
+                  "at": 0,
+                  "color": "#89e0ff"
+                },
+                {
+                  "at": 1,
+                  "color": "#a3e7ff"
+                }
+              ]
+            },
+            "stroke": null
+          },
+          {
+            "id": "ar_4_6",
+            "kind": "image",
+            "x": 37.08,
+            "y": 14.23,
+            "w": 117.8,
+            "h": 154.79,
+            "asset": "f19b88aca4625b953da7a4d8a4e854832f53d39d402ab8efa61b9be3a9f8cdef"
+          }
+        ],
+        "title": {
+          "x": 177.55,
+          "y": 9.66,
+          "w": 1587.59,
+          "h": 138.43,
+          "size": 72,
+          "bold": true,
+          "color": "#3297fc",
+          "align": "center",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        },
+        "number": {
+          "x": 1845.11,
+          "y": 1025.11,
+          "w": 44.78,
+          "h": 44.21,
+          "size": 28,
+          "bold": true,
+          "color": "#ffffff",
+          "align": "right",
+          "anchor": "middle",
+          "inset": {
+            "x": 7.2,
+            "y": 7.2
+          }
+        }
+      }
+    ],
+    "layout": 1,
+    "palette": [
+      "#000000",
+      "#595959",
+      "#a6a6a6",
+      "#f2f2f2",
+      "#ffffff",
+      "#3297fc",
+      "#4f81bd",
+      "#e8f1fe",
+      "#c00000",
+      "#fbe5d6",
+      "#ed7d31",
+      "#ffc000",
+      "#fff2cc",
+      "#70ad47",
+      "#e2f0d9",
+      "#7030a0"
+    ]
+  }
+}

@@ -41,12 +41,36 @@ describe("DeckDocument", () => {
     expect(issuesOf(doc)[0]).toMatch(/^slides\.0\.shapes\.0: .*shadow/);
   });
 
-  it("takes a known template, or none", () => {
-    const none: Record<string, unknown> = { ...sampleDocument() };
-    delete none.template;
-    expect(issuesOf(none)).toEqual([]);
-    expect(issuesOf({ ...none, template: "plain" })).toEqual([]);
-    expect(issuesOf({ ...none, template: "keynote" })).toHaveLength(1);
+  it("needs a master, and slides on layouts it has", () => {
+    const doc: Record<string, unknown> = { ...sampleDocument() };
+    expect(issuesOf({ ...doc, template: "winlab" })).toHaveLength(1);
+    const none = { ...doc };
+    delete none.master;
+    expect(issuesOf(none)).toHaveLength(1);
+    const sample = sampleDocument();
+    const layouts = sample.master.layouts.length;
+    sample.slides[0].layout = layouts - 1;
+    expect(issuesOf(sample)).toEqual([]);
+    sample.slides[0].layout = layouts;
+    expect(issuesOf(sample)[0]).toMatch(/^slides\.0\.layout: /);
+    const bad = sampleDocument();
+    bad.master = { ...bad.master, layout: layouts };
+    expect(issuesOf(bad)[0]).toMatch(/^master\.layout: /);
+  });
+
+  it("takes gradient fills, with two stops or more", () => {
+    const doc = sampleDocument();
+    const shape = doc.slides[0].shapes[0] as { fill?: unknown };
+    shape.fill = {
+      angle: 90,
+      stops: [
+        { at: 0, color: "#3297fc" },
+        { at: 1, color: "#ffffff" },
+      ],
+    };
+    expect(issuesOf(doc)).toEqual([]);
+    shape.fill = { angle: 90, stops: [{ at: 0, color: "#3297fc" }] };
+    expect(issuesOf(doc)).toHaveLength(1);
   });
 
   it("rejects an unknown shape kind", () => {

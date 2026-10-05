@@ -4,6 +4,8 @@ import type postgres from "postgres";
 
 import { saveAsset } from "../assets/store";
 import { createDeck } from "../deck/store";
+import { builtinAsset } from "../master/builtin-assets";
+import { MASTER_FILE_MAX_BYTES, saveMaster } from "../master/store";
 import { emitErrorLog } from "../otel/log";
 import { inSpan } from "../otel/span";
 import type { ImportReport } from "./import";
@@ -56,10 +58,18 @@ export async function importDeck(
         status: outcome.code === "too-large" ? 413 : 422,
       };
     }
-    for (const [, image] of outcome.pictures) {
+    const imported = outcome.result;
+    if (imported.master.bytes.length > MASTER_FILE_MAX_BYTES) {
+      set({ "import.outcome": "too-large" });
+      return { ok: false, code: "too-large", status: 413 };
+    }
+    for (const [sha256, image] of outcome.pictures) {
+      // A built-in master's pictures are everyone's already.
+      if (builtinAsset(sha256)) continue;
       await saveAsset(db, sub, image);
     }
-    const imported = outcome.result;
+    // The file's masters, layouts and themes, for its export.
+    await saveMaster(db, sub, imported.master, imported.document.master);
     const deck = await createDeck(db, sub, imported.document);
     // Counts only: what the file held and what was left out, by kind.
     const skipped = imported.report.skipped;

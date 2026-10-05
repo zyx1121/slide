@@ -4,10 +4,11 @@ import { notFound } from "next/navigation";
 import { SlideView } from "@/components/slide-view";
 import { TaskShell } from "@/components/task-shell";
 import { cornerLink } from "@/components/corners";
-import { ownedAssets, slideAssets } from "@/lib/assets/store";
+import { documentAssets } from "@/lib/assets/drawn";
+import { ownedAssets } from "@/lib/assets/store";
 import { sql } from "@/lib/db";
 import { getPublishedDeck } from "@/lib/deck/store";
-import { templateOf } from "@/lib/render/template";
+import { layoutOf } from "@/lib/master/layout";
 
 export const dynamic = "force-dynamic";
 
@@ -32,12 +33,13 @@ export default async function PublicDeck({
   if (!deck) notFound();
   // Only pictures the owner uploaded are served; others show a placeholder,
   // without their id in the page.
-  const owned = await ownedAssets(sql, deck.ownerSub, [
-    ...new Set(deck.document.slides.flatMap(slideAssets)),
-  ]);
+  const owned = await ownedAssets(
+    sql,
+    deck.ownerSub,
+    documentAssets(deck.document)
+  );
   const assetHref = (sha256: string) =>
     owned.has(sha256) ? `/s/${publicId}/assets/${sha256}` : null;
-  const template = templateOf(deck.document).id;
 
   return (
     <TaskShell
@@ -57,7 +59,7 @@ export default async function PublicDeck({
             <SlideView
               slide={slide}
               number={i + 1}
-              template={template}
+              layout={layoutOf(deck.document, slide)}
               assetHref={assetHref}
             />
           </li>

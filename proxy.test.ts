@@ -120,7 +120,6 @@ describe("proxy", () => {
       "/oauth/approve",
       "/.well-known/oauth-authorization-server",
       "/s/abc",
-      "/template/winlab-background.png",
       "/_next/static/chunk.js",
       "/favicon.ico",
     ]) {

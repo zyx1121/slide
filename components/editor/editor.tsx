@@ -138,7 +138,7 @@ import {
   TITLE_ID,
 } from "@/lib/editor/text-session";
 import { holdsText } from "@/lib/render/svg";
-import { templateOf, type TemplateId } from "@/lib/render/template";
+import { layoutOf } from "@/lib/master/layout";
 import {
   blankSlide,
   deleteSlideOps,
@@ -599,8 +599,12 @@ export function Editor({
     flushNudge();
     const slideNow = docRef.current.slides[at];
     const next = startDraft(slideNow, at, target, (body) => {
-      if (!point || isEmpty(body)) return selectAll(body);
-      const frame = frameOf(slideNow, target, templateOf(docRef.current).id)!;
+      const frame = frameOf(
+        slideNow,
+        target,
+        layoutOf(docRef.current, slideNow)
+      );
+      if (!point || !frame || isEmpty(body)) return selectAll(body);
       const { pos } = pointInFrame(frame, draftLayout(frame, body), point);
       return wordAt(body, pos);
     });
@@ -1258,7 +1262,7 @@ export function Editor({
   const style = selectionStyle(slide, new Set(selection));
   // While a text is edited, the text tools show and change its selection.
   if (draft && draft.slide === index) {
-    const frame = frameOf(slide, draft.target, templateOf(doc).id);
+    const frame = frameOf(slide, draft.target, layoutOf(doc, slide));
     if (draft.target === TITLE_ID || !frame) {
       delete style.text;
     } else {
@@ -1296,7 +1300,6 @@ export function Editor({
   const canvasText = (at: number): CanvasText | null =>
     draft && draft.slide === at ? { draft, textarea, keys: textKeys } : null;
   const paused = !saving.accepting || invalid !== null || deleted;
-  const shownTemplate = templateOf(doc).id;
   const nudging = nudge.dx !== 0 || nudge.dy !== 0;
 
   const problem =
@@ -1393,7 +1396,7 @@ export function Editor({
                     className="w-full"
                     slide={i === index ? shown : item}
                     number={i + 1}
-                    template={shownTemplate}
+                    layout={layoutOf(doc, i === index ? shown : item)}
                     selection={i === index ? selection : NONE}
                     onSelect={(ids) => select(i, ids)}
                     onMove={(ids, dx, dy) =>
@@ -1575,8 +1578,7 @@ export function Editor({
             </fieldset>
             <Separator orientation="vertical" className="mx-1 my-2" />
             <PageList
-              slides={doc.slides}
-              template={templateOf(doc).id}
+              document={doc}
               index={visible}
               onPick={(target) => goTo(target)}
             />
@@ -1664,17 +1666,16 @@ export function Editor({
  * the slide, so the slide keeps the page.
  */
 function PageList({
-  slides,
-  template,
+  document,
   index,
   onPick,
 }: {
-  slides: DeckDocument["slides"];
-  template: TemplateId;
+  document: DeckDocument;
   index: number;
   onPick: (index: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const { slides } = document;
   return (
     <DockPopover
       tip="所有頁面"
@@ -1701,7 +1702,7 @@ function PageList({
               <SlideView
                 slide={slide}
                 number={i + 1}
-                template={template}
+                layout={layoutOf(document, slide)}
                 decorative
                 className={cn(i === index && "ring-2 ring-foreground")}
               />

@@ -73,6 +73,9 @@ export type TextLayout = {
 
 /** PowerPoint's default text insets: 0.1 in left and right, 0.05 in top and bottom. */
 export const DEFAULT_INSET = { x: 14.4, y: 7.2 };
+
+/** Text a member types into a shape or text box without choosing a size: 18 pt. */
+export const DEFAULT_TEXT = { size: 36, color: "#000000" };
 /** Indent per paragraph level: 0.5 in. */
 export const LEVEL_INDENT = 72;
 /** Hanging indents PowerPoint gives a bullet (0.375 in) and a number (0.5 in). */

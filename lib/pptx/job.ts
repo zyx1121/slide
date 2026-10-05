@@ -1,6 +1,7 @@
 // One .pptx read into a deck, its pictures checked but not stored: the work
 // an import worker does (scripts/import-worker.ts, run by lib/pptx/pool.ts).
-import { AssetError, inspectAsset, slideAssets } from "../assets/store";
+import { documentAssets } from "../assets/drawn";
+import { AssetError, inspectAsset } from "../assets/store";
 import { type ImportResult, importPptx } from "./import";
 import { PptxError } from "./read";
 
@@ -39,8 +40,9 @@ export async function runImportJob(job: ImportJob): Promise<ImportOutcome> {
       },
       job.fallbackTitle
     );
-    // Only the pictures the deck draws: shapes over the limits were dropped.
-    const drawn = new Set(result.document.slides.flatMap(slideAssets));
+    // Only the pictures the deck draws, on its slides and in its layouts'
+    // artwork: shapes over the limits were dropped.
+    const drawn = new Set(documentAssets(result.document));
     return {
       ok: true,
       result,

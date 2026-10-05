@@ -4,6 +4,7 @@ import type postgres from "postgres";
 
 import { readAsset } from "../assets/store";
 import type { Deck } from "../deck/store";
+import { readMasterFile } from "../master/store";
 import { inSpan } from "../otel/span";
 import { exportPptx, type Media } from "./export";
 
@@ -32,6 +33,9 @@ export async function pptxBytes(
     const asset = await readAsset(db, deck.ownerSub, sha256);
     if (asset) media.set(sha256, { mime: asset.mime, data: asset.data });
   }
+  const master = await readMasterFile(db, deck.document.master.file);
+  if (!master)
+    throw new Error(`master file ${deck.document.master.file} is missing`);
   const bytes = await inSpan(
     "export pptx",
     {
@@ -39,7 +43,7 @@ export async function pptxBytes(
       "export.pictures": media.size,
     },
     (set) => {
-      const out = exportPptx(deck.document, media);
+      const out = exportPptx(deck.document, media, master);
       set({ "export.bytes": out.length });
       return out;
     }

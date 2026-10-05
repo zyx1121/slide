@@ -3,9 +3,9 @@
 // .pptx export and import map one to one. Every write is validated here.
 import * as z from "zod";
 
-import { TEMPLATE_IDS } from "../render/template";
 import {
   DECK_TITLE_MAX,
+  MASTER_MAX_LENGTH,
   NOTES_MAX,
   SHAPE_TEXT_MAX,
   SLIDE_TEXT_MAX,
@@ -90,8 +90,24 @@ const box = {
   rotation: z.number().min(-360).max(360).optional(),
 };
 
+/**
+ * A fill: one color, or a linear gradient whose stops run along `angle`
+ * degrees (0 left to right, 90 top to bottom) across the box it fills, as
+ * DrawingML's a:gradFill with a:lin.
+ */
+export const Fill = z.union([
+  Color,
+  z.strictObject({
+    angle: z.number().min(-360).max(360),
+    stops: z
+      .array(z.strictObject({ at: z.number().min(0).max(1), color: Color }))
+      .min(2)
+      .max(16),
+  }),
+]);
+
 const paint = {
-  fill: Color.nullable().optional(),
+  fill: Fill.nullable().optional(),
   stroke: Stroke.nullable().optional(),
 };
 
@@ -253,21 +269,81 @@ export const Shape = z.discriminatedUnion("kind", [
   Line,
 ]);
 
+/** Where a layout puts the title or the slide number, and how it looks. */
+export const Placeholder = z.strictObject({
+  ...box,
+  size: z.number().min(1).max(800),
+  bold: z.boolean(),
+  color: Color,
+  align: z.enum(["left", "center", "right", "justify"]),
+  anchor: z.enum(["top", "middle", "bottom"]),
+  inset: z.strictObject({
+    x: z.number().min(0).max(1000),
+    y: z.number().min(0).max(1000),
+  }),
+});
+
+/**
+ * A slide layout of the master, read from the .pptx: its background, the
+ * artwork drawn under every slide on it (the master's, when `master` says
+ * the layout shows it, then the layout's own) and its title and slide
+ * number.
+ */
+export const Layout = z.strictObject({
+  name: Text(200),
+  background: Fill.nullable(),
+  /** Whether the master's artwork is drawn under this layout's. */
+  master: z.boolean(),
+  shapes: z.array(Shape).max(200),
+  title: Placeholder.nullable(),
+  number: Placeholder.nullable(),
+});
+
+/**
+ * The slide master the deck is drawn on. `file` is the sha256 of the master
+ * file (the .pptx without its slides) that an export starts from.
+ */
+export const Master = z.strictObject({
+  file: z.string().regex(/^[0-9a-f]{64}$/),
+  /** The master's part in that file; its layouts are listed in order. */
+  part: z.string().regex(/^ppt\/slideMasters\/[\w.-]{1,100}\.xml$/),
+  name: Text(200),
+  /** The master's own artwork, drawn under the layouts that show it. */
+  shapes: z.array(Shape).max(200),
+  layouts: z.array(Layout).min(1).max(64),
+  /** The layout a new slide takes. */
+  layout: z.number().int().min(0).max(63),
+  /** The colors the rule check holds shapes to, when the master has one. */
+  palette: z.array(Color).max(64).optional(),
+});
+
 export const Slide = z.strictObject({
   id: Id,
-  /** The title placeholder; its position and style come from the template. */
+  /** The title placeholder; its position and style come from the layout. */
   title: Text(500),
+  /** Its layout, by index in the master; the master's default when left out. */
+  layout: z.number().int().min(0).max(63).optional(),
   /** Back to front: later shapes are drawn on top. */
   shapes: z.array(Shape).max(1000),
   notes: Text(NOTES_MAX).optional(),
 });
 
+/** The text a shape holds, in UTF-16 code units. */
+function shapeTextLength(shape: z.infer<typeof Shape>): number {
+  if (shape.kind === "line" || shape.kind === "image" || !shape.text) return 0;
+  let length = 0;
+  for (const paragraph of shape.text.paragraphs) {
+    for (const run of paragraph.runs) length += run.text.length;
+  }
+  return length;
+}
+
 export const DeckDocument = z
   .strictObject({
     schema: z.literal(SCHEMA_VERSION),
     title: z.string().trim().min(1).max(DECK_TITLE_MAX).refine(noNul, NUL),
-    /** The template the slides are drawn on; plain when left out. */
-    template: z.enum(TEMPLATE_IDS).optional(),
+    /** The slide master the slides are drawn on. */
+    master: Master,
     slides: z.array(Slide).min(1).max(500),
   })
   .superRefine((document, ctx) => {
@@ -285,8 +361,60 @@ export const DeckDocument = z
       }
     };
 
+    // The master's artwork is drawn under slides, so it is held to the
+    // same text limits as a slide, and the master as a whole to a size.
+    const artwork = [
+      { shapes: document.master.shapes, path: ["master", "shapes"] },
+      ...document.master.layouts.map((layout, l) => ({
+        shapes: layout.shapes,
+        path: ["master", "layouts", l, "shapes"],
+      })),
+    ];
+    let artworkText = 0;
+    for (const { shapes, path } of artwork) {
+      shapes.forEach((shape, i) => {
+        const text = shapeTextLength(shape);
+        artworkText += text;
+        if (text > SHAPE_TEXT_MAX) {
+          ctx.addIssue({
+            code: "custom",
+            message: `a shape holds at most ${SHAPE_TEXT_MAX} characters of text`,
+            path: [...path, i, "text"],
+          });
+        }
+      });
+    }
+    if (artworkText > SLIDE_TEXT_MAX) {
+      ctx.addIssue({
+        code: "custom",
+        message: `a master's artwork holds at most ${SLIDE_TEXT_MAX} characters of text`,
+        path: ["master"],
+      });
+    }
+    if (JSON.stringify(document.master).length > MASTER_MAX_LENGTH) {
+      ctx.addIssue({
+        code: "custom",
+        message: `a master is at most ${MASTER_MAX_LENGTH} characters as JSON`,
+        path: ["master"],
+      });
+    }
+    const layouts = document.master.layouts.length;
+    if (document.master.layout >= layouts) {
+      ctx.addIssue({
+        code: "custom",
+        message: `the master has ${layouts} layouts`,
+        path: ["master", "layout"],
+      });
+    }
     document.slides.forEach((slide, s) => {
       claim(slide.id, ["slides", s, "id"]);
+      if (slide.layout !== undefined && slide.layout >= layouts) {
+        ctx.addIssue({
+          code: "custom",
+          message: `the master has ${layouts} layouts`,
+          path: ["slides", s, "layout"],
+        });
+      }
       let slideText = slide.title.length;
       slide.shapes.forEach((shape, i) => {
         if (shape.kind === "line" || shape.kind === "image" || !shape.text) {
@@ -343,6 +471,10 @@ export const DeckDocument = z
   });
 
 export type DeckDocument = z.infer<typeof DeckDocument>;
+export type Master = z.infer<typeof Master>;
+export type Layout = z.infer<typeof Layout>;
+export type Placeholder = z.infer<typeof Placeholder>;
+export type Fill = z.infer<typeof Fill>;
 export type Slide = z.infer<typeof Slide>;
 export type Shape = z.infer<typeof Shape>;
 export type TextBody = z.infer<typeof TextBody>;

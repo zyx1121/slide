@@ -1,7 +1,6 @@
-import type { Slide } from "@/lib/deck/schema";
+import type { Layout, Slide } from "@/lib/deck/schema";
 import { assetUrl } from "@/lib/editor/upload";
 import { renderSlideSvg } from "@/lib/render/svg";
-import { TEMPLATES, type TemplateId } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
 /**
@@ -11,14 +10,15 @@ import { cn } from "@/lib/utils";
 export function SlideView({
   slide,
   number,
-  template,
+  layout,
   decorative = false,
   assetHref = assetUrl,
   className,
 }: {
   slide: Slide;
   number: number;
-  template: TemplateId;
+  /** The slide's layout: background, artwork, title and number. */
+  layout: Layout;
   /** Hidden from screen readers, as a thumbnail inside a labelled link. */
   decorative?: boolean;
   /** Where pictures load from: the member's assets by default. */
@@ -27,8 +27,7 @@ export function SlideView({
 }) {
   const svg = renderSlideSvg(slide, {
     slideNumber: number,
-    template,
-    background: TEMPLATES[template].background,
+    layout,
     assetHref,
   });
   return (

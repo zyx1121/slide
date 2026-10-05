@@ -7,6 +7,10 @@
 import { newId } from "../ids";
 import {
   DeckDocument,
+  type Fill,
+  type Layout,
+  type Master,
+  type Placeholder as LayoutPlaceholder,
   PresetGeometry,
   SCHEMA_VERSION,
   type Shape,
@@ -15,13 +19,15 @@ import {
 } from "../deck/schema";
 import {
   DECK_TITLE_MAX,
+  MASTER_MAX_LENGTH,
   NOTES_MAX,
   SHAPE_TEXT_MAX,
   SLIDE_TEXT_MAX,
 } from "../deck/limits";
 import { formatPath, type PathCommand, PATH_UNITS } from "../deck/path";
-import { DEFAULT_TEXT } from "../render/template";
+import { DEFAULT_TEXT } from "../render/text";
 import { readColor, readColorMap, readTheme, type Theme } from "./color";
+import { masterFile } from "./master-file";
 import {
   child,
   children,
@@ -34,6 +40,7 @@ import {
   PptxError,
   relationships,
   textOf,
+  unzipMasterParts,
   unzipPptx,
 } from "./read";
 
@@ -49,7 +56,12 @@ export type ImportReport = {
   skipped: Record<string, number>;
 };
 
-export type ImportResult = { document: DeckDocument; report: ImportReport };
+export type ImportResult = {
+  document: DeckDocument;
+  report: ImportReport;
+  /** The file's master file (lib/pptx/master-file.ts), to store. */
+  master: { bytes: Uint8Array; sha256: string };
+};
 
 type Paragraph = TextBody["paragraphs"][number];
 type Run = Paragraph["runs"][number];
@@ -69,6 +81,12 @@ const shapeTextLength = (body: TextBody) =>
     (sum, p) => sum + p.runs.reduce((n, r) => n + r.text.length, 0),
     0
   );
+
+/** The text one shape holds. */
+const shapeText = (shape: Shape) =>
+  shape.kind !== "line" && shape.kind !== "image" && shape.text
+    ? shapeTextLength(shape.text)
+    : 0;
 
 function slideTextLength(slide: Slide): number {
   let length = slide.title.length;
@@ -122,6 +140,7 @@ const MAX_SHAPES = 1000;
 /** Level defaults from a master's text style: size, bullet and color. */
 type LevelStyle = {
   size?: number;
+  bold?: boolean;
   bullet?: "bullet" | "number" | "none";
   bulletChar?: string;
   color?: string;
@@ -207,6 +226,8 @@ type Context = {
   saveImage: SaveImage;
   pictures: Map<string, string | null>;
   skip: (kind: string) => void;
+  /** Reading a master's or layout's artwork: placeholders are left out. */
+  artwork?: boolean;
 };
 
 const clean = (text: string) => text.replace(/\u0000/g, "");
@@ -251,6 +272,7 @@ function readLevels(
     const sz = num(rPr, "sz");
     levels.push({
       size: sz !== undefined ? (sz / 50) * ctx.k : undefined,
+      bold: rPr?.attrs.b !== undefined ? rPr.attrs.b === "1" : undefined,
       bulletChar: bulletCharOf(pPr),
       bullet: child(pPr, "a:buNone")
         ? "none"
@@ -305,6 +327,7 @@ function mergeLevels(...layers: (LevelStyle[] | undefined)[]): LevelStyle[] {
   for (const layer of layers) {
     layer?.forEach((level, i) => {
       if (level.size !== undefined) out[i].size = level.size;
+      if (level.bold !== undefined) out[i].bold = level.bold;
       if (level.bullet !== undefined) out[i].bullet = level.bullet;
       if (level.bulletChar !== undefined) out[i].bulletChar = level.bulletChar;
       if (level.color !== undefined) out[i].color = level.color;
@@ -405,7 +428,8 @@ function readText(
         style?.color ??
         defaults.color;
       if (color) out.color = color;
-      if (rPr?.attrs.b === "1" || (defaults.bold && rPr?.attrs.b !== "0"))
+      const b = rPr?.attrs.b;
+      if (b === "1" || (b === undefined && (style?.bold ?? defaults.bold)))
         out.bold = true;
       if (rPr?.attrs.i === "1") out.italic = true;
       if (rPr?.attrs.u && rPr.attrs.u !== "none") out.underline = true;
@@ -544,16 +568,41 @@ function readStroke(
   return dash ? { color, width, dash } : { color, width };
 }
 
+/**
+ * A gradient fill: linear, with its stops; one color when it has a single
+ * stop. Path gradients are drawn linear and counted as skipped.
+ */
+function readGradient(gradient: El, ctx: Context): Fill | null {
+  const stops = children(path(gradient, "a:gsLst"), "a:gs")
+    .map((gs) => ({
+      at: clamp((num(gs, "pos") ?? 0) / 100000, 0, 1),
+      color: readColor(gs, ctx.theme, ctx.colorMap),
+    }))
+    .filter((stop): stop is { at: number; color: string } => !!stop.color)
+    .sort((a, b) => a.at - b.at)
+    .slice(0, 16);
+  if (stops.length === 0) return null;
+  if (stops.length === 1) return stops[0].color;
+  const lin = child(gradient, "a:lin");
+  if (!lin) ctx.skip("gradient other than linear");
+  return {
+    angle:
+      Math.round(clamp((num(lin, "ang") ?? 5400000) / 60000, -360, 360) * 100) /
+      100,
+    stops,
+  };
+}
+
 function readFill(
   spPr: El | undefined,
   style: El | undefined,
   ctx: Context
-): string | null {
+): Fill | null {
   if (child(spPr, "a:noFill")) return null;
   const solid = readColor(child(spPr, "a:solidFill"), ctx.theme, ctx.colorMap);
   if (solid) return solid;
-  const gradient = path(spPr, "a:gradFill", "a:gsLst", "a:gs");
-  if (gradient) return readColor(gradient, ctx.theme, ctx.colorMap) ?? null;
+  const gradient = child(spPr, "a:gradFill");
+  if (gradient) return readGradient(gradient, ctx);
   const fillRef = child(style, "a:fillRef");
   if (fillRef && (num(fillRef, "idx") ?? 0) > 0) {
     return readColor(fillRef, ctx.theme, ctx.colorMap) ?? null;
@@ -648,6 +697,7 @@ async function readShapes(
         await readSp(el, ctx, place, out, ids, lines, title);
         break;
       case "p:pic":
+        if (ctx.artwork && path(el, "p:nvPicPr", "p:nvPr", "p:ph")) break;
         await readPic(el, ctx, place, out, ids);
         break;
       case "p:cxnSp":
@@ -1004,6 +1054,7 @@ async function readSp(
   const prst = child(spPr, "a:prstGeom")?.attrs.prst;
   const numericId = path(nv, "p:cNvPr")?.attrs.id;
 
+  if (ph && ctx.artwork) return;
   if (ph) {
     const type = ph.attrs.type ?? "obj";
     if (type === "title" || type === "ctrTitle") {
@@ -1315,6 +1366,353 @@ function placeholdersOf(tree: El | undefined, master: boolean): Placeholder[] {
   return out;
 }
 
+/** What reading a file's parts needs, shared by its slides and its master. */
+type Reader = {
+  /** When reading began, for the time budget. */
+  started: number;
+  parts: Map<string, Uint8Array>;
+  xml: (name: string | undefined) => El | undefined;
+  relsOf: (name: string) => Context["rels"];
+  k: number;
+  dx: number;
+  dy: number;
+  defaultTextStyle: El | undefined;
+  saveImage: SaveImage;
+  pictures: Map<string, string | null>;
+  skip: (kind: string) => void;
+};
+
+const relTarget = (rels: Context["rels"], type: string) =>
+  [...rels.values()].find((r) => r.type.endsWith(type))?.target;
+
+/** The reading context of a part drawn on a master (a slide or a layout). */
+function contextFor(
+  reader: Reader,
+  name: string,
+  master: El | undefined,
+  layout: El | undefined,
+  masterName: string | undefined
+): Context {
+  const themeName =
+    masterName && relTarget(reader.relsOf(masterName), "/theme");
+  const theme = readTheme(reader.xml(themeName));
+  const colorMap = readColorMap(child(master, "p:clrMap"));
+  const base = { theme, colorMap, k: reader.k };
+  const otherStyle = readLevels(
+    path(master, "p:txStyles", "p:otherStyle"),
+    base
+  );
+  return {
+    parts: reader.parts,
+    theme,
+    colorMap,
+    k: reader.k,
+    dx: reader.dx,
+    dy: reader.dy,
+    bodyStyle: readLevels(path(master, "p:txStyles", "p:bodyStyle"), base),
+    otherStyle,
+    // The presentation's defaults, then the master's for other text.
+    shapeStyle: mergeLevels(
+      withoutColor(readLevels(reader.defaultTextStyle, base)),
+      withoutColor(otherStyle)
+    ),
+    placeholders: [
+      ...placeholdersOf(path(layout, "p:cSld", "p:spTree"), false),
+      ...placeholdersOf(path(master, "p:cSld", "p:spTree"), true),
+    ],
+    rels: reader.relsOf(name),
+    saveImage: reader.saveImage,
+    pictures: reader.pictures,
+    skip: reader.skip,
+  };
+}
+
+/** A background's fill: one color or a linear gradient; null for none. */
+function readBackground(bg: El | undefined, ctx: Context): Fill | null {
+  const bgPr = child(bg, "p:bgPr");
+  if (!bgPr) {
+    // A reference into the theme's background styles: its color only.
+    return readColor(child(bg, "p:bgRef"), ctx.theme, ctx.colorMap) ?? null;
+  }
+  const solid = readColor(child(bgPr, "a:solidFill"), ctx.theme, ctx.colorMap);
+  if (solid) return solid;
+  const gradient = child(bgPr, "a:gradFill");
+  if (gradient) return readGradient(gradient, ctx);
+  if (child(bgPr, "a:blipFill")) ctx.skip("background picture");
+  return null;
+}
+
+/** The placeholder of a type in a shape tree, with its shape element. */
+function placeholderSp(tree: El | undefined, types: string[]): El | undefined {
+  return children(tree, "p:sp").find((sp) =>
+    types.includes(path(sp, "p:nvSpPr", "p:nvPr", "p:ph")?.attrs.type ?? "obj")
+  );
+}
+
+/**
+ * Where a layout puts its title or slide number, and how the text looks:
+ * the layout's placeholder, then the master's, over the master's text style,
+ * as PowerPoint inherits them. Null when the layout has no such placeholder.
+ */
+function readPlaceholder(
+  types: string[],
+  style: El | undefined,
+  layoutTree: El | undefined,
+  masterTree: El | undefined,
+  ctx: Context
+): LayoutPlaceholder | null {
+  const own = placeholderSp(layoutTree, types);
+  if (!own) return null;
+  const inherited = placeholderSp(masterTree, types);
+  const xfrm =
+    path(own, "p:spPr", "a:xfrm") ?? path(inherited, "p:spPr", "a:xfrm");
+  const box = boxOf(xfrm, ctx, slidePlace(ctx));
+  if (!box) return null;
+  const base = { theme: ctx.theme, colorMap: ctx.colorMap, k: ctx.k };
+  // The first paragraph of each, and its first run: a slide number's
+  // style sits on its field.
+  const firstRun = (sp: El | undefined) => {
+    const p = child(child(sp, "p:txBody"), "a:p");
+    return {
+      pPr: child(p, "a:pPr"),
+      rPr: p?.children.find((c) => c.tag === "a:r" || c.tag === "a:fld")
+        ? child(
+            p.children.find((c) => c.tag === "a:r" || c.tag === "a:fld"),
+            "a:rPr"
+          )
+        : child(p, "a:endParaRPr"),
+    };
+  };
+  const levelOne = (list: El | undefined) => child(list, "a:lvl1pPr");
+  const layers = [
+    levelOne(style),
+    levelOne(path(inherited, "p:txBody", "a:lstStyle")),
+    levelOne(path(own, "p:txBody", "a:lstStyle")),
+  ];
+  const level = mergeLevels(
+    readLevels(style, base),
+    readLevels(path(inherited, "p:txBody", "a:lstStyle"), base),
+    readLevels(path(own, "p:txBody", "a:lstStyle"), base)
+  )[0];
+  const runs = [firstRun(inherited), firstRun(own)];
+  let bold = false;
+  for (const pPr of layers) {
+    const b = child(pPr, "a:defRPr")?.attrs.b;
+    if (b !== undefined) bold = b === "1";
+  }
+  let size = level.size ?? 36 * ctx.k;
+  let color = level.color;
+  let align = level.align;
+  for (const run of runs) {
+    const sz = num(run.rPr, "sz");
+    if (sz !== undefined) size = (sz / 50) * ctx.k;
+    if (run.rPr?.attrs.b !== undefined) bold = run.rPr.attrs.b === "1";
+    color =
+      readColor(child(run.rPr, "a:solidFill"), ctx.theme, ctx.colorMap) ??
+      color;
+    align = alignOf(run.pPr?.attrs.algn) ?? align;
+  }
+  const bodyPr = (sp: El | undefined) => path(sp, "p:txBody", "a:bodyPr");
+  const attr = (name: string) =>
+    bodyPr(own)?.attrs[name] ?? bodyPr(inherited)?.attrs[name];
+  const anchor = attr("anchor");
+  const inset = (name: string, fallback: number) => {
+    const value = Number(attr(name));
+    return Number.isFinite(value) && attr(name) !== undefined
+      ? clamp((value / EMU) * ctx.k, 0, 1000)
+      : (fallback / EMU) * ctx.k;
+  };
+  const textColor = readColor(
+    {
+      tag: "a:solidFill",
+      attrs: {},
+      text: "",
+      children: [
+        { tag: "a:schemeClr", attrs: { val: "tx1" }, text: "", children: [] },
+      ],
+    },
+    ctx.theme,
+    ctx.colorMap
+  );
+  return {
+    x: coord(box.x),
+    y: coord(box.y),
+    w: length(box.w),
+    h: length(box.h),
+    size: Math.round(clamp(size, 1, 800) * 100) / 100,
+    bold,
+    color: (color ?? textColor ?? "#000000").slice(0, 7),
+    align: align ?? "left",
+    anchor: anchor === "ctr" ? "middle" : anchor === "b" ? "bottom" : "top",
+    inset: {
+      x: Math.round(inset("lIns", 91440) * 100) / 100,
+      y: Math.round(inset("tIns", 45720) * 100) / 100,
+    },
+  };
+}
+
+/** A shape tree's artwork, its connectors glued as on a slide. */
+async function readArtwork(
+  tree: El | undefined,
+  ctx: Context,
+  out: Shape[]
+): Promise<void> {
+  if (!tree) return;
+  const ids = new Map<string, Shape>();
+  const lines: PendingLine[] = [];
+  const mine: Shape[] = [];
+  await readShapes(
+    tree,
+    { ...ctx, artwork: true },
+    slidePlace(ctx),
+    mine,
+    ids,
+    lines,
+    { text: "" }
+  );
+  for (const { shape, st, end } of lines) {
+    for (const [side, glue] of [
+      ["start", st],
+      ["end", end],
+    ] as const) {
+      const target = glue && ids.get(glue.id);
+      if (target && target.kind !== "line") {
+        shape[side] = { shape: target.id, site: siteFor(target, glue.idx) };
+      }
+    }
+    mine.push(shape);
+  }
+  if (mine.length > 200) ctx.skip("artwork over 200 shapes");
+  out.push(...mine.slice(0, Math.max(0, 200 - out.length)));
+}
+
+/** Layout types PowerPoint gives a new content slide, best first. */
+const CONTENT_LAYOUTS = ["obj", "tx", "titleOnly"];
+
+/**
+ * A slide master as the deck's master: each of its layouts with its
+ * background, artwork, title and slide number; and which layout part is
+ * which index. `file` is left empty for the caller, which stores the file.
+ */
+async function readMaster(
+  reader: Reader,
+  masterName: string,
+  /** How many slides use each layout part. */
+  layoutUses: Map<string, number>
+): Promise<{ master: Master; layoutIndex: Map<string, number> }> {
+  const masterXml = reader.xml(masterName);
+  const masterRels = reader.relsOf(masterName);
+  const masterTree = path(masterXml, "p:cSld", "p:spTree");
+  const layoutNames = children(
+    child(masterXml, "p:sldLayoutIdLst"),
+    "p:sldLayoutId"
+  )
+    .map((id) => masterRels.get(id.attrs["r:id"] ?? "")?.target)
+    .filter((name): name is string => !!name && reader.parts.has(name))
+    // A layout part listed twice would copy one into many.
+    .filter((name, i, all) => all.indexOf(name) === i)
+    .slice(0, 64);
+  const layouts: Layout[] = [];
+  const layoutIndex = new Map<string, number>();
+  // What the master's artwork leaves out is reported apart from slides'.
+  const skip = reader.skip;
+  reader = { ...reader, skip: (kind) => skip(`master: ${kind}`) };
+  const masterCtx = contextFor(
+    reader,
+    masterName,
+    masterXml,
+    undefined,
+    masterName
+  );
+  // The master's artwork is read once; layouts say whether they show it.
+  const masterShapes: Shape[] = [];
+  await readArtwork(masterTree, masterCtx, masterShapes);
+  const ranks: number[] = [];
+  for (const name of layoutNames) {
+    if (Date.now() - reader.started > TIME_BUDGET_MS) {
+      throw new PptxError("too-large", "the file takes too long to read");
+    }
+    const layoutXml = reader.xml(name);
+    const ctx = contextFor(reader, name, masterXml, layoutXml, masterName);
+    const layoutTree = path(layoutXml, "p:cSld", "p:spTree");
+    const shapes: Shape[] = [];
+    await readArtwork(layoutTree, ctx, shapes);
+    const background = readBackground(
+      path(layoutXml, "p:cSld", "p:bg") ?? path(masterXml, "p:cSld", "p:bg"),
+      ctx
+    );
+    const titleStyle = path(masterXml, "p:txStyles", "p:titleStyle");
+    const otherStyle = path(masterXml, "p:txStyles", "p:otherStyle");
+    const index = layouts.length;
+    layouts.push({
+      name: clean(path(layoutXml, "p:cSld")?.attrs.name ?? "").slice(0, 200),
+      background,
+      master: layoutXml?.attrs.showMasterSp !== "0",
+      shapes,
+      title: readPlaceholder(
+        ["title", "ctrTitle"],
+        titleStyle,
+        layoutTree,
+        masterTree,
+        ctx
+      ),
+      number: readPlaceholder(
+        ["sldNum"],
+        otherStyle,
+        layoutTree,
+        masterTree,
+        ctx
+      ),
+    });
+    layoutIndex.set(name, index);
+    const rank = CONTENT_LAYOUTS.indexOf(layoutXml?.attrs.type ?? "");
+    ranks.push(rank === -1 ? CONTENT_LAYOUTS.length : rank);
+  }
+  if (layouts.length === 0) {
+    throw new PptxError("malformed", "the slide master has no layouts");
+  }
+  const theme = reader.xml(relTarget(masterRels, "/theme"));
+  const name =
+    clean(theme?.attrs.name ?? "").trim() ||
+    clean(path(masterXml, "p:cSld")?.attrs.name ?? "").trim() ||
+    "母片";
+  // Artwork over the limits a slide has (text, size) is left out whole:
+  // the layouts still give the slides their places.
+  const artwork = [masterShapes, ...layouts.map((layout) => layout.shapes)];
+  for (const shapes of artwork) {
+    for (let i = shapes.length - 1; i >= 0; i--) {
+      if (shapeText(shapes[i]) > SHAPE_TEXT_MAX) {
+        shapes.splice(i, 1);
+        reader.skip("text over the limit");
+      }
+    }
+  }
+  const text = artwork.flat().reduce((sum, shape) => sum + shapeText(shape), 0);
+  const length = JSON.stringify({ masterShapes, layouts }).length;
+  if (text > SLIDE_TEXT_MAX || length > MASTER_MAX_LENGTH * 0.9) {
+    for (const shapes of artwork) shapes.length = 0;
+    reader.skip("artwork over the limit");
+  }
+  return {
+    master: {
+      file: "",
+      part: masterName,
+      name: name.slice(0, 200),
+      shapes: masterShapes,
+      layouts,
+      // The layout most slides use, a content layout (by its type) among
+      // equals; files often mark every layout one type, so use goes first.
+      layout: layouts
+        .map((_, i) => i)
+        .sort((a, b) => {
+          const use = (i: number) => layoutUses.get(layoutNames[i] ?? "") ?? 0;
+          return use(b) - use(a) || ranks[a] - ranks[b] || a - b;
+        })[0],
+    },
+    layoutIndex,
+  };
+}
+
 /** A .pptx file as a deck document and a report of what was left out. */
 export async function importPptx(
   bytes: Uint8Array,
@@ -1366,10 +1764,52 @@ export async function importPptx(
     skipped[kind] = (skipped[kind] ?? 0) + 1;
   };
 
+  const reader: Reader = {
+    started,
+    parts,
+    xml,
+    relsOf,
+    k,
+    dx,
+    dy,
+    defaultTextStyle,
+    saveImage,
+    pictures: new Map(),
+    skip,
+  };
+
   const slideIds = children(child(presentation, "p:sldIdLst"), "p:sldId");
+  // The deck takes the master most of its slides use (the first one when
+  // it has no slides); slides on another master move to its default layout.
+  const uses = new Map<string, number>();
+  const layoutUses = new Map<string, number>();
+  for (const sldId of slideIds.slice(0, MAX_SLIDES)) {
+    const target = presentationRels.get(sldId.attrs["r:id"] ?? "")?.target;
+    const layoutName = target && relTarget(relsOf(target), "/slideLayout");
+    const name = layoutName && relTarget(relsOf(layoutName), "/slideMaster");
+    if (name && parts.has(name)) uses.set(name, (uses.get(name) ?? 0) + 1);
+    if (layoutName) {
+      layoutUses.set(layoutName, (layoutUses.get(layoutName) ?? 0) + 1);
+    }
+  }
+  const firstMaster = children(
+    child(presentation, "p:sldMasterIdLst"),
+    "p:sldMasterId"
+  )
+    .map((id) => presentationRels.get(id.attrs["r:id"] ?? "")?.target)
+    .find((name) => name && parts.has(name));
+  const masterName =
+    [...uses].sort((a, b) => b[1] - a[1])[0]?.[0] ?? firstMaster;
+  if (!masterName)
+    throw new PptxError("malformed", "the file has no slide master");
+  const { master, layoutIndex } = await readMaster(
+    reader,
+    masterName,
+    layoutUses
+  );
+  const file = masterFile(unzipMasterParts(bytes));
   if (slideIds.length > MAX_SLIDES) skip("over 500 slides");
   const slides: Slide[] = [];
-  const pictures = new Map<string, string | null>();
   let shapeCount = 0;
 
   const seen = new Set<string>();
@@ -1388,50 +1828,19 @@ export async function importPptx(
     seen.add(rel.target);
     const slideXml = read(rel.target)!;
     const rels = relsOf(rel.target);
-    const layoutName = [...rels.values()].find((r) =>
-      r.type.endsWith("/slideLayout")
-    )?.target;
+    const layoutName = relTarget(rels, "/slideLayout");
     const layout = xml(layoutName);
     const masterName =
-      layoutName &&
-      [...relsOf(layoutName).values()].find((r) =>
-        r.type.endsWith("/slideMaster")
-      )?.target;
-    const master = xml(masterName);
-    const themeName =
-      masterName &&
-      [...relsOf(masterName).values()].find((r) => r.type.endsWith("/theme"))
-        ?.target;
-    const theme = readTheme(xml(themeName));
-    const colorMap = readColorMap(child(master, "p:clrMap"));
-    const base = { theme, colorMap, k };
-    const otherStyle = readLevels(
-      path(master, "p:txStyles", "p:otherStyle"),
-      base
+      layoutName && relTarget(relsOf(layoutName), "/slideMaster");
+    const ctx = contextFor(
+      reader,
+      rel.target,
+      xml(masterName),
+      layout,
+      masterName
     );
-    const ctx: Context = {
-      parts,
-      theme,
-      colorMap,
-      k,
-      dx,
-      dy,
-      bodyStyle: readLevels(path(master, "p:txStyles", "p:bodyStyle"), base),
-      otherStyle,
-      // The presentation's defaults, then the master's for other text.
-      shapeStyle: mergeLevels(
-        withoutColor(readLevels(defaultTextStyle, base)),
-        withoutColor(otherStyle)
-      ),
-      placeholders: [
-        ...placeholdersOf(path(layout, "p:cSld", "p:spTree"), false),
-        ...placeholdersOf(path(master, "p:cSld", "p:spTree"), true),
-      ],
-      rels,
-      saveImage,
-      pictures,
-      skip,
-    };
+    const layoutAt = layoutName ? layoutIndex.get(layoutName) : undefined;
+    if (layoutAt === undefined) skip("slide on another master");
 
     const shapes: Shape[] = [];
     const ids = new Map<string, Shape>();
@@ -1459,6 +1868,9 @@ export async function importPptx(
       title: clean(title.text).slice(0, 500),
       shapes,
     };
+    if (layoutAt !== undefined && layoutAt !== master.layout) {
+      slide.layout = layoutAt;
+    }
     const notesName = [...rels.values()].find((r) =>
       r.type.endsWith("/notesSlide")
     )?.target;
@@ -1488,6 +1900,7 @@ export async function importPptx(
   const parsed = DeckDocument.safeParse({
     schema: SCHEMA_VERSION,
     title: documentTitle,
+    master: { ...master, file: file.sha256 },
     slides,
   });
   if (!parsed.success) {
@@ -1499,5 +1912,6 @@ export async function importPptx(
   return {
     document: parsed.data,
     report: { slides: slides.length, shapes: shapeCount, skipped },
+    master: file,
   };
 }

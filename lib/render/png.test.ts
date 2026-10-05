@@ -3,21 +3,24 @@
 import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
-import {
-  backgroundDataUri,
-  render,
-  RenderBusyError,
-  renderPng,
-  renderPngAsync,
-} from "./png";
+import { builtinAsset } from "../master/builtin-assets";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
+import { render, RenderBusyError, renderPng, renderPngAsync } from "./png";
 import { renderSlideSvg } from "./svg";
 
 const svg = () =>
   renderSlideSvg(sampleDocument().slides[0], {
     slideNumber: 1,
-    template: "winlab",
-    background: backgroundDataUri("winlab"),
+    layout: layoutOf({ master: BUILTIN_MASTERS.winlab }, undefined),
+    assetHref: (sha) => {
+      const asset = builtinAsset(sha);
+      return asset
+        ? `data:${asset.mime};base64,${asset.data.toString("base64")}`
+        : null;
+    },
   });
+
+const plainLayout = BUILTIN_MASTERS.plain.layouts[0];
 
 function pixel(image: ReturnType<typeof render>, x: number, y: number) {
   const i = (y * image.width + x) * 4;
@@ -99,8 +102,7 @@ describe("renderPng", () => {
     const image = render(
       renderSlideSvg(slide, {
         slideNumber: 1,
-        template: "plain",
-        background: null,
+        layout: plainLayout,
         assetHref: () => picture,
       })
     );
@@ -123,8 +125,7 @@ describe("renderPng", () => {
         },
         {
           slideNumber: 1,
-          template: "plain",
-          background: null,
+          layout: plainLayout,
           assetHref: () => picture,
         }
       )
@@ -157,8 +158,7 @@ describe("renderPng", () => {
       renderPng(
         renderSlideSvg(slide, {
           slideNumber: 3,
-          template: "plain",
-          background: null,
+          layout: plainLayout,
         })
       )
     ).not.toThrow();
@@ -187,7 +187,7 @@ describe("renderPngAsync", () => {
           text: { paragraphs: [{ runs: [{ text: "word ".repeat(1000) }] }] },
         })),
       },
-      { slideNumber: 1, template: "plain", background: null }
+      { slideNumber: 1, layout: plainLayout }
     );
     const failed = await renderPngAsync(heavy, 1920, {
       running: 2,

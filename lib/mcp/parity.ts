@@ -9,7 +9,7 @@ export const PARITY: Record<string, readonly string[]> = {
   restoreDeckAction: ["restore_deck", "list_decks"],
   // app/decks/[id]/actions.ts. Every kind of edit the editor saves through
   // it needs a tool: shapes, slides, slide titles and notes, the deck's
-  // title and template.
+  // title.
   editDeckAction: [
     "add_shapes",
     "update_shapes",
@@ -21,7 +21,6 @@ export const PARITY: Record<string, readonly string[]> = {
     "set_slide_title",
     "set_slide_notes",
     "rename_deck",
-    "set_template",
   ],
   loadDeckAction: ["get_deck"],
   publishDeckAction: ["publish_deck", "unpublish_deck"],

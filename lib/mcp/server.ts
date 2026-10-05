@@ -38,13 +38,10 @@ import {
 } from "../deck/store";
 import { shapeBounds, unionRects } from "../editor/geometry";
 import { plainText } from "../editor/text-edit";
-import {
-  backgroundDataUri,
-  RenderBusyError,
-  renderPngAsync,
-} from "../render/png";
+import { RenderBusyError, renderPngAsync } from "../render/png";
 import { holdsText, renderSlideSvg } from "../render/svg";
-import { TEMPLATE_IDS, templateOf } from "../render/template";
+import { layoutOf } from "../master/layout";
+import { findMaster, listMasters } from "../master/store";
 import { importDeck } from "../pptx/import-deck";
 import { fileName, pptxBytes } from "../pptx/response";
 import { checkDeck } from "../rules/check";
@@ -57,9 +54,10 @@ import {
   deleteSlide,
   moveSlide,
   type Planned,
-  retemplate,
+  remaster,
   retitle,
   setSlideNotes,
+  setSlideLayout,
   setSlideTitle,
   updateShapes,
   WriteError,
@@ -107,6 +105,14 @@ const EntryId = z
   .regex(/^[0-9]{1,18}$/)
   .describe("An entry id from list_history");
 
+const MasterRef = z
+  .string()
+  .min(1)
+  .max(64)
+  .describe(
+    "A master from list_masters: plain, winlab, or a master file's sha256"
+  );
+
 const DeckId = z
   .string()
   .regex(/^dk_[0-9a-z]{2,48}$/)
@@ -117,7 +123,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: packageJson.version },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's template (plain, or winlab when the document says so) draws each slide's background, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's slide master (document.master, from a .pptx) has layouts; each slide's layout draws its background, artwork, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
     }
   );
   const { db, sub } = context;
@@ -244,7 +250,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Check a deck",
       description:
-        "The deck's violations of the slide rules (font size, overflow, overlapping text, connectors through text, contrast, shapes off the slide, and on the WinLab template its palette), each with its slide, shape id, rule and message.",
+        "The deck's violations of the slide rules (font size, overflow, overlapping text, connectors through text, contrast, shapes off the slide, and on a master with a palette, such as WinLab's, its colors), each with its slide, shape id, rule and message.",
       inputSchema: { deck_id: DeckId },
       annotations: { readOnlyHint: true },
     },
@@ -256,15 +262,14 @@ export function createServer(context: ToolContext): McpServer {
     }
   );
 
-  /** A slide as SVG for a PNG: its pictures inline, the template drawn in. */
+  /** A slide as SVG for a PNG: its pictures inline, its layout drawn in. */
   const slideSvg = async (deck: Deck, index: number) => {
     const page = deck.document.slides[index];
-    const assets = await slideAssetUris(db, sub, page);
-    const template = templateOf(deck.document).id;
+    const layout = layoutOf(deck.document, page);
+    const assets = await slideAssetUris(db, sub, page, layout);
     return renderSlideSvg(page, {
       slideNumber: index + 1,
-      template,
-      background: backgroundDataUri(template),
+      layout,
       assetHref: (sha256) => assets.get(sha256) ?? null,
     });
   };
@@ -470,7 +475,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Add a slide",
       description:
-        "Adds a slide on the deck's template: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes, as add_shapes describes them.",
+        "Adds a slide on the master's default layout: after slide number after (0 puts it first; last by default), with a title, optional speaker notes and optional shapes, as add_shapes describes them.",
       inputSchema: {
         deck_id: DeckId,
         after: z.number().int().min(0).max(500).optional(),
@@ -501,7 +506,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Set a slide's title",
       description:
-        "Sets a slide's title, which the deck's template draws; an empty title leaves the slide without one, and a line break starts a new line.",
+        "Sets a slide's title, which the slide's layout draws; an empty title leaves the slide without one, and a line break starts a new line.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,
@@ -550,15 +555,17 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Create a deck",
       description:
-        "Creates a deck of one empty slide and returns its id. Template plain unless winlab is asked for.",
+        "Creates a deck of one empty slide and returns its id. It is drawn on the plain master unless another is named: a ref from list_masters (winlab for the WinLab master).",
       inputSchema: {
         title: z.string().trim().min(1).max(DECK_TITLE_MAX).optional(),
-        template: z.enum(TEMPLATE_IDS).optional(),
+        master: MasterRef.optional(),
       },
     },
-    async ({ title, template }) => {
-      const document = blankDocument(title);
-      if (template) document.template = template;
+    async ({ title, master }) => {
+      const found = master ? await findMaster(db, sub, master) : undefined;
+      if (found === null)
+        return failure(`No master ${master}; see list_masters.`);
+      const document = blankDocument(title, found);
       const deck = await createDeck(db, sub, document);
       return text({ id: deck.id, title: deck.title, version: deck.version });
     }
@@ -687,15 +694,48 @@ export function createServer(context: ToolContext): McpServer {
   );
 
   server.registerTool(
-    "set_template",
+    "list_masters",
     {
-      title: "Switch template",
+      title: "List slide masters",
       description:
-        "Puts the deck on another template: plain (white, black title) or winlab (the WinLab master).",
-      inputSchema: { deck_id: DeckId, template: z.enum(TEMPLATE_IDS) },
+        "The slide masters a deck can be put on, each with the names of its layouts: the built-in plain and winlab, then the masters of the .pptx files the member imported. ref is what create_deck and set_master take.",
+      inputSchema: {},
     },
-    async ({ deck_id, template }) =>
-      edit(deck_id, (document) => retemplate(document, template))
+    async () => text(await listMasters(db, sub))
+  );
+
+  server.registerTool(
+    "set_master",
+    {
+      title: "Switch slide master",
+      description:
+        "Puts the deck on another slide master, a ref from list_masters. Each slide keeps a layout of the same name when the master has one, and takes the master's default layout otherwise.",
+      inputSchema: { deck_id: DeckId, master: MasterRef },
+    },
+    async ({ deck_id, master }) => {
+      const found = await findMaster(db, sub, master);
+      if (!found) return failure(`No master ${master}; see list_masters.`);
+      return edit(deck_id, (document) => remaster(document, found));
+    }
+  );
+
+  server.registerTool(
+    "set_slide_layout",
+    {
+      title: "Set a slide's layout",
+      description:
+        "Puts a slide on another layout of the deck's master (get_deck lists them under master.layouts), by index or name. The layout draws the slide's background, artwork, title and number.",
+      inputSchema: {
+        deck_id: DeckId,
+        slide: SlideRef,
+        layout: z.union([
+          z.number().int().min(0).max(63),
+          z.string().min(1).max(200),
+        ]),
+      },
+    },
+    async ({ deck_id, slide, layout }) =>
+      edit(deck_id, (document) => setSlideLayout(document, slide, layout))
   );
 
   server.registerTool(

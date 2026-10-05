@@ -1,18 +1,13 @@
-// Server only: a deck as a .pptx file. The deck's template (template/*.pptx)
-// supplies the master, its layouts and theme, untouched; its sample slides,
-// if any, are replaced by the deck's, each on the "Title & Bullets" layout,
-// so the title and the slide number land in the master's placeholders.
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
-
+// Server only: a deck as a .pptx file. The deck's master file supplies the
+// masters, layouts and themes, untouched; the deck's slides are added, each
+// on its layout, so the title and the slide number land in its placeholders.
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 
 import type { DeckDocument } from "../deck/schema";
-import { templateOf } from "../render/template";
+import { builtinMasterFile } from "../master/builtin-assets";
+import { layoutOf } from "../master/layout";
+import { child, children, parseXml, relationships as relsOf } from "./read";
 import { esc, slideXml } from "./slide";
-
-/** The layout every exported slide uses: "Title & Bullets". */
-const LAYOUT = "../slideLayouts/slideLayout2.xml";
 
 const REL =
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
@@ -29,20 +24,18 @@ const EXTENSIONS: Record<string, string> = {
 
 export type Media = { mime: string; data: Uint8Array };
 
-const templates = new Map<string, Record<string, Uint8Array>>();
-
-/** A template's .pptx parts, read once. */
-function templateParts(file: string): Record<string, Uint8Array> {
-  let parts = templates.get(file);
-  if (!parts) {
-    parts = unzipSync(readFileSync(join(process.cwd(), "template", file)));
-    templates.set(file, parts);
-  }
-  return parts;
+/** The layout parts of a master in the file, in the master's order. */
+function layoutParts(parts: Map<string, Uint8Array>, master: string): string[] {
+  const xml = parts.get(master);
+  if (!xml) throw new Error(`the master file has no ${master}`);
+  const rels = relsOf(parts, master);
+  return children(child(parseXml(xml), "p:sldLayoutIdLst"), "p:sldLayoutId")
+    .map((id) => rels.get(id.attrs["r:id"] ?? "")?.target)
+    .filter((name): name is string => !!name && parts.has(name));
 }
 
 /**
- * A notes page for speaker notes, on the template's notes master: its slide
+ * A notes page for speaker notes, on the master file's notes master: its slide
  * image and its body, a paragraph a line, which PowerPoint's presenter view
  * shows.
  */
@@ -68,20 +61,43 @@ function relationships(entries: string[]): string {
 }
 
 /**
- * The deck as .pptx bytes. `media` holds the pictures that may be embedded,
- * by sha256; a picture without bytes there is exported as an empty frame.
+ * The deck as .pptx bytes, on its master file (`masterFile`, the bytes
+ * document.master.file names; a built-in master's when left out). `media`
+ * holds the pictures that may be embedded, by sha256; a picture without
+ * bytes there is exported as an empty frame.
  */
 export function exportPptx(
   document: DeckDocument,
-  media: ReadonlyMap<string, Media>
+  media: ReadonlyMap<string, Media>,
+  masterFile = builtinMasterFile(document.master.file)
 ): Uint8Array {
+  if (!masterFile) {
+    throw new Error(`no master file ${document.master.file}`);
+  }
   const parts: Record<string, Uint8Array> = {};
-  const base = templateParts(templateOf(document).pptx);
+  const base = unzipSync(masterFile);
+  const layouts = layoutParts(
+    new Map(Object.entries(base)),
+    document.master.part
+  );
+  if (layouts.length === 0) {
+    throw new Error(`${document.master.part} has no layouts in its file`);
+  }
+  // Slides take relationship ids past the presentation's own.
+  const firstId =
+    Math.max(
+      0,
+      ...[
+        ...strFromU8(base["ppt/_rels/presentation.xml.rels"]).matchAll(
+          /\bId="rId(\d+)"/g
+        ),
+      ].map((match) => Number(match[1]))
+    ) + 1;
   for (const [name, bytes] of Object.entries(base)) {
     if (!name.startsWith("ppt/slides/") && !name.startsWith("ppt/notesSlides/"))
       parts[name] = bytes;
   }
-  // Notes pages hang off the template's notes master.
+  // Notes pages hang off the master file's notes master.
   const notesMaster = "ppt/notesMasters/notesMaster1.xml" in base;
 
   const mediaName = (sha256: string) => {
@@ -95,10 +111,13 @@ export function exportPptx(
   const overrides: string[] = [];
   document.slides.forEach((slide, i) => {
     const n = i + 1;
-    const { xml, pictures } = slideXml(slide, n, { media: mediaName });
+    const layout = layoutOf(document, slide);
+    const { xml, pictures } = slideXml(slide, n, { media: mediaName, layout });
     parts[`ppt/slides/slide${n}.xml`] = strToU8(xml);
+    const at = slide.layout ?? document.master.layout;
+    const layoutPart = layouts[at] ?? layouts[0];
     const rels = [
-      `<Relationship Id="rId1" Type="${REL}/slideLayout" Target="${LAYOUT}"/>`,
+      `<Relationship Id="rId1" Type="${REL}/slideLayout" Target="../${layoutPart.replace(/^ppt\//, "")}"/>`,
     ];
     for (const picture of pictures) {
       const name = mediaName(picture.sha256)!;
@@ -125,8 +144,7 @@ export function exportPptx(
       );
     }
     parts[`ppt/slides/_rels/slide${n}.xml.rels`] = strToU8(relationships(rels));
-    // Relationship ids past the template's own.
-    const rId = `rId${100 + n}`;
+    const rId = `rId${firstId + i}`;
     slideIds.push(`<p:sldId id="${255 + n}" r:id="${rId}"/>`);
     slideRels.push(
       `<Relationship Id="${rId}" Type="${REL}/slide" Target="slides/slide${n}.xml"/>`
@@ -136,10 +154,20 @@ export function exportPptx(
     );
   });
 
-  const presentation = strFromU8(parts["ppt/presentation.xml"]).replace(
-    /<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>/,
-    `<p:sldIdLst>${slideIds.join("")}</p:sldIdLst>`
+  // The master file keeps no slide list; the schema puts it after the
+  // master lists, before the slide size.
+  const list = `<p:sldIdLst>${slideIds.join("")}</p:sldIdLst>`;
+  const xml = strFromU8(parts["ppt/presentation.xml"]).replace(
+    /<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/,
+    ""
   );
+  const after = [
+    "</p:handoutMasterIdLst>",
+    "</p:notesMasterIdLst>",
+    "</p:sldMasterIdLst>",
+  ].find((tag) => xml.includes(tag));
+  if (!after) throw new Error("the master file's presentation lists no master");
+  const presentation = xml.replace(after, `${after}${list}`);
   parts["ppt/presentation.xml"] = strToU8(presentation);
 
   const presentationRels = strFromU8(parts["ppt/_rels/presentation.xml.rels"])
@@ -152,7 +180,7 @@ export function exportPptx(
       /<Override PartName="\/ppt\/(slides|notesSlides)\/[^"]*"[^>]*\/>/g,
       ""
     )
-    // The template's JPEG type is not the registered one.
+    // The WinLab file's JPEG type is not the registered one.
     .replace(
       /<Default Extension="jpeg" ContentType="[^"]*"\/>/,
       '<Default Extension="jpeg" ContentType="image/jpeg"/>'

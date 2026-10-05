@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { sampleDocument } from "../deck/sample";
 import type { Shape, Slide } from "../deck/schema";
 import { checkDeck, checkSlide, contrast, type Rule } from "./check";
+import { BUILTIN_MASTERS } from "../master/layout";
 
 const slide = (shapes: Shape[], title = "Pipeline"): Slide => ({
   id: "sl_test",
@@ -27,8 +28,14 @@ const box = (
   text: { paragraphs: [{ runs: [{ text }] }] },
   ...extra,
 });
+const winlab = BUILTIN_MASTERS.winlab;
+const WINLAB = [
+  winlab.layouts[winlab.layout],
+  new Set(winlab.palette),
+] as const;
+const PLAIN = [BUILTIN_MASTERS.plain.layouts[0], null] as const;
 const rules = (s: Slide) =>
-  checkSlide(s, 0, "winlab").map((v) => [v.shape, v.rule]);
+  checkSlide(s, 0, ...WINLAB).map((v) => [v.shape, v.rule]);
 
 describe("checkSlide", () => {
   it("passes a tidy slide", () => {
@@ -51,15 +58,15 @@ describe("checkSlide", () => {
 
   it("flags colors outside the palette", () => {
     const odd = box("sh_a1", 100, 300, "Capture", { fill: "#123456" });
-    const [violation] = checkSlide(slide([odd]), 0, "winlab");
+    const [violation] = checkSlide(slide([odd]), 0, ...WINLAB);
     expect(violation.rule).toBe("palette");
     expect(violation.message).toContain("#123456");
   });
 
-  it("leaves colors free on the plain template", () => {
+  it("leaves colors free on a master without a palette", () => {
     const odd = box("sh_a1", 100, 300, "Capture", { fill: "#fafad2" });
-    expect(checkSlide(slide([odd]), 0, "plain")).toEqual([]);
-    const plain = { ...sampleDocument(), template: "plain" as const };
+    expect(checkSlide(slide([odd]), 0, ...PLAIN)).toEqual([]);
+    const plain = { ...sampleDocument(), master: BUILTIN_MASTERS.plain };
     expect(checkDeck(plain).some((v) => v.rule === "palette")).toBe(false);
   });
 

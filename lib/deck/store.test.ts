@@ -2,6 +2,7 @@ import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTestDb, TEST_DATABASE_URL } from "../test-db";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
 import { DeckError } from "./errors";
 import { sampleDocument } from "./sample";
 import {
@@ -259,17 +260,19 @@ describe.skipIf(!TEST_DATABASE_URL)("deck store (Postgres)", () => {
       id: deck.id,
       title: "Agent Sense",
       slideCount: deck.document.slides.length,
-      template: "winlab",
     });
+    expect(summary.firstLayout).toEqual(
+      layoutOf(deck.document, deck.document.slides[0])
+    );
     expect(summary.firstSlide).toEqual(deck.document.slides[0]);
   });
 
-  it("starts a new deck on the plain template", async () => {
+  it("starts a new deck on the plain master", async () => {
     await ensureUser(db, { sub: "dave-sub", name: "Dave" });
     const deck = await createDeck(db, "dave-sub");
-    expect(deck.document.template).toBe("plain");
+    expect(deck.document.master).toEqual(BUILTIN_MASTERS.plain);
     const [summary] = await listDecks(db, "dave-sub");
-    expect(summary.template).toBe("plain");
+    expect(summary.firstLayout).toEqual(BUILTIN_MASTERS.plain.layouts[0]);
   });
 
   it("renames a deck as a revision, whatever version it is at", async () => {

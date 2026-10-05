@@ -148,6 +148,7 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "list_comments",
       "list_decks",
       "list_history",
+      "list_masters",
       "move_slide",
       "publish_deck",
       "rename_deck",
@@ -157,9 +158,10 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "resolve_comment",
       "restore_deck",
       "revert",
+      "set_master",
+      "set_slide_layout",
       "set_slide_notes",
       "set_slide_title",
-      "set_template",
       "unpublish_deck",
       "update_shapes",
       "upload_image",
@@ -323,18 +325,27 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
   const json = (result: { content: { text: string }[] }) =>
     JSON.parse(result.content[0].text);
 
-  it("does what the editor does: decks, files and templates", async () => {
+  it("does what the editor does: decks, files and masters", async () => {
+    const masters = json(await call("list_masters", {}));
+    expect(masters.slice(0, 2)).toMatchObject([
+      { ref: "plain", name: "空白", layouts: ["Title & Bullets"] },
+      { ref: "winlab", name: "WinLab" },
+    ]);
     const created = json(
-      await call("create_deck", { title: "From an agent", template: "winlab" })
+      await call("create_deck", { title: "From an agent", master: "winlab" })
     );
     expect(created).toMatchObject({ title: "From an agent", version: 0 });
     const fresh = json(await call("get_deck", { deck_id: created.id }));
-    expect(fresh.document.template).toBe("winlab");
+    expect(fresh.document.master.name).toBe("WinLab");
+    expect(
+      (await call("create_deck", { master: "f".repeat(64) })).isError
+    ).toBe(true);
 
     // Document changes apply at once.
     for (const [tool, args] of [
       ["rename_deck", { title: "Renamed" }],
-      ["set_template", { template: "plain" }],
+      ["set_slide_layout", { slide: 1, layout: "Section" }],
+      ["set_master", { master: "plain" }],
       ["set_slide_title", { slide: 1, title: "Opening" }],
       ["set_slide_notes", { slide: 1, notes: "Welcome everyone." }],
       ["copy_slide", { slide: 1 }],
@@ -343,17 +354,17 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       expect(result.status).toBe("applied");
     }
     const changed = json(await call("get_deck", { deck_id: created.id }));
-    expect(changed.document).toMatchObject({
-      title: "Renamed",
-      template: "plain",
-    });
+    expect(changed.document.title).toBe("Renamed");
+    expect(changed.document.master.name).toBe("空白");
+    // The plain master has no Section layout: the slide takes its default.
+    expect(changed.document.slides[0].layout).toBeUndefined();
     expect(changed.document.slides).toHaveLength(2);
     expect(
       changed.document.slides.map((slide: { title: string }) => slide.title)
     ).toEqual(["Opening", "Opening"]);
     expect(changed.document.slides[0].notes).toBe("Welcome everyone.");
     expect(
-      (await call("set_template", { deck_id: created.id, template: "plain" }))
+      (await call("set_master", { deck_id: created.id, master: "plain" }))
         .isError
     ).toBe(true);
 

@@ -1,28 +1,27 @@
 // The slide rules as code, which the MCP tool check_deck runs (PLAN.md,
 // Agents). Sources: the
 // WinLab slide guidelines (winlab:slides) and the QA checklist of the
-// winlab-pptx skill; the palette rule holds only on a template that asks for
-// it (the WinLab one). Every violation names its slide, its shape, the rule
+// winlab-pptx skill; the palette rule holds only on a master that has a
+// palette (the WinLab one). Every violation names its slide, its shape, the rule
 // and a message a member can act on.
-import type { DeckDocument, Shape, Slide, TextBody } from "../deck/schema";
+import type {
+  DeckDocument,
+  Layout,
+  Shape,
+  Slide,
+  TextBody,
+} from "../deck/schema";
+import { layoutOf } from "../master/layout";
 import { fittedHeight } from "../editor/text-session";
-import { PALETTE } from "../editor/palette";
 import { routeConnector } from "../render/connector";
 import {
   holdsText,
+  placeholderBox,
   shapeTextDefaults,
-  TITLE_TEXT,
   titleBody,
   titleText,
 } from "../render/svg";
-import {
-  DEFAULT_TEXT,
-  TEMPLATES,
-  templateOf,
-  TITLE,
-  type TemplateId,
-} from "../render/template";
-import { layoutText, type TextLayout } from "../render/text";
+import { DEFAULT_TEXT, layoutText, type TextLayout } from "../render/text";
 
 export type Rule =
   | "font-size"
@@ -56,7 +55,6 @@ type TextShape = Extract<
 
 const pt = (px: number) => Math.round((px / 2) * 10) / 10;
 const BACKGROUND = "#ffffff";
-const PALETTE_COLORS = new Set(PALETTE.map((color) => color.value));
 
 function luminance(color: string): number {
   const channel = (i: number) => {
@@ -168,19 +166,25 @@ function runsOf(body: TextBody) {
 export function checkSlide(
   slide: Slide,
   index: number,
-  template: TemplateId
+  layout: Layout,
+  /** The master's palette, lowercased; null when it has none. */
+  palette: ReadonlySet<string> | null
 ): Violation[] {
   const out: Violation[] = [];
   const add = (shape: string | null, rule: Rule, message: string) =>
     out.push({ slide: index + 1, slideId: slide.id, shape, rule, message });
   const shapes = new Map(slide.shapes.map((shape) => [shape.id, shape]));
 
-  if (slide.title) {
+  if (slide.title && layout.title) {
     // The title shrinks to fit, down to half its size; past that it runs
     // out of its placeholder.
-    const fitted = titleText(slide.title, template);
-    const layout = layoutText(titleBody(slide.title), TITLE.box, fitted);
-    if (layout.height + 2 * TITLE_TEXT.inset.y > TITLE.box.h + 1) {
+    const fitted = titleText(slide.title, layout.title);
+    const laid = layoutText(
+      titleBody(slide.title),
+      placeholderBox(layout.title),
+      fitted
+    );
+    if (laid.height + 2 * fitted.inset.y > layout.title.h + 1) {
       add(
         null,
         "title-overflow",
@@ -202,11 +206,12 @@ export function checkSlide(
         add(shape.id, "off-slide", "這個物件在投影片外面，播放時看不到。");
     }
 
-    // Colors: fills, outlines and text from the palette, on a template
-    // that holds to it.
+    // Colors: fills, outlines and text from the palette, on a master
+    // that has one.
     const colors: string[] = [];
     if (shape.kind !== "line" && shape.kind !== "image" && shape.fill) {
-      colors.push(shape.fill);
+      if (typeof shape.fill === "string") colors.push(shape.fill);
+      else colors.push(...shape.fill.stops.map((stop) => stop.color));
     }
     if (shape.stroke) colors.push(shape.stroke.color);
     if (holdsText(shape) && shape.text) {
@@ -215,12 +220,12 @@ export function checkSlide(
     }
     const foreign = [
       ...new Set(colors.map((c) => c.slice(0, 7).toLowerCase())),
-    ].filter((c) => !PALETTE_COLORS.has(c));
-    if (TEMPLATES[template].palette && foreign.length > 0) {
+    ].filter((c) => !palette?.has(c));
+    if (palette && foreign.length > 0) {
       add(
         shape.id,
         "palette",
-        `用了色票以外的顏色 ${foreign.join("、")}：改用 WinLab 色票，整份簡報的顏色才一致。`
+        `用了色票以外的顏色 ${foreign.join("、")}：改用母片的色票，整份簡報的顏色才一致。`
       );
     }
 
@@ -247,7 +252,11 @@ export function checkSlide(
     }
 
     // Contrast against the shape's fill, or the white slide.
-    const behind = shape.fill ? shape.fill.slice(0, 7) : BACKGROUND;
+    const fill =
+      shape.fill && typeof shape.fill === "object"
+        ? shape.fill.stops[0].color
+        : shape.fill;
+    const behind = fill ? fill.slice(0, 7) : BACKGROUND;
     const worst = runs.reduce<{ ratio: number; large: boolean } | null>(
       (acc, run) => {
         const size = run.size ?? DEFAULT_TEXT.size;
@@ -333,6 +342,11 @@ export function checkSlide(
 
 /** The rule violations of a whole deck, slide by slide. */
 export function checkDeck(document: DeckDocument): Violation[] {
-  const template = templateOf(document).id;
-  return document.slides.flatMap((slide, i) => checkSlide(slide, i, template));
+  const { palette } = document.master;
+  const colors = palette
+    ? new Set(palette.map((color) => color.slice(0, 7).toLowerCase()))
+    : null;
+  return document.slides.flatMap((slide, i) =>
+    checkSlide(slide, i, layoutOf(document, slide), colors)
+  );
 }

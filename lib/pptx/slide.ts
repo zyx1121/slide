@@ -2,11 +2,11 @@
 // native PowerPoint object: preset geometry for boxes, a picture for an
 // image, a connector glued with stCxn and endCxn for a line. Sizes go from
 // canvas px to EMU (1 px = 6350 EMU, half a point).
-import type { Shape, Slide, TextBody } from "../deck/schema";
+import type { Fill, Layout, Shape, Slide, TextBody } from "../deck/schema";
 import { type Point, routeConnector } from "../render/connector";
 import { shapeTextDefaults, type TextShape, titleScale } from "../render/svg";
 import { isEastAsian } from "../render/metrics";
-import { DEFAULT_TEXT } from "../render/template";
+import { DEFAULT_TEXT } from "../render/text";
 import { parsePath, PATH_UNITS } from "../deck/path";
 import { connectorGeometry } from "./connector";
 
@@ -48,6 +48,19 @@ function color(value: string): string {
 }
 
 const solid = (value: string) => `<a:solidFill>${color(value)}</a:solidFill>`;
+
+/** A shape's fill: one color, or a linear gradient. */
+const fillXml = (fill: Fill) =>
+  typeof fill === "string"
+    ? solid(fill)
+    : `<a:gradFill rotWithShape="1"><a:gsLst>${fill.stops
+        .map(
+          (stop) =>
+            `<a:gs pos="${Math.round(stop.at * 100000)}">${color(stop.color)}</a:gs>`
+        )
+        .join("")}</a:gsLst><a:lin ang="${Math.round(
+        (((fill.angle % 360) + 360) % 360) * 60000
+      )}" scaled="0"/></a:gradFill>`;
 
 const DASHES: Record<string, string> = {
   solid: "solid",
@@ -215,6 +228,8 @@ export type SlideParts = {
 type Context = {
   /** The media part name for an asset, or null when it is not available. */
   media: (sha256: string) => string | null;
+  /** The slide's layout: whether it has a title and a slide number. */
+  layout: Layout;
 };
 
 function boxXml(shape: TextShape, id: number): string {
@@ -225,7 +240,7 @@ function boxXml(shape: TextShape, id: number): string {
       : shape.kind === "freeform"
         ? custGeom(shape.path)
         : `<a:prstGeom prst="${presetOf(shape)}"><a:avLst/></a:prstGeom>`;
-  const fill = shape.fill ? solid(shape.fill) : "<a:noFill/>";
+  const fill = shape.fill ? fillXml(shape.fill) : "<a:noFill/>";
   const textBox = shape.kind === "text" ? ' txBox="1"' : "";
   // Text boxes without fill or outline grow with their text, as the editor's do.
   const autofit = shape.kind === "text" && !shape.fill && !shape.stroke;
@@ -278,9 +293,9 @@ function connectorXml(
  * paragraph. A title the renderer shrank to fit is stored shrunk the same
  * way, since PowerPoint draws the stored scale until the text is edited.
  */
-function titleXml(title: string): string {
-  if (!title) return "";
-  const scale = titleScale(title);
+function titleXml(title: string, layout: Layout): string {
+  if (!title || !layout.title) return "";
+  const scale = titleScale(title, layout.title);
   const bodyPr =
     scale < 1
       ? `<a:bodyPr><a:normAutofit fontScale="${Math.round(scale * 100000)}"/></a:bodyPr>`
@@ -345,6 +360,6 @@ export function slideXml(
     }
   });
   const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title)}${slideNumberXml(number)}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title, context.layout)}${context.layout.number ? slideNumberXml(number) : ""}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
   return { xml, pictures };
 }

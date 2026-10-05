@@ -5,11 +5,18 @@
 import type postgres from "postgres";
 
 import { newId } from "../ids";
-import type { TemplateId } from "../render/template";
+import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
+import { ownsMaster } from "../master/store";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
 import { actOnDeck } from "./revisions";
-import { DeckDocument, SCHEMA_VERSION, type Slide } from "./schema";
+import {
+  DeckDocument,
+  type Layout,
+  type Master,
+  SCHEMA_VERSION,
+  type Slide,
+} from "./schema";
 
 type Db = postgres.Sql;
 
@@ -38,7 +45,8 @@ export type DeckSummary = Pick<
   slideCount: number;
   /** The first slide, drawn as the deck's thumbnail. */
   firstSlide: Slide;
-  template: TemplateId;
+  /** The layout the first slide is drawn on. */
+  firstLayout: Layout;
 };
 
 export type MutationResult = {
@@ -94,12 +102,15 @@ export async function ensureUser(
   `;
 }
 
-/** A deck with one empty slide, on the plain template. */
-export function blankDocument(title = DEFAULT_TITLE): DeckDocument {
+/** A deck with one empty slide, on the plain master unless given another. */
+export function blankDocument(
+  title = DEFAULT_TITLE,
+  master: Master = BUILTIN_MASTERS.plain
+): DeckDocument {
   return DeckDocument.parse({
     schema: SCHEMA_VERSION,
     title,
-    template: "plain",
+    master,
     slides: [{ id: newId("sl"), title: "", shapes: [] }],
   });
 }
@@ -123,13 +134,18 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
     (Pick<DeckRow, "id" | "title" | "version" | "published" | "updated_at"> & {
       slide_count: number;
       first_slide: Slide;
-      template: TemplateId | null;
+      first_layout: Layout;
+      master_shapes: Master["shapes"];
     })[]
   >`
     select id, title, version, published, updated_at,
       jsonb_array_length(document -> 'slides') as slide_count,
       document -> 'slides' -> 0 as first_slide,
-      document ->> 'template' as template
+      document -> 'master' -> 'layouts' -> coalesce(
+        (document -> 'slides' -> 0 ->> 'layout')::int,
+        (document -> 'master' ->> 'layout')::int
+      ) as first_layout,
+      document -> 'master' -> 'shapes' as master_shapes
     from decks
     where owner_sub = ${owner} and deleted_at is null
     order by updated_at desc
@@ -142,7 +158,17 @@ export async function listDecks(db: Db, owner: string): Promise<DeckSummary[]> {
     updatedAt: row.updated_at,
     slideCount: row.slide_count,
     firstSlide: row.first_slide,
-    template: row.template ?? "plain",
+    firstLayout: layoutOf(
+      {
+        master: {
+          ...BUILTIN_MASTERS.plain,
+          shapes: row.master_shapes,
+          layouts: [row.first_layout],
+          layout: 0,
+        },
+      },
+      undefined
+    ),
   }));
 }
 
@@ -238,6 +264,18 @@ export async function mutateDeck(
     }
 
     const result = applyOperations(row.document, ops);
+    // A deck goes onto another master file only if the member may use it:
+    // a built-in, or one they imported.
+    const file = result.document.master.file;
+    if (
+      file !== row.document.master.file &&
+      !(await ownsMaster(tx, actor.sub, file))
+    ) {
+      throw new DeckError(
+        "invalid_document",
+        `the master file ${file} is not one the member may use`
+      );
+    }
 
     const version = row.version + 1;
     await tx`

@@ -3,6 +3,9 @@
 // (lib/render/png.ts). Text is laid out by lib/render/text.ts and every run is
 // placed explicitly with textLength, so no renderer re-wraps or re-measures.
 import {
+  type Fill,
+  type Layout,
+  type Placeholder,
   type Shape,
   type Slide,
   SLIDE_HEIGHT,
@@ -13,14 +16,8 @@ import { type Point, routeConnector } from "./connector";
 import { presetPath } from "./preset";
 import { parsePath, PATH_UNITS } from "../deck/path";
 import {
-  DEFAULT_TEXT,
-  SLIDE_NUMBER,
-  TEMPLATES,
-  TITLE,
-  type TemplateId,
-} from "./template";
-import {
   DEFAULT_INSET,
+  DEFAULT_TEXT,
   layoutText,
   type Segment,
   type TextDefaults,
@@ -34,15 +31,14 @@ export const CJK_FONT = "Noto Sans TC";
 export const EMOJI_FONT = "Noto Emoji";
 
 export type RenderOptions = {
-  /** 1-based, drawn in the template's slide number placeholder. */
+  /** 1-based, drawn in the layout's slide number placeholder. */
   slideNumber: number;
-  /** The deck's template: the title's and slide number's colors. */
-  template: TemplateId;
-  /** The template background's href; null draws a plain white slide. */
-  background: string | null;
+  /** The slide's layout: background, artwork, title and slide number. */
+  layout: Layout;
   /**
-   * Leaves out the white base and the background, for a page that draws
-   * them in a layer of its own so they are not rebuilt with every edit.
+   * Leaves out the white base, the background and the artwork, for a page
+   * that draws them in a layer of its own (renderBackdropSvg) so they are
+   * not rebuilt with every edit.
    */
   bare?: boolean;
   /** An image asset's href, or null to draw a placeholder in its place. */
@@ -178,44 +174,55 @@ export function shapeTextDefaults(kind: TextShape["kind"]): TextDefaults {
   };
 }
 
-/** How the title placeholder lays out the slide's title, in black. */
-export const TITLE_TEXT: TextDefaults = {
-  size: TITLE.size,
-  color: "#000000",
-  bold: TITLE.bold,
-  align: "center",
-  anchor: "middle",
-  inset: TITLE.inset,
+/** How a title placeholder lays out a title, at its full size. */
+export const placeholderText = (placeholder: Placeholder): TextDefaults => ({
+  size: placeholder.size,
+  color: placeholder.color,
+  bold: placeholder.bold,
+  align: placeholder.align,
+  anchor: placeholder.anchor,
+  inset: placeholder.inset,
   wrap: true,
-};
+});
+
+/** A placeholder's box. */
+export const placeholderBox = (placeholder: Placeholder): Box => ({
+  x: placeholder.x,
+  y: placeholder.y,
+  w: placeholder.w,
+  h: placeholder.h,
+});
 
 /**
- * The font scales a title may take: the master's title autofits
- * (normAutofit), so a title too long for its placeholder shrinks instead of
- * wrapping into the title rule, down to half its size.
+ * The font scales a title may take: titles autofit (normAutofit), so a
+ * title too long for its placeholder shrinks instead of wrapping out of it,
+ * down to half its size.
  */
 export const TITLE_SCALES = [1, 0.9, 0.8, 0.7, 0.6, 0.5];
 
 /** The largest of TITLE_SCALES at which the title fits its placeholder. */
-export function titleScale(title: string): number {
+export function titleScale(title: string, placeholder: Placeholder): number {
+  const text = placeholderText(placeholder);
   for (const scale of TITLE_SCALES) {
-    const layout = layoutText(titleBody(title), TITLE.box, {
-      ...TITLE_TEXT,
-      size: TITLE.size * scale,
+    const layout = layoutText(titleBody(title), placeholderBox(placeholder), {
+      ...text,
+      size: placeholder.size * scale,
     });
-    if (layout.height + 2 * TITLE_TEXT.inset.y <= TITLE.box.h + 0.5) {
+    if (layout.height + 2 * text.inset.y <= placeholder.h + 0.5) {
       return scale;
     }
   }
   return TITLE_SCALES[TITLE_SCALES.length - 1];
 }
 
-/** How a title is laid out on a template, shrunk to fit. */
-export function titleText(title: string, template: TemplateId): TextDefaults {
+/** How a title is laid out in its placeholder, shrunk to fit. */
+export function titleText(
+  title: string,
+  placeholder: Placeholder
+): TextDefaults {
   return {
-    ...TITLE_TEXT,
-    color: TEMPLATES[template].titleColor,
-    size: TITLE.size * titleScale(title),
+    ...placeholderText(placeholder),
+    size: placeholder.size * titleScale(title, placeholder),
   };
 }
 
@@ -323,25 +330,29 @@ function shapeSvg(
           ? (shape.corner ?? 1 / 6) * Math.min(box.w, box.h)
           : 0;
       const radius = r > 0 ? ` rx="${num(r)}" ry="${num(r)}"` : "";
-      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
+      const [defs, fill] = fillPaint(shape.fill, box);
       body =
+        defs +
         `<rect ${frame}${radius} ${fill} ${strokeAttrs(shape.stroke)}/>` +
         shapeText(shape, box);
       break;
     }
     case "ellipse": {
-      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
+      const [defs, fill] = fillPaint(shape.fill, box);
       body =
+        defs +
         `<ellipse cx="${num(box.x + box.w / 2)}" cy="${num(box.y + box.h / 2)}" rx="${num(box.w / 2)}" ry="${num(box.h / 2)}" ${fill} ${strokeAttrs(shape.stroke)}/>` +
         shapeText(shape, box);
       break;
     }
     case "preset": {
       const outline = presetPath(shape.geometry, box);
-      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
-      body = outline.stroke
-        ? `<path d="${outline.fill}" ${fill} stroke="none"/><path d="${outline.stroke}" fill="none" ${strokeAttrs(shape.stroke)}/>`
-        : `<path d="${outline.fill}" ${fill} ${strokeAttrs(shape.stroke)}/>`;
+      const [defs, fill] = fillPaint(shape.fill, box);
+      body =
+        defs +
+        (outline.stroke
+          ? `<path d="${outline.fill}" ${fill} stroke="none"/><path d="${outline.stroke}" fill="none" ${strokeAttrs(shape.stroke)}/>`
+          : `<path d="${outline.fill}" ${fill} ${strokeAttrs(shape.stroke)}/>`);
       if (shape.flipH || shape.flipV) {
         // Mirrored about the box's center; its text reads as usual.
         const cx = num(box.x + box.w / 2);
@@ -365,16 +376,18 @@ function shapeSvg(
           ].join(" ")
         )
         .join(" ");
-      const fill = shape.fill ? paint("fill", shape.fill) : 'fill="none"';
+      const [defs, fill] = fillPaint(shape.fill, box);
       body =
+        defs +
         `<path d="${d}" ${fill} ${strokeAttrs(shape.stroke)} stroke-linejoin="round"/>` +
         shapeText(shape, box);
       break;
     }
     case "text": {
+      const [defs, fill] = fillPaint(shape.fill, box);
       const frameSvg =
         shape.fill || shape.stroke
-          ? `<rect ${frame} ${shape.fill ? paint("fill", shape.fill) : 'fill="none"'} ${strokeAttrs(shape.stroke)}/>`
+          ? `${defs}<rect ${frame} ${fill} ${strokeAttrs(shape.stroke)}/>`
           : "";
       body = frameSvg + shapeText(shape, box);
       break;
@@ -408,47 +421,117 @@ function shapeSvg(
   return `<g transform="rotate(${num(rotation)} ${cx} ${cy})">${body}</g>`;
 }
 
+/** A short, stable id for a definition, from what it defines. */
+function defId(prefix: string, value: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < value.length; i++) {
+    h = Math.imul(h ^ value.charCodeAt(i), 16777619);
+  }
+  return `${prefix}-${(h >>> 0).toString(36)}`;
+}
+
+/**
+ * A fill over a box, as SVG definitions to put before the element and the
+ * element's fill attribute: one color, or a linear gradient along its angle
+ * spanning the box's extent in that direction, as DrawingML does.
+ */
+function fillPaint(fill: Fill | null | undefined, box: Box): [string, string] {
+  if (!fill) return ["", 'fill="none"'];
+  if (typeof fill === "string") return ["", paint("fill", fill)];
+  const angle = (fill.angle * Math.PI) / 180;
+  const cos = Math.cos(angle);
+  const sin = Math.sin(angle);
+  const half = (box.w * Math.abs(cos) + box.h * Math.abs(sin)) / 2;
+  const cx = box.x + box.w / 2;
+  const cy = box.y + box.h / 2;
+  const stops = fill.stops
+    .map((stop) => {
+      const alpha =
+        stop.color.length > 7 ? parseInt(stop.color.slice(7, 9), 16) / 255 : 1;
+      return `<stop offset="${num(stop.at)}" stop-color="${stop.color.slice(0, 7)}"${
+        alpha < 1 ? ` stop-opacity="${num(alpha)}"` : ""
+      }/>`;
+    })
+    .join("");
+  const x1 = num(cx - cos * half);
+  const y1 = num(cy - sin * half);
+  const x2 = num(cx + cos * half);
+  const y2 = num(cy + sin * half);
+  // Ids are shared by every SVG on a page, so one names what it defines.
+  const id = defId("gr", `${x1} ${y1} ${x2} ${y2} ${stops}`);
+  return [
+    `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stops}</linearGradient></defs>`,
+    `fill="url(#${id})"`,
+  ];
+}
+
+/** A background filling the slide. */
+function backgroundSvg(fill: Fill): string {
+  const [defs, attr] = fillPaint(fill, {
+    x: 0,
+    y: 0,
+    w: SLIDE_WIDTH,
+    h: SLIDE_HEIGHT,
+  });
+  return `${defs}<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" ${attr}/>`;
+}
+
+/** A layout's background and artwork, under the slide's own shapes. */
+function backdropParts(layout: Layout, options: RenderOptions): string[] {
+  const parts = [
+    `<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff"/>`,
+  ];
+  if (layout.background) parts.push(backgroundSvg(layout.background));
+  const shapes = new Map(layout.shapes.map((shape) => [shape.id, shape]));
+  for (const shape of layout.shapes) {
+    parts.push(shapeSvg(shape, shapes, options));
+  }
+  return parts;
+}
+
+const open = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" font-family="${LATIN_FONT}">`;
+
+/**
+ * A layout's background and artwork alone, as a standalone SVG document:
+ * the layer a page draws once under bare slides.
+ */
+export function renderBackdropSvg(
+  layout: Layout,
+  options: Pick<RenderOptions, "assetHref">
+): string {
+  return [
+    open,
+    ...backdropParts(layout, { slideNumber: 0, layout, ...options }),
+    "</svg>",
+  ].join("");
+}
+
 /** One slide as a standalone SVG document, 1920 x 1080 user units. */
 export function renderSlideSvg(slide: Slide, options: RenderOptions): string {
+  const { layout } = options;
   const shapes = new Map(slide.shapes.map((shape) => [shape.id, shape]));
-  const parts = [
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${SLIDE_WIDTH} ${SLIDE_HEIGHT}" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" font-family="${LATIN_FONT}">`,
-  ];
-  if (!options.bare) {
-    parts.push(
-      `<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff"/>`
-    );
-  }
-  if (options.background && !options.bare) {
-    parts.push(
-      `<image href="${esc(options.background)}" width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" preserveAspectRatio="none"/>`
-    );
-  }
-  if (slide.title) {
+  const parts = [open];
+  if (!options.bare) parts.push(...backdropParts(layout, options));
+  if (slide.title && layout.title) {
     parts.push(
       textSvg(
         titleBody(slide.title),
-        TITLE.box,
-        titleText(slide.title, options.template)
+        placeholderBox(layout.title),
+        titleText(slide.title, layout.title)
       )
     );
   }
   for (const shape of slide.shapes)
     parts.push(shapeSvg(shape, shapes, options));
-  parts.push(
-    textSvg(
-      { paragraphs: [{ runs: [{ text: String(options.slideNumber) }] }] },
-      SLIDE_NUMBER.box,
-      {
-        size: SLIDE_NUMBER.size,
-        ...TEMPLATES[options.template].slideNumber,
-        align: "right",
-        anchor: "middle",
-        inset: SLIDE_NUMBER.inset,
-        wrap: false,
-      }
-    )
-  );
+  if (layout.number) {
+    parts.push(
+      textSvg(
+        { paragraphs: [{ runs: [{ text: String(options.slideNumber) }] }] },
+        placeholderBox(layout.number),
+        { ...placeholderText(layout.number), wrap: false }
+      )
+    );
+  }
   parts.push("</svg>");
   return parts.join("");
 }

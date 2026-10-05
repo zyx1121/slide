@@ -8,7 +8,9 @@ import { dirname, join } from "node:path";
 
 import type postgres from "postgres";
 
-import type { Slide } from "../deck/schema";
+import type { Layout, Slide } from "../deck/schema";
+import { slideAssets } from "./drawn";
+import { builtinAsset } from "../master/builtin-assets";
 import { ASSET_MAX_BYTES } from "../deck/limits";
 import { type ImageInfo, sniffImage, withinPixels } from "./image";
 
@@ -95,6 +97,8 @@ export async function readAsset(
   sha256: string
 ): Promise<{ mime: string; data: Buffer } | null> {
   if (!SHA256.test(sha256)) return null;
+  const builtin = builtinAsset(sha256);
+  if (builtin) return builtin;
   const [row] = await db<{ mime: string }[]>`
     select a.mime from assets a
     join asset_owners o on o.sha256 = a.sha256
@@ -113,22 +117,15 @@ export async function ownedAssets(
   sub: string,
   shas: string[]
 ): Promise<Set<string>> {
-  if (shas.length === 0) return new Set();
+  // A built-in master's pictures are everyone's.
+  const owned = new Set(shas.filter((sha256) => builtinAsset(sha256)));
+  const rest = shas.filter((sha256) => !owned.has(sha256));
+  if (rest.length === 0) return owned;
   const rows = await db<{ sha256: string }[]>`
     select sha256 from asset_owners
-    where sub = ${sub} and sha256 in ${db(shas)}`;
-  return new Set(rows.map((row) => row.sha256));
-}
-
-/** The assets a slide draws. */
-export function slideAssets(slide: Slide): string[] {
-  return [
-    ...new Set(
-      slide.shapes.flatMap((shape) =>
-        shape.kind === "image" ? [shape.asset] : []
-      )
-    ),
-  ];
+    where sub = ${sub} and sha256 in ${db(rest)}`;
+  for (const row of rows) owned.add(row.sha256);
+  return owned;
 }
 
 /**
@@ -146,16 +143,21 @@ export const SLIDE_PIXEL_BUDGET = 100_000_000;
 export async function slideAssetUris(
   db: Db,
   sub: string,
-  slide: Slide
+  slide: Slide,
+  layout?: Layout
 ): Promise<Map<string, string>> {
   const uris = new Map<string, string>();
-  const shas = slideAssets(slide);
+  const shas = slideAssets(slide, layout);
   if (shas.length === 0) return uris;
   const sizes = await db<{ sha256: string; pixels: number }[]>`
     select a.sha256, a.width::bigint * a.height as pixels from assets a
     join asset_owners o on o.sha256 = a.sha256
     where o.sub = ${sub} and a.sha256 in ${db(shas)}`;
   const pixels = new Map(sizes.map((row) => [row.sha256, Number(row.pixels)]));
+  for (const sha256 of shas) {
+    const builtin = builtinAsset(sha256);
+    if (builtin) pixels.set(sha256, builtin.pixels);
+  }
   let budget = SLIDE_PIXEL_BUDGET;
   for (const sha256 of shas) {
     const cost = pixels.get(sha256);

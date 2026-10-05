@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 
@@ -231,7 +233,11 @@ describe("importPptx", () => {
       new Map([[SHA, { mime: "image/png", data: PNG_1X1 }]])
     );
     const { document, report } = await importPptx(bytes, async () => null);
-    expect(report.skipped).toEqual({ "picture format": 1 });
+    // The master's artwork pictures are counted apart from the slides'.
+    expect(report.skipped).toEqual({
+      "picture format": 1,
+      "master: picture format": 4,
+    });
     expect(document.slides[1].shapes.some((s) => s.kind === "image")).toBe(
       false
     );
@@ -623,8 +629,8 @@ describe("importPptx", () => {
     const parts = unzipSync(exportPptx(doc, new Map()));
     // List the one slide twice, and make its text longer than a shape may hold.
     const presentation = strFromU8(parts["ppt/presentation.xml"]).replace(
-      /(<p:sldId [^>]*\/>)/,
-      '$1<p:sldId id="999" r:id="rId101"/>'
+      /(<p:sldId [^>]*r:id="([^"]+)"\/>)/,
+      '$1<p:sldId id="999" r:id="$2"/>'
     );
     parts["ppt/presentation.xml"] = strToU8(presentation);
     parts["ppt/slides/slide1.xml"] = strToU8(
@@ -682,4 +688,114 @@ describe("importPptx", () => {
     expect(process.memoryUsage().heapUsed - before).toBeLessThan(1_000_000_000);
     // Parsing the 2 million elements first takes a few seconds on CI.
   }, 30_000);
+});
+
+describe("importPptx keeps the slide master", () => {
+  const realImage = async (bytes: Uint8Array) => ({
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+
+  it("reads the master's layouts and each slide's, and exports them back", async () => {
+    const doc = sampleDocument();
+    doc.slides.push({
+      id: "sl_section",
+      title: "Part two",
+      layout: 2,
+      shapes: [],
+    });
+    const first = await importPptx(exportPptx(doc, new Map()), realImage);
+    const { master } = first.document;
+    expect(master.layouts.map((layout) => layout.name)).toEqual(
+      doc.master.layouts.map((layout) => layout.name)
+    );
+    expect(master.layout).toBe(doc.master.layout);
+    // The artwork and placeholders come across as the built-in has them.
+    expect(master.layouts[1].title).toEqual(doc.master.layouts[1].title);
+    expect(master.layouts[1].number).toEqual(doc.master.layouts[1].number);
+    expect(master.layouts[1].background).toEqual(
+      doc.master.layouts[1].background
+    );
+    expect(master.layouts[1].shapes.map((shape) => shape.kind)).toEqual(
+      doc.master.layouts[1].shapes.map((shape) => shape.kind)
+    );
+    expect(first.document.slides.map((slide) => slide.layout)).toEqual(
+      doc.slides.map((slide) => slide.layout)
+    );
+    // The master file names the file it was cut from; export starts from it.
+    expect(master.file).toBe(first.master.sha256);
+    const again = unzipSync(
+      exportPptx(first.document, new Map(), first.master.bytes)
+    );
+    expect(
+      Object.keys(again).filter((name) =>
+        /^ppt\/slideLayouts\/slideLayout\d+\.xml$/.test(name)
+      )
+    ).toHaveLength(5);
+    expect(
+      strFromU8(again[`ppt/slides/_rels/slide${doc.slides.length}.xml.rels`])
+    ).toContain('Target="../slideLayouts/slideLayout3.xml"');
+    // Slides and their notes are not part of a master file.
+    const kept = unzipSync(first.master.bytes);
+    expect(
+      Object.keys(kept).some((name) => name.startsWith("ppt/slides/"))
+    ).toBe(false);
+    expect(kept["[Content_Types].xml"]).toBeDefined();
+    expect(strFromU8(kept["ppt/presentation.xml"])).not.toContain("<p:sldId ");
+  });
+
+  it("reads gradient fills and bold list styles of shapes", async () => {
+    const { document } = await importPptx(
+      exportPptx(sampleDocument(), new Map()),
+      realImage
+    );
+    const footer = document.master.shapes.find(
+      (shape) =>
+        shape.kind === "text" &&
+        shape.text?.paragraphs[0]?.runs[0]?.text === "NYCU CS"
+    );
+    expect(
+      footer && "text" in footer && footer.text?.paragraphs[0].runs[0].bold
+    ).toBe(true);
+    const bar = document.master.shapes.find(
+      (shape) =>
+        shape.kind === "rect" &&
+        typeof shape.fill === "object" &&
+        shape.fill !== null
+    );
+    expect(bar && "fill" in bar && bar.fill).toMatchObject({
+      angle: 45,
+      stops: [{ at: 0, color: "#7fcbf9" }, { at: 0.98 }, { at: 1 }],
+    });
+  });
+});
+
+describe("importPptx bounds a master", () => {
+  it("reads a layout listed many times once, and drops artwork over the limits", async () => {
+    const parts = unzipSync(exportPptx(sampleDocument(), new Map()));
+    const masterName = "ppt/slideMasters/slideMaster1.xml";
+    let master = strFromU8(parts[masterName]);
+    // Every layout entry points at the first layout's relationship.
+    const first = /<p:sldLayoutId [^>]*r:id="([^"]+)"[^>]*\/>/.exec(master)!;
+    const entries = Array.from(
+      { length: 64 },
+      (_, i) => `<p:sldLayoutId id="${2147483700 + i}" r:id="${first[1]}"/>`
+    ).join("");
+    master = master.replace(
+      /<p:sldLayoutIdLst>[\s\S]*?<\/p:sldLayoutIdLst>/,
+      `<p:sldLayoutIdLst>${entries}</p:sldLayoutIdLst>`
+    );
+    // And the master carries far more text than a slide may.
+    const box = (i: number) =>
+      `<p:sp><p:nvSpPr><p:cNvPr id="${900 + i}" name="t"/><p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr><p:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="100000" cy="100000"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr/><a:p><a:r><a:t>${"x".repeat(4000)}</a:t></a:r></a:p></p:txBody></p:sp>`;
+    master = master.replace(
+      "</p:spTree>",
+      `${Array.from({ length: 10 }, (_, i) => box(i)).join("")}</p:spTree>`
+    );
+    parts[masterName] = strToU8(master);
+    const { document, report } = await importPptx(zipSync(parts), saveImage);
+    expect(document.master.layouts).toHaveLength(1);
+    expect(document.master.shapes).toEqual([]);
+    expect(report.skipped["master: artwork over the limit"]).toBe(1);
+    expect(JSON.stringify(document.master).length).toBeLessThan(100_000);
+  });
 });

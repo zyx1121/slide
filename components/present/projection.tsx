@@ -1,28 +1,29 @@
 "use client";
 // What the audience sees: the slide shown, as large as the box allows at
 // 16:9 on black. Every slide stays drawn, hidden but the one shown, so that
-// changing slides shows one already drawn: the template background lives on
-// each frame, not in the SVG, as in the editor, so it is never decoded
-// again (Safari showed that as a white flash).
+// changing slides shows one already drawn: each frame draws its layout in a
+// layer of its own, as the editor does, so it is never decoded again
+// (Safari showed that as a white flash).
 import { memo, useMemo } from "react";
 
 import type { Blank } from "@/lib/present/control";
-import type { DeckDocument, Slide } from "@/lib/deck/schema";
+import { Backdrop } from "@/components/backdrop";
+import type { DeckDocument, Layout, Slide } from "@/lib/deck/schema";
 import { assetUrl } from "@/lib/editor/upload";
+import { layoutOf } from "@/lib/master/layout";
 import { renderSlideSvg } from "@/lib/render/svg";
-import { TEMPLATES, templateOf, type TemplateId } from "@/lib/render/template";
 import { cn } from "@/lib/utils";
 
 export const SlideFrame = memo(function SlideFrame({
   slide,
   number,
-  template,
+  layout,
   hidden = false,
   className,
 }: {
   slide: Slide;
   number: number;
-  template: TemplateId;
+  layout: Layout;
   hidden?: boolean;
   className?: string;
 }) {
@@ -30,31 +31,32 @@ export const SlideFrame = memo(function SlideFrame({
     () =>
       renderSlideSvg(slide, {
         slideNumber: number,
-        template,
-        background: null,
+        layout,
         bare: true,
         assetHref: assetUrl,
       }),
-    [slide, number, template]
+    [slide, number, layout]
   );
-  const background = TEMPLATES[template].background;
   return (
     <div
-      data-slot="slide-view"
       aria-hidden={hidden || undefined}
       {...(hidden
         ? {}
         : { role: "img", "aria-label": slide.title || `第 ${number} 頁` })}
       className={cn(
-        "aspect-video overflow-hidden bg-white bg-size-[100%_100%]",
+        "relative aspect-video overflow-hidden bg-white",
         className
       )}
-      style={{
-        backgroundImage: background ? `url(${background})` : undefined,
-        visibility: hidden ? "hidden" : undefined,
-      }}
-      dangerouslySetInnerHTML={{ __html: svg }}
-    />
+      style={{ visibility: hidden ? "hidden" : undefined }}
+    >
+      <Backdrop layout={layout} />
+      <div
+        data-slot="slide-view"
+        aria-hidden
+        className="absolute inset-0 [&>svg]:size-full"
+        dangerouslySetInnerHTML={{ __html: svg }}
+      />
+    </div>
   );
 });
 
@@ -72,7 +74,6 @@ export function Projection({
   blank?: Blank;
   className?: string;
 }) {
-  const template = templateOf(document).id;
   return (
     <div
       className={cn(
@@ -86,7 +87,7 @@ export function Projection({
             key={slide.id}
             slide={slide}
             number={i + 1}
-            template={template}
+            layout={layoutOf(document, slide)}
             hidden={i !== index || blank !== null}
             className="absolute inset-0"
           />

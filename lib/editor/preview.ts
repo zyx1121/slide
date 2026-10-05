@@ -6,7 +6,7 @@ import { compare } from "fast-json-patch";
 import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { LINE_HEIGHT } from "../render/metrics";
-import { DEFAULT_TEXT } from "../render/template";
+import { DEFAULT_TEXT } from "../render/text";
 import { DEFAULT_INSET } from "../render/text";
 import { type Box, tidy } from "./geometry";
 

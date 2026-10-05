@@ -3,14 +3,14 @@
 // draft is written to the document as an ordinary edit when typing pauses
 // and when editing ends.
 import type { Operation } from "../deck/patch";
-import type { Shape, Slide, TextBody } from "../deck/schema";
+import type { Layout, Shape, Slide, TextBody } from "../deck/schema";
 import {
   holdsText,
   shapeTextDefaults,
+  placeholderBox,
   titleBody,
   titleText,
 } from "../render/svg";
-import { TITLE, type TemplateId } from "../render/template";
 import { layoutText, type TextDefaults, type TextLayout } from "../render/text";
 import { tidy, toLocal } from "./geometry";
 import { deleteOps } from "./ops";
@@ -59,13 +59,15 @@ export type TextFrame = {
 export function frameOf(
   slide: Slide,
   target: string,
-  template: TemplateId
+  layout: Layout
 ): TextFrame | null {
   if (target === TITLE_ID) {
+    // A layout without a title placeholder has no title to edit.
+    if (!layout.title) return null;
     return {
-      box: TITLE.box,
+      box: placeholderBox(layout.title),
       rotation: 0,
-      defaults: titleText(slide.title, template),
+      defaults: titleText(slide.title, layout.title),
       paragraphs: false,
     };
   }

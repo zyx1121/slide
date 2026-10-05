@@ -1,3 +1,4 @@
+import { documentAssets } from "@/lib/assets/drawn";
 import { readAsset } from "@/lib/assets/store";
 import { sql } from "@/lib/db";
 import { getPublishedDeck } from "@/lib/deck/store";
@@ -7,7 +8,8 @@ export const runtime = "nodejs";
 
 /**
  * GET /s/:publicId/assets/:sha256: a picture of a published deck. Only one
- * the deck draws and its owner uploaded; unpublishing the deck ends access.
+ * the deck draws (on a slide or in its layouts' artwork) and its owner
+ * uploaded or its master ships with; unpublishing the deck ends access.
  */
 export async function GET(
   _request: Request,
@@ -15,11 +17,7 @@ export async function GET(
 ) {
   const { publicId, sha256 } = await params;
   const deck = await getPublishedDeck(sql, publicId);
-  const drawn = deck?.document.slides.some((slide) =>
-    slide.shapes.some(
-      (shape) => shape.kind === "image" && shape.asset === sha256
-    )
-  );
+  const drawn = deck && documentAssets(deck.document).includes(sha256);
   const asset =
     deck && drawn ? await readAsset(sql, deck.ownerSub, sha256) : null;
   if (!asset) return Response.json({ error: "no such image" }, { status: 404 });

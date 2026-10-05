@@ -26,9 +26,8 @@ export const config = {
   // Everything except sign-in itself, the health check, MCP and its OAuth
   // front and discovery documents (they carry their own credentials), uploads (which
   // check the session themselves, and whose bodies a proxy would buffer and
-  // cut at its own limit), public decks (/s/), the template background
-  // public decks draw on, and static files.
+  // cut at its own limit), public decks (/s/) and static files.
   matcher: [
-    "/((?!auth/|api/health$|api/assets$|api/decks/import$|mcp$|oauth/|\\.well-known/|s/|template/|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!auth/|api/health$|api/assets$|api/decks/import$|mcp$|oauth/|\\.well-known/|s/|_next/static|_next/image|favicon\\.ico).*)",
   ],
 };

@@ -91,18 +91,26 @@ const box = {
 };
 
 /**
- * A fill: one color, or a linear gradient whose stops run along `angle`
+ * A fill: one color, a linear gradient whose stops run along `angle`
  * degrees (0 left to right, 90 top to bottom) across the box it fills, as
- * DrawingML's a:gradFill with a:lin.
+ * DrawingML's a:gradFill with a:lin, or a path gradient.
  */
+const Stops = z
+  .array(z.strictObject({ at: z.number().min(0).max(1), color: Color }))
+  .min(2)
+  .max(16);
+const Unit = z.number().min(0).max(1);
 export const Fill = z.union([
   Color,
+  z.strictObject({ angle: z.number().min(-360).max(360), stops: Stops }),
+  /**
+   * A path gradient (a:path): stops run from `focus` (fractions of the box)
+   * out to the box's farthest corner. Drawn as a circle whatever the path.
+   */
   z.strictObject({
-    angle: z.number().min(-360).max(360),
-    stops: z
-      .array(z.strictObject({ at: z.number().min(0).max(1), color: Color }))
-      .min(2)
-      .max(16),
+    path: z.enum(["circle", "rect", "shape"]),
+    focus: z.strictObject({ x: Unit, y: Unit }),
+    stops: Stops,
   }),
 ]);
 
@@ -291,7 +299,13 @@ export const Placeholder = z.strictObject({
  */
 export const Layout = z.strictObject({
   name: Text(200),
-  background: Fill.nullable(),
+  /** A fill, or a picture stretched over the slide. */
+  background: z
+    .union([
+      Fill,
+      z.strictObject({ image: z.string().regex(/^[0-9a-f]{64}$/) }),
+    ])
+    .nullable(),
   /** Whether the master's artwork is drawn under this layout's. */
   master: z.boolean(),
   shapes: z.array(Shape).max(200),
@@ -475,6 +489,7 @@ export type Master = z.infer<typeof Master>;
 export type Layout = z.infer<typeof Layout>;
 export type Placeholder = z.infer<typeof Placeholder>;
 export type Fill = z.infer<typeof Fill>;
+export type Background = NonNullable<Layout["background"]>;
 export type Slide = z.infer<typeof Slide>;
 export type Shape = z.infer<typeof Shape>;
 export type TextBody = z.infer<typeof TextBody>;

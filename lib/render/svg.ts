@@ -3,6 +3,7 @@
 // (lib/render/png.ts). Text is laid out by lib/render/text.ts and every run is
 // placed explicitly with textLength, so no renderer re-wraps or re-measures.
 import {
+  type Background,
   type Fill,
   type Layout,
   type Placeholder,
@@ -432,18 +433,13 @@ function defId(prefix: string, value: string): string {
 
 /**
  * A fill over a box, as SVG definitions to put before the element and the
- * element's fill attribute: one color, or a linear gradient along its angle
- * spanning the box's extent in that direction, as DrawingML does.
+ * element's fill attribute: one color; a linear gradient along its angle,
+ * spanning the box's extent in that direction, as DrawingML does; or a path
+ * gradient as a circle from its focus to the box's farthest corner.
  */
 function fillPaint(fill: Fill | null | undefined, box: Box): [string, string] {
   if (!fill) return ["", 'fill="none"'];
   if (typeof fill === "string") return ["", paint("fill", fill)];
-  const angle = (fill.angle * Math.PI) / 180;
-  const cos = Math.cos(angle);
-  const sin = Math.sin(angle);
-  const half = (box.w * Math.abs(cos) + box.h * Math.abs(sin)) / 2;
-  const cx = box.x + box.w / 2;
-  const cy = box.y + box.h / 2;
   const stops = fill.stops
     .map((stop) => {
       const alpha =
@@ -453,27 +449,57 @@ function fillPaint(fill: Fill | null | undefined, box: Box): [string, string] {
       }/>`;
     })
     .join("");
-  const x1 = num(cx - cos * half);
-  const y1 = num(cy - sin * half);
-  const x2 = num(cx + cos * half);
-  const y2 = num(cy + sin * half);
+  let gradient: string;
+  if ("path" in fill) {
+    const cx = box.x + fill.focus.x * box.w;
+    const cy = box.y + fill.focus.y * box.h;
+    const r = Math.max(
+      ...[
+        [box.x, box.y],
+        [box.x + box.w, box.y],
+        [box.x, box.y + box.h],
+        [box.x + box.w, box.y + box.h],
+      ].map(([x, y]) => Math.hypot(x - cx, y - cy)),
+      1
+    );
+    gradient = `radialGradient gradientUnits="userSpaceOnUse" cx="${num(cx)}" cy="${num(cy)}" r="${num(r)}"`;
+  } else {
+    const angle = (fill.angle * Math.PI) / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const half = (box.w * Math.abs(cos) + box.h * Math.abs(sin)) / 2;
+    const cx = box.x + box.w / 2;
+    const cy = box.y + box.h / 2;
+    gradient = `linearGradient gradientUnits="userSpaceOnUse" x1="${num(cx - cos * half)}" y1="${num(cy - sin * half)}" x2="${num(cx + cos * half)}" y2="${num(cy + sin * half)}"`;
+  }
   // Ids are shared by every SVG on a page, so one names what it defines.
-  const id = defId("gr", `${x1} ${y1} ${x2} ${y2} ${stops}`);
+  const id = defId("gr", `${gradient} ${stops}`);
+  const tag = gradient.slice(0, gradient.indexOf(" "));
   return [
-    `<defs><linearGradient id="${id}" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stops}</linearGradient></defs>`,
+    `<defs><${gradient.replace(tag, `${tag} id="${id}"`)}>${stops}</${tag}></defs>`,
     `fill="url(#${id})"`,
   ];
 }
 
-/** A background filling the slide. */
-function backgroundSvg(fill: Fill): string {
-  const [defs, attr] = fillPaint(fill, {
+/** A background filling the slide: a fill, or a picture stretched over it. */
+function backgroundSvg(
+  background: Background,
+  options: Pick<RenderOptions, "assetHref">
+): string {
+  const full = `width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}"`;
+  if (typeof background === "object" && "image" in background) {
+    const href = options.assetHref?.(background.image) ?? null;
+    return href
+      ? `<image href="${esc(href)}" ${full} preserveAspectRatio="none"/>`
+      : "";
+  }
+  const [defs, attr] = fillPaint(background, {
     x: 0,
     y: 0,
     w: SLIDE_WIDTH,
     h: SLIDE_HEIGHT,
   });
-  return `${defs}<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" ${attr}/>`;
+  return `${defs}<rect ${full} ${attr}/>`;
 }
 
 /** A layout's background and artwork, under the slide's own shapes. */
@@ -481,7 +507,9 @@ function backdropParts(layout: Layout, options: RenderOptions): string[] {
   const parts = [
     `<rect width="${SLIDE_WIDTH}" height="${SLIDE_HEIGHT}" fill="#ffffff"/>`,
   ];
-  if (layout.background) parts.push(backgroundSvg(layout.background));
+  if (layout.background) {
+    parts.push(backgroundSvg(layout.background, options));
+  }
   const shapes = new Map(layout.shapes.map((shape) => [shape.id, shape]));
   for (const shape of layout.shapes) {
     parts.push(shapeSvg(shape, shapes, options));

@@ -6,6 +6,7 @@
 // the editor cannot draw.
 import { newId } from "../ids";
 import {
+  type Background,
   DeckDocument,
   type Fill,
   type Layout,
@@ -228,6 +229,8 @@ type Context = {
   skip: (kind: string) => void;
   /** Reading a master's or layout's artwork: placeholders are left out. */
   artwork?: boolean;
+  /** The theme, for its background styles. */
+  themeXml?: El;
 };
 
 const clean = (text: string) => text.replace(/\u0000/g, "");
@@ -572,19 +575,41 @@ function readStroke(
  * A gradient fill: linear, with its stops; one color when it has a single
  * stop. Path gradients are drawn linear and counted as skipped.
  */
-function readGradient(gradient: El, ctx: Context): Fill | null {
+function readGradient(
+  gradient: El,
+  ctx: Context,
+  /** The color a theme style's phClr stands for. */
+  placeholder?: string
+): Fill | null {
   const stops = children(path(gradient, "a:gsLst"), "a:gs")
     .map((gs) => ({
       at: clamp((num(gs, "pos") ?? 0) / 100000, 0, 1),
-      color: readColor(gs, ctx.theme, ctx.colorMap),
+      color: readColor(gs, ctx.theme, ctx.colorMap, placeholder),
     }))
     .filter((stop): stop is { at: number; color: string } => !!stop.color)
     .sort((a, b) => a.at - b.at)
     .slice(0, 16);
   if (stops.length === 0) return null;
   if (stops.length === 1) return stops[0].color;
+  const shade = child(gradient, "a:path");
+  if (shade) {
+    const kind = shade.attrs.path;
+    const to = child(shade, "a:fillToRect");
+    const part = (name: string) =>
+      clamp((num(to, name) ?? 50000) / 100000, -1, 2);
+    // The focus is the middle of the fill-to rectangle, inset from each side.
+    const focus = {
+      x: Math.round(clamp((part("l") + 1 - part("r")) / 2, 0, 1) * 1000) / 1000,
+      y: Math.round(clamp((part("t") + 1 - part("b")) / 2, 0, 1) * 1000) / 1000,
+    };
+    if (kind !== "circle") ctx.skip("gradient path drawn as a circle");
+    return {
+      path: kind === "rect" || kind === "shape" ? kind : "circle",
+      focus,
+      stops,
+    };
+  }
   const lin = child(gradient, "a:lin");
-  if (!lin) ctx.skip("gradient other than linear");
   return {
     angle:
       Math.round(clamp((num(lin, "ang") ?? 5400000) / 60000, -360, 360) * 100) /
@@ -1395,7 +1420,8 @@ function contextFor(
 ): Context {
   const themeName =
     masterName && relTarget(reader.relsOf(masterName), "/theme");
-  const theme = readTheme(reader.xml(themeName));
+  const themeXml = reader.xml(themeName);
+  const theme = readTheme(themeXml);
   const colorMap = readColorMap(child(master, "p:clrMap"));
   const base = { theme, colorMap, k: reader.k };
   const otherStyle = readLevels(
@@ -1405,6 +1431,7 @@ function contextFor(
   return {
     parts: reader.parts,
     theme,
+    themeXml,
     colorMap,
     k: reader.k,
     dx: reader.dx,
@@ -1427,18 +1454,70 @@ function contextFor(
   };
 }
 
-/** A background's fill: one color or a linear gradient; null for none. */
-function readBackground(bg: El | undefined, ctx: Context): Fill | null {
-  const bgPr = child(bg, "p:bgPr");
-  if (!bgPr) {
-    // A reference into the theme's background styles: its color only.
-    return readColor(child(bg, "p:bgRef"), ctx.theme, ctx.colorMap) ?? null;
+/**
+ * A background: one color, a gradient or a picture stretched over the
+ * slide; null for none. A reference into the theme's background styles is
+ * read from the theme, its phClr standing for the reference's color.
+ */
+async function readBackground(
+  bg: El | undefined,
+  ctx: Context
+): Promise<Background | null> {
+  let bgPr = child(bg, "p:bgPr");
+  let placeholder: string | undefined;
+  const ref = child(bg, "p:bgRef");
+  if (!bgPr && ref) {
+    placeholder = readColor(ref, ctx.theme, ctx.colorMap);
+    const idx = num(ref, "idx") ?? 0;
+    const styles = path(
+      ctx.themeXml,
+      "a:themeElements",
+      "a:fmtScheme",
+      "a:bgFillStyleLst"
+    )?.children.filter((c) => c.tag !== "#text");
+    // 1001 and up are background fill styles, from the first.
+    bgPr =
+      idx > 1000
+        ? styles?.[idx - 1001] && {
+            tag: "p:bgPr",
+            attrs: {},
+            text: "",
+            children: [styles[idx - 1001]],
+          }
+        : undefined;
+    if (!bgPr) return placeholder ?? null;
   }
-  const solid = readColor(child(bgPr, "a:solidFill"), ctx.theme, ctx.colorMap);
+  if (!bgPr) return null;
+  const solid = readColor(
+    child(bgPr, "a:solidFill"),
+    ctx.theme,
+    ctx.colorMap,
+    placeholder
+  );
   if (solid) return solid;
   const gradient = child(bgPr, "a:gradFill");
-  if (gradient) return readGradient(gradient, ctx);
-  if (child(bgPr, "a:blipFill")) ctx.skip("background picture");
+  if (gradient) return readGradient(gradient, ctx, placeholder);
+  const picture = child(bgPr, "a:blipFill");
+  if (picture) {
+    const embed = child(picture, "a:blip")?.attrs["r:embed"];
+    const rel = embed ? ctx.rels.get(embed) : undefined;
+    if (!rel || rel.external) {
+      ctx.skip("linked background picture");
+      return null;
+    }
+    let sha256 = ctx.pictures.get(rel.target);
+    if (sha256 === undefined) {
+      const bytes = ctx.parts.get(rel.target);
+      sha256 = bytes ? ((await ctx.saveImage(bytes))?.sha256 ?? null) : null;
+      ctx.pictures.set(rel.target, sha256);
+    }
+    if (!sha256) {
+      ctx.skip("picture format");
+      return null;
+    }
+    if (child(picture, "a:tile")) ctx.skip("tiled background drawn stretched");
+    return { image: sha256 };
+  }
   return null;
 }
 
@@ -1637,9 +1716,12 @@ async function readMaster(
     const layoutTree = path(layoutXml, "p:cSld", "p:spTree");
     const shapes: Shape[] = [];
     await readArtwork(layoutTree, ctx, shapes);
-    const background = readBackground(
-      path(layoutXml, "p:cSld", "p:bg") ?? path(masterXml, "p:cSld", "p:bg"),
-      ctx
+    // A layout's own background, or the master's, read where it is
+    // written: its pictures hang off that part.
+    const own = path(layoutXml, "p:cSld", "p:bg");
+    const background = await readBackground(
+      own ?? path(masterXml, "p:cSld", "p:bg"),
+      own ? ctx : masterCtx
     );
     const titleStyle = path(masterXml, "p:txStyles", "p:titleStyle");
     const otherStyle = path(masterXml, "p:txStyles", "p:otherStyle");

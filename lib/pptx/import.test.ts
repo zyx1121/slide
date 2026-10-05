@@ -872,6 +872,10 @@ describe("placeholders through export and import", () => {
     const parts = unzipSync(exportPptx(doc, new Map()));
     const first = strFromU8(parts["ppt/slides/slide1.xml"]);
     expect(first).toContain('<p:ph type="body" idx="1"/>');
+    // No outline or fill from the master's placeholder: Slide draws none.
+    expect(first).toMatch(
+      /<p:ph type="body" idx="1"\/><\/p:nvPr><\/p:nvSpPr><p:spPr><a:xfrm>.*?<\/a:xfrm><a:noFill\/><a:ln><a:noFill\/><\/a:ln><\/p:spPr>/
+    );
     // Only what the text sets: the layout gives the size and the bullet.
     expect(first).not.toMatch(/<a:rPr[^>]* sz="/);
     expect(first).not.toContain("<a:buNone/>");

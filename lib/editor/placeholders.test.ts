@@ -216,3 +216,49 @@ describe("copying placeholders", () => {
     expect(bakePlaceholder(plain as TextBox, bullets)).toEqual(plain);
   });
 });
+
+describe("reverting a layout change", () => {
+  /** The patch's adds and replaces still hold, as a revert checks first. */
+  const stillThere = (
+    document: DeckDocument,
+    ops: ReturnType<typeof relayoutOps>
+  ) =>
+    ops.every((op) => {
+      if (op.op !== "add" && op.op !== "replace") return true;
+      const value = op.path
+        .split("/")
+        .slice(1)
+        .reduce<unknown>(
+          (at, key) => (at as Record<string, unknown>)?.[key],
+          document
+        );
+      return JSON.stringify(value) === JSON.stringify(op.value);
+    });
+
+  it("finds every value where the change left it", () => {
+    for (const [setup, to] of [
+      [deckWith("Capture"), 4],
+      [deckWith(), 2],
+      [deckWith("Capture"), 2],
+      [deckWith(), 0],
+    ] as const) {
+      // A shape that is no placeholder sits on the slide too.
+      setup.slides[0].shapes.push({
+        id: "tx_free",
+        kind: "text",
+        x: 10,
+        y: 10,
+        w: 100,
+        h: 40,
+        text: { paragraphs: [{ runs: [{ text: "free" }] }] },
+      });
+      const ops = relayoutOps(setup, 0, to);
+      const after = applyOperations(setup, ops).document;
+      expect(stillThere(after, ops)).toBe(true);
+    }
+    // A slide made before placeholders, onto Two Columns.
+    const old = sampleDocument();
+    const ops = relayoutOps(old, 0, 4);
+    expect(stillThere(applyOperations(old, ops).document, ops)).toBe(true);
+  });
+});

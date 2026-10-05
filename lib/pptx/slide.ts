@@ -354,8 +354,11 @@ function placeholderXml(
     body.type === "obj" && numbered ? "" : ` type="${body.type}"`,
     numbered ? ` idx="${body.key}"` : "",
   ].join("");
-  const fill = shape.fill ? fillXml(shape.fill) : "";
-  const stroke = shape.stroke ? line(shape.stroke) : "";
+  // No fill and no outline unless the box sets them, as Slide draws it: a
+  // master's placeholder may have an outline of its own (WinLab's is light
+  // blue), which PowerPoint would otherwise draw.
+  const fill = shape.fill ? fillXml(shape.fill) : "<a:noFill/>";
+  const stroke = line(shape.stroke);
   return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${esc(shape.id)}"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph${ph}/></p:nvPr></p:nvSpPr><p:spPr>${xfrm(shape, shape.rotation, false, false)}${fill}${stroke}</p:spPr>${placeholderTextXml(shape.text)}</p:sp>`;
 }
 
@@ -422,8 +425,10 @@ function titleXml(title: string, layout: Layout): string {
   return `<p:sp><p:nvSpPr><p:cNvPr id="2" name="Title"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="title"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody>${bodyPr}<a:lstStyle/><a:p>${runs}</a:p></p:txBody></p:sp>`;
 }
 
-function slideNumberXml(number: number): string {
-  return `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Slide Number"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldNum" sz="quarter" idx="2"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id="{86CB4B4D-7CA3-9044-876B-883B54F8677D}" type="slidenum"><a:rPr lang="en-US"/><a:t>${number}</a:t></a:fld></a:p></p:txBody></p:sp>`;
+function slideNumberXml(number: number, layout: Layout): string {
+  // idx 2 by custom, unless a text placeholder of the layout has it.
+  const idx = layout.bodies?.some((body) => body.key === "2") ? "" : ' idx="2"';
+  return `<p:sp><p:nvSpPr><p:cNvPr id="3" name="Slide Number"/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr><p:ph type="sldNum" sz="quarter"${idx}/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id="{86CB4B4D-7CA3-9044-876B-883B54F8677D}" type="slidenum"><a:rPr lang="en-US"/><a:t>${number}</a:t></a:fld></a:p></p:txBody></p:sp>`;
 }
 
 const NS =
@@ -481,6 +486,6 @@ export function slideXml(
     }
   });
   const xml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
-<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title, context.layout)}${context.layout.number ? slideNumberXml(number) : ""}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
+<p:sld ${NS}><p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>${titleXml(slide.title, context.layout)}${context.layout.number ? slideNumberXml(number, context.layout) : ""}${body.join("")}</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>`;
   return { xml, pictures };
 }

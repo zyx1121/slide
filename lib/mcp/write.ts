@@ -191,9 +191,15 @@ export function addSlide(
   let id = newId("sl");
   while (taken.has(id)) id = newId("sl");
   taken.add(id);
-  // The default layout's empty placeholders first, behind what is added.
-  const placeholders = placeholderShapes(layoutOf(document, undefined), taken);
-  const shapes = [...placeholders, ...withIds(input.shapes ?? [], taken)];
+  // The default layout's empty placeholders first, behind what is added;
+  // a shape given for one of them takes its place.
+  const given = withIds(input.shapes ?? [], taken);
+  const filled = new Set(given.map((shape) => shape.placeholder));
+  const placeholders = placeholderShapes(
+    layoutOf(document, undefined),
+    taken
+  ).filter((shape) => !filled.has(shape.placeholder));
+  const shapes = [...placeholders, ...given];
   const notes = input.notes?.trim() ? { notes: input.notes } : {};
   const slide = {
     id,
@@ -332,7 +338,7 @@ export function setSlideLayout(
   }
   const ops = relayoutOps(document, index, at);
   const arriving = ops
-    .filter((op) => op.op === "add" && op.path.endsWith("/shapes/0"))
+    .filter((op) => op.op === "add" && /\/shapes\/\d+$/.test(op.path))
     .map((op) => (op as { value: Shape }).value.id);
   return {
     ops: guard(document, ops),

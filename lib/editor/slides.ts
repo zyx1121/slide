@@ -1,7 +1,7 @@
 // Edits to the slide list: a blank slide, a copy of one, moving and
 // deleting. Each is one patch, so one undo step, guarded like every edit.
 import type { Operation } from "../deck/patch";
-import type { DeckDocument, Layout, Slide } from "../deck/schema";
+import type { DeckDocument, Layout, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { layoutOf } from "../master/layout";
 import { bodyOf, isEmptyText } from "../render/svg";
@@ -30,35 +30,33 @@ export function relayoutOps(
   const slide = document.slides[index];
   const from = layoutOf(document, slide);
   const next = document.master.layouts[to];
-  const ops: Operation[] = [
-    { op: "add", path: `/slides/${index}/layout`, value: to },
-  ];
+  const at = (i: number) => `/slides/${index}/shapes/${i}`;
+
+  // What becomes of each placeholder box: kept as it is, moved, made plain,
+  // or gone.
   const kept = new Set<string>();
-  const gone: number[] = [];
+  const gone = new Set<number>();
+  const changed = new Map<number, Shape>();
   slide.shapes.forEach((shape, i) => {
     if (shape.kind !== "text" || shape.placeholder === undefined) return;
-    const path = `/slides/${index}/shapes/${i}`;
     const target = bodyOf(next, shape.placeholder);
     if (!target) {
-      if (isEmptyText(shape.text)) gone.push(i);
-      else
-        ops.push({ op: "replace", path, value: bakePlaceholder(shape, from) });
+      if (isEmptyText(shape.text)) gone.add(i);
+      else changed.set(i, bakePlaceholder(shape, from));
       return;
     }
     kept.add(shape.placeholder);
     const was = bodyOf(from, shape.placeholder);
     if (was && atPlace(shape, was) && !atPlace(shape, target)) {
-      ops.push({
-        op: "replace",
-        path,
-        value: { ...shape, x: target.x, y: target.y, w: target.w, h: target.h },
+      changed.set(i, {
+        ...shape,
+        x: target.x,
+        y: target.y,
+        w: target.w,
+        h: target.h,
       });
     }
   });
-  // Removed last to first, so each index still names its shape.
-  for (const i of gone.reverse()) {
-    ops.push({ op: "remove", path: `/slides/${index}/shapes/${i}` });
-  }
   const taken = new Set(
     document.slides.flatMap((s) => [s.id, ...s.shapes.map((x) => x.id)])
   );
@@ -66,8 +64,26 @@ export function relayoutOps(
     { bodies: (next.bodies ?? []).filter((body) => !kept.has(body.key)) },
     taken
   );
-  for (const shape of arriving.reverse()) {
-    ops.push({ op: "add", path: `/slides/${index}/shapes/0`, value: shape });
+
+  // Every operation names its shape where it ends up, so the change can be
+  // reverted on its own later: removals last to first, then the arriving
+  // boxes at the back in order, then the changed boxes at their new places.
+  const ops: Operation[] = [
+    { op: "add", path: `/slides/${index}/layout`, value: to },
+  ];
+  for (const i of [...gone].sort((a, b) => b - a)) {
+    ops.push({ op: "remove", path: at(i) });
+  }
+  arriving.forEach((shape, i) => {
+    ops.push({ op: "add", path: at(i), value: shape });
+  });
+  for (const [i, shape] of changed) {
+    const before = [...gone].filter((g) => g < i).length;
+    ops.push({
+      op: "replace",
+      path: at(i - before + arriving.length),
+      value: shape,
+    });
   }
   return ops;
 }

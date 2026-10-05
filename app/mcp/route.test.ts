@@ -367,21 +367,71 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     expect(last.shapes).toEqual([
       expect.objectContaining({ kind: "text", placeholder: "1" }),
     ]);
+    const at = withBody.document.slides.length;
+    const keys = async () =>
+      json(await call("get_deck", { deck_id: created.id }))
+        .document.slides.at(-1)
+        .shapes.map((shape: { placeholder?: string }) => shape.placeholder);
+    const toColumns = json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Two Columns",
+      })
+    );
+    expect(toColumns.status).toBe("applied");
+    expect(await keys()).toEqual(["21", "1"]);
+
+    // A layout change is undone on its own, as any edit is.
     expect(
       json(
-        await call("set_slide_layout", {
+        await call("revert", { deck_id: created.id, entry: toColumns.entry })
+      ).outcome
+    ).toBe("applied");
+    expect(await keys()).toEqual(["1"]);
+
+    // Two Columns with its left column typed in, then back to Title &
+    // Bullets: that change reverts too.
+    json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Two Columns",
+      })
+    );
+    const typed = json(await call("get_deck", { deck_id: created.id }));
+    const left = typed.document.slides
+      .at(-1)
+      .shapes.find(
+        (shape: { placeholder?: string }) => shape.placeholder === "1"
+      );
+    expect(
+      json(
+        await call("update_shapes", {
           deck_id: created.id,
-          slide: withBody.document.slides.length,
-          layout: "Two Columns",
+          slide: at,
+          updates: [
+            {
+              id: left.id,
+              set: { text: { paragraphs: [{ runs: [{ text: "Left" }] }] } },
+            },
+          ],
         })
       ).status
     ).toBe("applied");
-    const columns = json(await call("get_deck", { deck_id: created.id }));
+    const back = json(
+      await call("set_slide_layout", {
+        deck_id: created.id,
+        slide: at,
+        layout: "Title & Bullets",
+      })
+    );
+    expect(await keys()).toEqual(["1"]);
     expect(
-      columns.document.slides
-        .at(-1)
-        .shapes.map((shape: { placeholder?: string }) => shape.placeholder)
-    ).toEqual(["21", "1"]);
+      json(await call("revert", { deck_id: created.id, entry: back.entry }))
+        .outcome
+    ).toBe("applied");
+    expect(await keys()).toEqual(["21", "1"]);
     expect(changed.document.slides).toHaveLength(2);
     expect(
       changed.document.slides.map((slide: { title: string }) => slide.title)

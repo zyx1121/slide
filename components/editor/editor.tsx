@@ -1170,7 +1170,12 @@ export function Editor({
 
   const duplicate = () => {
     flushNudge();
-    const clip = copyShapes(docRef.current.slides[index], new Set(selection));
+    const onSlide = docRef.current.slides[index];
+    const clip = copyShapes(
+      onSlide,
+      new Set(selection),
+      layoutOf(docRef.current, onSlide)
+    );
     if (clip) place(index, clip);
   };
 

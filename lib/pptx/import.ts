@@ -1129,14 +1129,16 @@ async function readSp(
       anchor: "top",
     });
     // The layout's placeholder it is, once per slide: by idx, else type.
+    const free = (b: BodyPlaceholder) => !ctx.linked?.has(b.key);
     const match =
       ctx.bodies?.find(
         (b) => ph.attrs.idx !== undefined && b.key === ph.attrs.idx
       ) ??
       ctx.bodies?.find(
         (b) =>
-          b.type === type ||
-          (b.type !== "subTitle" && type !== "subTitle" && b.key === type)
+          free(b) &&
+          (b.type === type ||
+            (b.type !== "subTitle" && type !== "subTitle" && b.key === type))
       );
     const key = match && !ctx.linked?.has(match.key) ? match.key : undefined;
     // An empty one stays when it is the layout's, to prompt in the editor.
@@ -1662,10 +1664,10 @@ function promptOf(sp: El | undefined): { prompt?: string } {
           .join("")
       )
       .join(" ")
-  )
-    .trim()
-    .slice(0, 200);
-  return text ? { prompt: text } : {};
+  ).trim();
+  // Cut at 200 UTF-16 units, never between the halves of a surrogate pair.
+  const cut = text.slice(0, 200).replace(/[\uD800-\uDBFF]$/, "");
+  return cut ? { prompt: cut } : {};
 }
 
 /** Placeholder types a slide types its body text in. */
@@ -1705,9 +1707,11 @@ function readBodies(
     const type = ph?.attrs.type ?? "obj";
     if (!ph || !BODY_TYPES.has(type)) continue;
     const key = ph.attrs.idx ?? type;
-    if (!/^[0-9A-Za-z]{1,20}$/.test(key) || out.some((b) => b.key === key)) {
-      continue;
-    }
+    // An idx is an unsigned 32-bit number; anything else names nothing.
+    const valid = /^[0-9]{1,10}$/.test(key)
+      ? Number(key) <= 0xffffffff
+      : /^[A-Za-z]{1,20}$/.test(key);
+    if (!valid || out.some((b) => b.key === key)) continue;
     const box = boxOf(
       path(sp, "p:spPr", "a:xfrm") ?? path(inherited, "p:spPr", "a:xfrm"),
       ctx,

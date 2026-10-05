@@ -108,10 +108,44 @@ describe("masterFile", () => {
     const kept = keptPresentation(xml);
     expect(kept).not.toMatch(/SECRET|sldIdLst|custShow|modifyVerifier|extLst/);
     expect(kept).toBe(
-      '<?xml version="1.0"?><p:presentation xmlns:p="p" saveSubsetFonts="1">' +
+      '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation xmlns:p="p" saveSubsetFonts="1">' +
         '<p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst>' +
         '<p:sldSz cx="1" cy="2"/><p:notesSz cx="3" cy="4"/>' +
         "<p:defaultTextStyle><a:lvl1pPr/></p:defaultTextStyle></p:presentation>"
     );
+  });
+
+  it("rebuilds the presentation's root, and refuses one that is not", () => {
+    const kept = keptPresentation(
+      '<?xml version="1.0"?><!-- SECRET --><?mso SECRET?>' +
+        '<p:presentation xmlns:p="p" secret="SECRET" rtl="0">' +
+        '<!-- <p:sldSz cx="SECRET"/> --><p:sldSz cx="1" cy="2"/></p:presentation>'
+    );
+    expect(kept).not.toContain("SECRET");
+    expect(kept).toContain('<p:presentation xmlns:p="p" rtl="0">');
+    expect(kept).toContain('<p:sldSz cx="1" cy="2"/>');
+    for (const bad of [
+      '<pml:presentation xmlns:pml="p"><p:sldSz/></pml:presentation>',
+      '<p:presentation xmlns:p="p"/>',
+    ]) {
+      expect(() => keptPresentation(bad)).toThrow();
+    }
+  });
+
+  it("keeps what a master's own artwork points at, such as a chart", () => {
+    const parts = winlab();
+    const master = "ppt/slideMasters/_rels/slideMaster1.xml.rels";
+    parts.set(
+      master,
+      strToU8(
+        strFromU8(parts.get(master)!).replace(
+          "</Relationships>",
+          '<Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/chart" Target="../charts/chart9.xml"/></Relationships>'
+        )
+      )
+    );
+    parts.set("ppt/charts/chart9.xml", strToU8("<c:chartSpace/>"));
+    const kept = unzipSync(masterFile(parts).bytes);
+    expect(kept["ppt/charts/chart9.xml"]).toBeDefined();
   });
 });

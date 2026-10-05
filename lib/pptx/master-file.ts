@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 
 import { strFromU8, strToU8, zipSync } from "fflate";
 
-import { relationships } from "./read";
+import { PptxError, relationships } from "./read";
 
 const PRESENTATION = "ppt/presentation.xml";
 const SLIDE_PART = /^ppt\/(slides|notesSlides|comments)\//;
@@ -40,17 +40,52 @@ const PRESENTATION_CHILDREN = [
   "p:defaultTextStyle",
 ];
 
-/** A presentation part with only the children a master file keeps. */
+/** The presentation's own attributes a master file keeps, with namespaces. */
+const PRESENTATION_ATTRIBUTES = new Set([
+  "serverZoom",
+  "firstSlideNum",
+  "showSpecialPlsOnTitleSld",
+  "rtl",
+  "removePersonalInfoOnSave",
+  "compatMode",
+  "strictFirstAndLastChars",
+  "embedTrueTypeFonts",
+  "saveSubsetFonts",
+  "autoCompressPictures",
+  "bookmarkIdSeed",
+  "conformance",
+]);
+
+/**
+ * A presentation part with only the attributes and children a master file
+ * keeps, rebuilt rather than cut: comments and processing instructions go,
+ * and a part that is not a p:presentation element with children is refused.
+ */
 export function keptPresentation(xml: string): string {
-  const head = /^[\s\S]*?<p:presentation\b[^>]*>/.exec(xml)?.[0];
-  if (!head || head.endsWith("/>")) return xml;
+  const body = xml
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\?(?!xml\s)[\s\S]*?\?>/g, "");
+  const root = /<p:presentation((?:\s+[\w:.-]+="[^"]*")*)\s*(\/?)>/.exec(body);
+  if (!root || root[2] === "/") {
+    throw new PptxError("malformed", "the presentation part is not one");
+  }
+  const attributes = [...root[1].matchAll(/([\w:.-]+)="([^"]*)"/g)]
+    .filter(
+      ([, name]) =>
+        name.startsWith("xmlns:") ||
+        name === "xmlns" ||
+        PRESENTATION_ATTRIBUTES.has(name)
+    )
+    .map(([attribute]) => ` ${attribute}`)
+    .join("");
+  const inside = body.slice(root.index + root[0].length);
   const children = PRESENTATION_CHILDREN.map(
     (tag) =>
       new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`).exec(
-        xml
+        inside
       )?.[0] ?? ""
   );
-  return `${head}${children.join("")}</p:presentation>`;
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation${attributes}>${children.join("")}</p:presentation>`;
 }
 
 /** A relationship's type, its last segment. */

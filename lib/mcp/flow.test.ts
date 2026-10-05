@@ -391,6 +391,19 @@ describe.skipIf(!TEST_DATABASE_URL)("grants (Postgres)", () => {
     });
   });
 
+  it("forgives one retry of a spent token, not a second", async () => {
+    const first = await pair();
+    const second: TokenPair = await (
+      await refreshWith(first.refresh_token)
+    ).json();
+    expect((await refreshWith(first.refresh_token)).status).toBe(200);
+    // A third trade of the same token, still within the grace period.
+    expect(await (await refreshWith(first.refresh_token)).json()).toEqual({
+      error: "invalid_grant",
+    });
+    expect(await verifyAccessToken(db, env, second.access_token)).toBeNull();
+  });
+
   it("revokes a grant whose refresh token another client presents", async () => {
     const tokens = await pair();
     expect(

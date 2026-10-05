@@ -1,27 +1,14 @@
-"use client";
+import Link from "next/link";
 
-import { useFormStatus } from "react-dom";
-
-import { createDeckAction } from "@/app/actions";
 import { CornerTip, cornerLink } from "@/components/corners";
 
-function Submit() {
-  // Held while the deck is created, so a double click makes one deck.
-  const { pending } = useFormStatus();
-  return (
-    <CornerTip tip="建立空白簡報">
-      <button type="submit" disabled={pending} className={cornerLink}>
-        新增
-      </button>
-    </CornerTip>
-  );
-}
-
-/** The home page's top-right action: a new deck, opened right away. */
+/** The home page's top-right action: pick a master for a new deck. */
 export function NewDeckButton() {
   return (
-    <form action={createDeckAction} className="flex">
-      <Submit />
-    </form>
+    <CornerTip tip="選母片，建立新簡報">
+      <Link href="/new" className={cornerLink}>
+        新增
+      </Link>
+    </CornerTip>
   );
 }

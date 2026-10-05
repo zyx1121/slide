@@ -9,8 +9,7 @@ vi.mock("@/lib/deck/store", () => ({ getDeck: vi.fn(), mutateDeck: vi.fn() }));
 
 const { requireUser } = await import("@/lib/auth/session");
 const { getDeck, mutateDeck } = await import("@/lib/deck/store");
-const { editDeckAction, loadDeckAction, setMasterAction } =
-  await import("./actions");
+const { editDeckAction, loadDeckAction } = await import("./actions");
 
 const ops = [{ op: "replace", path: "/title", value: "New" }];
 
@@ -92,36 +91,5 @@ describe("loadDeckAction", () => {
     });
     expect(await loadDeckAction("dk_bob")).toBeNull();
     expect(await loadDeckAction(["dk_1"])).toBeNull();
-  });
-});
-
-describe("setMasterAction", () => {
-  it("plans the move on the deck as it is, as the member", async () => {
-    let planned: unknown = null;
-    vi.mocked(mutateDeck).mockImplementation(async (_db, input) => {
-      if ("plan" in input) planned = input.plan(sampleDocument());
-      return { status: "applied", version: 5, revisionId: "10" };
-    });
-    expect(await setMasterAction("dk_1", "plain")).toEqual({
-      ok: true,
-      version: 5,
-    });
-    expect(vi.mocked(mutateDeck).mock.calls[0][1]).toMatchObject({
-      deckId: "dk_1",
-      actor: { kind: "member", sub: "alice-sub" },
-    });
-    expect(planned).toContainEqual(
-      expect.objectContaining({ op: "replace", path: "/master" })
-    );
-  });
-
-  it("refuses a master the member may not use, without writing", async () => {
-    for (const ref of ["keynote", "f".repeat(64).slice(0, 10), 42]) {
-      expect(await setMasterAction("dk_1", ref)).toEqual({
-        ok: false,
-        code: "malformed",
-      });
-    }
-    expect(mutateDeck).not.toHaveBeenCalled();
   });
 });

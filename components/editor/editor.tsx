@@ -1591,7 +1591,6 @@ export function Editor({
               onAction={changeSlides}
             />
             <LayoutTool
-              deckId={deckId}
               document={doc}
               index={visible}
               disabled={paused}
@@ -1610,9 +1609,6 @@ export function Editor({
                   ],
                   visible
                 );
-              }}
-              onMasterChanged={async () => {
-                await saver.refresh();
               }}
             />
             <NotesTool

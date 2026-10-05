@@ -3,7 +3,7 @@
 // the tools that do the same; parity.test.ts fails when one is missing.
 export const PARITY: Record<string, readonly string[]> = {
   // app/actions.ts
-  createDeckAction: ["create_deck"],
+  createDeckAction: ["create_deck", "list_masters"],
   renameDeckAction: ["rename_deck"],
   deleteDeckAction: ["delete_deck"],
   restoreDeckAction: ["restore_deck", "list_decks"],
@@ -24,8 +24,6 @@ export const PARITY: Record<string, readonly string[]> = {
     "rename_deck",
   ],
   loadDeckAction: ["get_deck"],
-  mastersAction: ["list_masters"],
-  setMasterAction: ["set_master"],
   publishDeckAction: ["publish_deck", "unpublish_deck"],
   historyAction: ["list_history"],
   deckStatusAction: ["get_deck", "list_decks"],

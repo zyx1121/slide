@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@/lib/auth/session", () => ({ requireUser: vi.fn() }));
 vi.mock("@/lib/db", () => ({ sql: {} }));
-vi.mock("@/lib/deck/store", () => ({
+vi.mock("@/lib/deck/store", async (importOriginal) => ({
+  blankDocument: (await importOriginal<typeof import("@/lib/deck/store")>())
+    .blankDocument,
   createDeck: vi.fn(),
   renameDeck: vi.fn(),
   deleteDeck: vi.fn(),
@@ -45,7 +47,9 @@ beforeEach(() => {
 describe("deck actions", () => {
   it("do nothing without a session", async () => {
     vi.mocked(requireUser).mockRejectedValue(new Error("redirect /auth/login"));
-    await expect(createDeckAction()).rejects.toThrow("redirect /auth/login");
+    await expect(createDeckAction(form({ master: "plain" }))).rejects.toThrow(
+      "redirect /auth/login"
+    );
     await expect(
       renameDeckAction(form({ id: "dk_1", title: "Report" }))
     ).rejects.toThrow("redirect /auth/login");
@@ -57,11 +61,29 @@ describe("deck actions", () => {
     expect(deleteDeck).not.toHaveBeenCalled();
   });
 
-  it("create a deck for the member and open it", async () => {
+  it("create a deck for the member on the master they picked, and open it", async () => {
     vi.mocked(createDeck).mockResolvedValue({ id: "dk_new" } as never);
-    await expect(createDeckAction()).rejects.toThrow("redirect /decks/dk_new");
-    expect(createDeck).toHaveBeenCalledWith({}, "alice-sub");
+    await expect(createDeckAction(form({ master: "winlab" }))).rejects.toThrow(
+      "redirect /decks/dk_new"
+    );
+    expect(createDeck).toHaveBeenCalledWith(
+      {},
+      "alice-sub",
+      expect.objectContaining({
+        master: expect.objectContaining({ name: "WinLab" }),
+      })
+    );
     expect(revalidatePath).toHaveBeenCalledWith("/");
+  });
+
+  it("send a master they may not use back to the choice", async () => {
+    for (const master of ["keynote", "f".repeat(10)]) {
+      await expect(createDeckAction(form({ master }))).rejects.toThrow(
+        "redirect /new"
+      );
+    }
+    await expect(createDeckAction(form({}))).rejects.toThrow("redirect /new");
+    expect(createDeck).not.toHaveBeenCalled();
   });
 
   it("explain a rename the store refuses instead of failing the page", async () => {

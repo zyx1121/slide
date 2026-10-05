@@ -1,3 +1,4 @@
+import { compare } from "fast-json-patch";
 import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -6,6 +7,7 @@ import {
   copySlide,
   deleteShapes,
   setSlideLayout,
+  setSlideNotes,
   setSlideTitle,
   updateShapes,
 } from "../mcp/write";
@@ -184,6 +186,83 @@ describe.skipIf(!TEST_DATABASE_URL)("history (Postgres)", () => {
       deck.document.slides[0].shapes.map((shape) => shape.id)
     );
     expect((await asr(deck.id)).fill).toBe("#fff2cc");
+  });
+
+  it("reverts on the shape the edit changed, wherever it is now", async () => {
+    const deck = await fresh();
+    const original = (await asr(deck.id)).fill;
+    const { revisionId: red } = await edit(deck.id, { fill: "#ff0000" });
+    // Later, another shape gets the same fill, and a shape before both goes.
+    await planned(
+      deck.id,
+      (d) =>
+        updateShapes(d, 1, [{ id: "sh_router", set: { fill: "#ff0000" } }]).ops
+    );
+    await planned(deck.id, (d) => deleteShapes(d, 1, ["sh_capture"]).ops);
+    expect(await revertRevision(db, "alice", deck.id, red)).toMatchObject({
+      outcome: "applied",
+    });
+    const shapes = (await documentOf(deck.id)).slides[0].shapes as {
+      id: string;
+      fill?: string;
+    }[];
+    expect(shapes.find((shape) => shape.id === "sh_asr")?.fill).toBe(original);
+    expect(shapes.find((shape) => shape.id === "sh_router")?.fill).toBe(
+      "#ff0000"
+    );
+  });
+
+  it("does not put back what a later edit set again", async () => {
+    const deck = await fresh();
+    await planned(deck.id, (d) => setSlideNotes(d, 1, "old notes").ops);
+    const cleared = await planned(deck.id, (d) => setSlideNotes(d, 1, "").ops);
+    await planned(deck.id, (d) => setSlideNotes(d, 1, "new notes").ops);
+    expect(await revertRevision(db, "alice", deck.id, cleared)).toMatchObject({
+      outcome: "conflict",
+    });
+    expect((await documentOf(deck.id)).slides[0].notes).toBe("new notes");
+
+    // A shape's text taken away, then written again.
+    const emptied = await planned(
+      deck.id,
+      (d) => updateShapes(d, 1, [{ id: "sh_asr", set: { text: null } }]).ops
+    );
+    const later = { paragraphs: [{ runs: [{ text: "Later" }] }] };
+    await planned(
+      deck.id,
+      (d) => updateShapes(d, 1, [{ id: "sh_asr", set: { text: later } }]).ops
+    );
+    expect(await revertRevision(db, "alice", deck.id, emptied)).toMatchObject({
+      outcome: "conflict",
+    });
+    expect(await asr(deck.id)).toMatchObject({ text: later });
+
+    // With nothing set since, it is put back.
+    await planned(deck.id, (d) => setSlideNotes(d, 1, "kept").ops);
+    const gone = await planned(deck.id, (d) => setSlideNotes(d, 1, "").ops);
+    expect(await revertRevision(db, "alice", deck.id, gone)).toMatchObject({
+      outcome: "applied",
+    });
+    expect((await documentOf(deck.id)).slides[0].notes).toBe("kept");
+  });
+
+  it("reverts an entry stored before inverses were guarded", async () => {
+    const deck = await fresh();
+    const { revisionId } = await edit(deck.id, { x: 444 });
+    const [stored] = await db<{ inverse_guarded: boolean }[]>`
+      select inverse_guarded from revisions where id = ${revisionId}`;
+    expect(stored.inverse_guarded).toBe(true);
+    // As one was stored then: the whole-document difference, unguarded.
+    const older = compare(await documentOf(deck.id), deck.document);
+    await db`
+      update revisions
+      set inverse = ${db.json(JSON.parse(JSON.stringify(older)))},
+          inverse_guarded = false
+      where id = ${revisionId}`;
+    expect(
+      await revertRevision(db, "alice", deck.id, revisionId)
+    ).toMatchObject({ outcome: "applied" });
+    expect(await documentOf(deck.id)).toEqual(deck.document);
   });
 
   it("publishes and deletes for an agent at once, each undone by its opposite", async () => {

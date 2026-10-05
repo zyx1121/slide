@@ -8,6 +8,7 @@
 import type postgres from "postgres";
 
 import { newId } from "../ids";
+import { retarget } from "../editor/retarget";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
 import type { DeckDocument } from "./schema";
@@ -86,7 +87,11 @@ export type Outcome =
   | { outcome: "conflict"; message: string }
   | { outcome: "gone" };
 
-/** Applies a patch to the locked deck; the deck's new version. */
+/**
+ * Applies a revert to the locked deck; the deck's new version. The server
+ * built the patch from an applied edit, so its size is not limited; it puts
+ * back only what is gone, never writing over a member a later edit set.
+ */
 async function applyToDeck(
   tx: Tx,
   deckId: string,
@@ -94,7 +99,11 @@ async function applyToDeck(
   version: number,
   ops: Operation[]
 ) {
-  const result = applyOperations(document, ops);
+  const result = applyOperations(document, ops, {
+    maxOperations: Infinity,
+    overwrite: false,
+    guardInverse: true,
+  });
   const next = version + 1;
   await tx`
     update decks
@@ -246,9 +255,14 @@ export async function revertRevision(
     const deck = await lockDeck(tx, owner, deckId);
     if (!deck) return { outcome: "gone" };
     const [row] = await tx<
-      { kind: EntryKind; patch: Operation[]; inverse: Operation[] | null }[]
+      {
+        kind: EntryKind;
+        patch: Operation[];
+        inverse: Operation[] | null;
+        inverse_guarded: boolean;
+      }[]
     >`
-      select kind, patch, inverse from revisions
+      select kind, patch, inverse, inverse_guarded from revisions
       where id = ${revisionId} and deck_id = ${deckId} and status = 'applied'`;
     if (!row) return { outcome: "gone" };
 
@@ -261,10 +275,11 @@ export async function revertRevision(
     }
 
     if (deck.deleted || !row.inverse?.length) return { outcome: "gone" };
-    // An inverse that tests the places it changes checks itself; an older
-    // one is checked by finding what the edit set still where it set it.
-    const ops = row.inverse.some((op) => op.op === "test")
-      ? row.inverse
+    // A guarded inverse finds the slides and shapes it pins wherever they
+    // are now, and tests each place it changes; an older one is checked by
+    // finding what the edit set still where it set it.
+    const ops = row.inverse_guarded
+      ? retarget(deck.document, row.inverse)
       : [...stillThere(row.patch), ...row.inverse];
     let applied;
     try {
@@ -281,11 +296,11 @@ export async function revertRevision(
     await tx`
       insert into revisions
         (deck_id, base_version, version, author_kind, author_sub, status,
-         patch, inverse)
+         patch, inverse, inverse_guarded)
       values
         (${deckId}, ${deck.version}, ${applied.next}, ${by}, ${owner}, 'applied',
          ${tx.json(asJson(applied.result.operations))},
-         ${tx.json(asJson(applied.result.inverse))})`;
+         ${tx.json(asJson(applied.result.inverse))}, true)`;
     return { outcome: "applied", version: applied.next, kind: "edit" };
   });
 }

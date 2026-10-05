@@ -56,7 +56,9 @@ export function guard(document: DeckDocument, ops: Operation[]): Operation[] {
       if (shape) pin(`/slides/${match[1]}/shapes/${match[2]}/id`, shape.id);
     }
     guarded.push(op);
-    state = applyOperation(state, op, false, true).newDocument;
+    // A copy, so a later operation writing into a value added here leaves
+    // the patch as it was.
+    state = applyOperation(state, structuredClone(op), false, true).newDocument;
     const moves = paths.some((path) => SLOT.test(path) || path.endsWith("/id"));
     if (moves) pinned = new Set();
   }

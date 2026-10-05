@@ -84,7 +84,14 @@ export function retarget(
     }
     out.push(moved);
     try {
-      state = applyOperation(state, moved, false, true).newDocument;
+      // A copy, so a later operation writing into a value added here leaves
+      // the patch as it was.
+      state = applyOperation(
+        state,
+        structuredClone(moved),
+        false,
+        true
+      ).newDocument;
     } catch {
       // It does not fit here; the rest as it was, to be refused whole.
       return [...out, ...patch.slice(k + 1)];

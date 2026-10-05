@@ -8,7 +8,7 @@ import { createHash } from "node:crypto";
 
 import { strFromU8, strToU8, zipSync } from "fflate";
 
-import { relationships } from "./read";
+import { PptxError, relationships } from "./read";
 
 const PRESENTATION = "ppt/presentation.xml";
 const SLIDE_PART = /^ppt\/(slides|notesSlides|comments)\//;
@@ -24,6 +24,69 @@ const KEPT_TYPES = new Set([
   "viewProps",
   "tableStyles",
 ]);
+
+/**
+ * What a master file's presentation keeps, in the schema's order: the
+ * master lists, the sizes and the default text style. Slide lists, custom
+ * shows, embedded fonts, write protection, extensions and anything else a
+ * file carries are left out.
+ */
+const PRESENTATION_CHILDREN = [
+  "p:sldMasterIdLst",
+  "p:notesMasterIdLst",
+  "p:handoutMasterIdLst",
+  "p:sldSz",
+  "p:notesSz",
+  "p:defaultTextStyle",
+];
+
+/** The presentation's own attributes a master file keeps, with namespaces. */
+const PRESENTATION_ATTRIBUTES = new Set([
+  "serverZoom",
+  "firstSlideNum",
+  "showSpecialPlsOnTitleSld",
+  "rtl",
+  "removePersonalInfoOnSave",
+  "compatMode",
+  "strictFirstAndLastChars",
+  "embedTrueTypeFonts",
+  "saveSubsetFonts",
+  "autoCompressPictures",
+  "bookmarkIdSeed",
+  "conformance",
+]);
+
+/**
+ * A presentation part with only the attributes and children a master file
+ * keeps, rebuilt rather than cut: comments and processing instructions go,
+ * and a part that is not a p:presentation element with children is refused.
+ */
+export function keptPresentation(xml: string): string {
+  const body = xml
+    .replace(/<!--[\s\S]*?-->/g, "")
+    .replace(/<\?(?!xml\s)[\s\S]*?\?>/g, "");
+  const root = /<p:presentation((?:\s+[\w:.-]+="[^"]*")*)\s*(\/?)>/.exec(body);
+  if (!root || root[2] === "/") {
+    throw new PptxError("malformed", "the presentation part is not one");
+  }
+  const attributes = [...root[1].matchAll(/([\w:.-]+)="([^"]*)"/g)]
+    .filter(
+      ([, name]) =>
+        name.startsWith("xmlns:") ||
+        name === "xmlns" ||
+        PRESENTATION_ATTRIBUTES.has(name)
+    )
+    .map(([attribute]) => ` ${attribute}`)
+    .join("");
+  const inside = body.slice(root.index + root[0].length);
+  const children = PRESENTATION_CHILDREN.map(
+    (tag) =>
+      new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`).exec(
+        inside
+      )?.[0] ?? ""
+  );
+  return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<p:presentation${attributes}>${children.join("")}</p:presentation>`;
+}
 
 /** A relationship's type, its last segment. */
 const typeOf = (type: string) => type.slice(type.lastIndexOf("/") + 1);
@@ -68,13 +131,7 @@ export function masterFile(parts: Map<string, Uint8Array>): {
   kept.set(
     PRESENTATION,
     strToU8(
-      strFromU8(parts.get(PRESENTATION) ?? new Uint8Array())
-        // Lists that name slides, sections, fonts or other parts left out.
-        .replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/, "")
-        .replace(/<p:custShowLst>[\s\S]*?<\/p:custShowLst>/, "")
-        .replace(/<p:embeddedFontLst>[\s\S]*?<\/p:embeddedFontLst>/, "")
-        .replace(/<p:custDataLst>[\s\S]*?<\/p:custDataLst>/, "")
-        .replace(/<p:extLst>[\s\S]*?<\/p:extLst>/, "")
+      keptPresentation(strFromU8(parts.get(PRESENTATION) ?? new Uint8Array()))
     )
   );
 

@@ -40,6 +40,7 @@ import { NotesTool } from "@/components/editor/notes-tool";
 import { Play } from "@/components/present/play";
 import { screenName, screenUrl } from "@/components/present/presenter";
 import { HistoryTool } from "@/components/editor/history-tool";
+import { LayoutTool } from "@/components/editor/layout-tool";
 import { SlideOverlay } from "@/components/editor/overlay";
 import {
   FillTool,
@@ -1588,6 +1589,31 @@ export function Editor({
               last={visible === doc.slides.length - 1}
               only={doc.slides.length === 1}
               onAction={changeSlides}
+            />
+            <LayoutTool
+              deckId={deckId}
+              document={doc}
+              index={visible}
+              disabled={paused}
+              onLayout={(layout) => {
+                if (
+                  (doc.slides[visible].layout ?? doc.master.layout) === layout
+                )
+                  return;
+                commit(
+                  [
+                    {
+                      op: "add",
+                      path: `/slides/${visible}/layout`,
+                      value: layout,
+                    },
+                  ],
+                  visible
+                );
+              }}
+              onMasterChanged={async () => {
+                await saver.refresh();
+              }}
             />
             <NotesTool
               slideId={doc.slides[visible].id}

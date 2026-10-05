@@ -6,7 +6,7 @@ Slide ships two slide masters. A deck carries its master in the document (`docum
 bun scripts/masters.ts
 ```
 
-A test fails when the JSON and the files disagree. An export starts from the master file (the `.pptx` without its slides, `lib/pptx/master-file.ts`), so a deck exported on a built-in master opens in PowerPoint on that master, layouts included. The masters' pictures are served to anyone, as part of Slide.
+A test fails when the JSON and the files disagree. When the master files' sha256 change (a template changed, or how master files are cut), add the old ones to `RETIRED_FILES` in `lib/master/builtin-assets.ts`: decks keep the sha256 they were saved with. An export starts from the master file (the `.pptx` without its slides, `lib/pptx/master-file.ts`), so a deck exported on a built-in master opens in PowerPoint on that master, layouts included. The masters' pictures are served to anyone, as part of Slide.
 
 ## plain
 

@@ -25,6 +25,34 @@ const KEPT_TYPES = new Set([
   "tableStyles",
 ]);
 
+/**
+ * What a master file's presentation keeps, in the schema's order: the
+ * master lists, the sizes and the default text style. Slide lists, custom
+ * shows, embedded fonts, write protection, extensions and anything else a
+ * file carries are left out.
+ */
+const PRESENTATION_CHILDREN = [
+  "p:sldMasterIdLst",
+  "p:notesMasterIdLst",
+  "p:handoutMasterIdLst",
+  "p:sldSz",
+  "p:notesSz",
+  "p:defaultTextStyle",
+];
+
+/** A presentation part with only the children a master file keeps. */
+export function keptPresentation(xml: string): string {
+  const head = /^[\s\S]*?<p:presentation\b[^>]*>/.exec(xml)?.[0];
+  if (!head || head.endsWith("/>")) return xml;
+  const children = PRESENTATION_CHILDREN.map(
+    (tag) =>
+      new RegExp(`<${tag}\\b[^>]*/>|<${tag}\\b[^>]*>[\\s\\S]*?</${tag}>`).exec(
+        xml
+      )?.[0] ?? ""
+  );
+  return `${head}${children.join("")}</p:presentation>`;
+}
+
 /** A relationship's type, its last segment. */
 const typeOf = (type: string) => type.slice(type.lastIndexOf("/") + 1);
 
@@ -68,13 +96,7 @@ export function masterFile(parts: Map<string, Uint8Array>): {
   kept.set(
     PRESENTATION,
     strToU8(
-      strFromU8(parts.get(PRESENTATION) ?? new Uint8Array())
-        // Lists that name slides, sections, fonts or other parts left out.
-        .replace(/<p:sldIdLst>[\s\S]*?<\/p:sldIdLst>|<p:sldIdLst\/>/, "")
-        .replace(/<p:custShowLst>[\s\S]*?<\/p:custShowLst>/, "")
-        .replace(/<p:embeddedFontLst>[\s\S]*?<\/p:embeddedFontLst>/, "")
-        .replace(/<p:custDataLst>[\s\S]*?<\/p:custDataLst>/, "")
-        .replace(/<p:extLst>[\s\S]*?<\/p:extLst>/, "")
+      keptPresentation(strFromU8(parts.get(PRESENTATION) ?? new Uint8Array()))
     )
   );
 

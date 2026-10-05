@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import { exportPptx } from "./export";
-import { masterFile } from "./master-file";
+import { keptPresentation, masterFile } from "./master-file";
 import { unzipMasterParts } from "./read";
 
 const winlab = () =>
@@ -91,6 +91,27 @@ describe("masterFile", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(strFromU8(out["ppt/presentation.xml"])).toMatch(
       /<\/p:sldMasterIdLst>(<p:notesMasterIdLst>.*?<\/p:notesMasterIdLst>)?<p:sldIdLst>/
+    );
+  });
+
+  it("keeps only the master lists, sizes and text style of the presentation", () => {
+    const xml =
+      '<?xml version="1.0"?><p:presentation xmlns:p="p" saveSubsetFonts="1">' +
+      '<p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst>' +
+      '<p:sldIdLst><p:sldId id="256" r:id="rId9"/></p:sldIdLst>' +
+      '<p:sldSz cx="1" cy="2"/><p:notesSz cx="3" cy="4"/>' +
+      '<p:custShowLst><p:custShow name="secret"/></p:custShowLst>' +
+      '<p:modifyVerifier cryptProviderType="rsaAES" hashData="SECRET_HASH"/>' +
+      "<p:defaultTextStyle><a:lvl1pPr/></p:defaultTextStyle>" +
+      '<p:extLst><p:ext uri="a"/></p:extLst><p:extLst><p:ext uri="SECRET_EXT"/></p:extLst>' +
+      "</p:presentation>";
+    const kept = keptPresentation(xml);
+    expect(kept).not.toMatch(/SECRET|sldIdLst|custShow|modifyVerifier|extLst/);
+    expect(kept).toBe(
+      '<?xml version="1.0"?><p:presentation xmlns:p="p" saveSubsetFonts="1">' +
+        '<p:sldMasterIdLst><p:sldMasterId id="1" r:id="rId1"/></p:sldMasterIdLst>' +
+        '<p:sldSz cx="1" cy="2"/><p:notesSz cx="3" cy="4"/>' +
+        "<p:defaultTextStyle><a:lvl1pPr/></p:defaultTextStyle></p:presentation>"
     );
   });
 });

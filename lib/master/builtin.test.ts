@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { builtinAsset, builtinMasterFile } from "./builtin-assets";
+import {
+  builtinAsset,
+  builtinMasterFile,
+  RETIRED_FILES,
+} from "./builtin-assets";
 import { readBuiltinMasters } from "./build";
 import { BUILTIN_MASTERS, layoutOf } from "./layout";
 
@@ -40,5 +44,21 @@ describe("built-in masters", () => {
       "Title, Bullets & Photo",
       "Two Columns",
     ]);
+  });
+
+  it("still give the files of decks saved under a retired sha256", () => {
+    const current = Object.fromEntries(
+      Object.values(BUILTIN_MASTERS).map((master) => [
+        master.name,
+        builtinMasterFile(master.file),
+      ])
+    );
+    for (const [sha256, template] of Object.entries(RETIRED_FILES)) {
+      const name = template === "winlab.pptx" ? "WinLab" : "空白";
+      expect(builtinMasterFile(sha256)).toBe(current[name]);
+    }
+    expect(Object.keys(RETIRED_FILES)).not.toContain(
+      BUILTIN_MASTERS.winlab.file
+    );
   });
 });

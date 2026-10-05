@@ -158,7 +158,6 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "resolve_comment",
       "restore_deck",
       "revert",
-      "set_master",
       "set_slide_layout",
       "set_slide_notes",
       "set_slide_title",
@@ -345,7 +344,6 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     for (const [tool, args] of [
       ["rename_deck", { title: "Renamed" }],
       ["set_slide_layout", { slide: 1, layout: "Section" }],
-      ["set_master", { master: "plain" }],
       ["set_slide_title", { slide: 1, title: "Opening" }],
       ["set_slide_notes", { slide: 1, notes: "Welcome everyone." }],
       ["copy_slide", { slide: 1 }],
@@ -355,18 +353,14 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
     }
     const changed = json(await call("get_deck", { deck_id: created.id }));
     expect(changed.document.title).toBe("Renamed");
-    expect(changed.document.master.name).toBe("空白");
-    // The plain master has no Section layout: the slide takes its default.
-    expect(changed.document.slides[0].layout).toBeUndefined();
+    // The deck keeps its master; the slide is on its Section layout.
+    expect(changed.document.master.name).toBe("WinLab");
+    expect(changed.document.slides[0].layout).toBe(2);
     expect(changed.document.slides).toHaveLength(2);
     expect(
       changed.document.slides.map((slide: { title: string }) => slide.title)
     ).toEqual(["Opening", "Opening"]);
     expect(changed.document.slides[0].notes).toBe("Welcome everyone.");
-    expect(
-      (await call("set_master", { deck_id: created.id, master: "plain" }))
-        .isError
-    ).toBe(true);
 
     // A picture goes up and comes back.
     const png =

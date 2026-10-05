@@ -54,7 +54,6 @@ import {
   deleteSlide,
   moveSlide,
   type Planned,
-  remaster,
   retitle,
   setSlideNotes,
   setSlideLayout,
@@ -123,7 +122,7 @@ export function createServer(context: ToolContext): McpServer {
     { name: "slide", version: packageJson.version },
     {
       instructions:
-        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's slide master (document.master, from a .pptx) has layouts; each slide's layout draws its background, artwork, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
+        "Slide decks of the signed-in member; everything the member can do in the editor is a tool here. A deck is a JSON document: slides with a title, speaker notes and shapes (rect, roundRect, ellipse, preset, freeform, text, image, line) placed in px on a 1920 x 1080 canvas; every shape has a stable id. The deck's slide master (document.master, from a .pptx, fixed when the deck is made) has layouts; each slide's layout draws its background, artwork, title and number. Use list_decks, then get_deck for the document, render_slide to see a slide, check_deck for the slide rules, get_selection for what the member points at, and list_comments for what they asked for: answer each comment with edits, reply_comment naming the entry that answers it, then resolve_comment. Every change applies at once, the member's and yours alike, and is recorded in the deck's history: list_history shows it and revert undoes any one edit (publishing and deleting are undone by their opposite tools), so prefer acting and reverting over asking. create_deck, import_deck and upload_image (for picture shapes) add; export_deck returns a .pptx.",
     }
   );
   const { db, sub } = context;
@@ -555,7 +554,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Create a deck",
       description:
-        "Creates a deck of one empty slide and returns its id. It is drawn on the plain master unless another is named: a ref from list_masters (winlab for the WinLab master).",
+        "Creates a deck of one empty slide and returns its id, on the plain master unless another is named: a ref from list_masters (winlab for the WinLab master). A deck keeps the master it is made on; set_slide_layout picks a slide's layout in it.",
       inputSchema: {
         title: z.string().trim().min(1).max(DECK_TITLE_MAX).optional(),
         master: MasterRef.optional(),
@@ -698,25 +697,10 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "List slide masters",
       description:
-        "The slide masters a deck can be put on, each with the names of its layouts: the built-in plain and winlab, then the masters of the .pptx files the member imported. ref is what create_deck and set_master take.",
+        "The slide masters a new deck can be made on, each with the names of its layouts: the built-in plain and winlab, then the masters of the .pptx files the member imported. ref is what create_deck takes; a deck keeps its master.",
       inputSchema: {},
     },
     async () => text(await listMasters(db, sub))
-  );
-
-  server.registerTool(
-    "set_master",
-    {
-      title: "Switch slide master",
-      description:
-        "Puts the deck on another slide master, a ref from list_masters. Each slide keeps a layout of the same name when the master has one, and takes the master's default layout otherwise.",
-      inputSchema: { deck_id: DeckId, master: MasterRef },
-    },
-    async ({ deck_id, master }) => {
-      const found = await findMaster(db, sub, master);
-      if (!found) return failure(`No master ${master}; see list_masters.`);
-      return edit(deck_id, (document) => remaster(document, found));
-    }
   );
 
   server.registerTool(

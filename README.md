@@ -53,7 +53,7 @@ This starts Postgres, a one-shot migration job and the web app, all from `ghcr.i
 
 ## Use
 
-1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts a blank one, **匯入** turns a `.pptx` into one.
+1. Sign in with an account whose email is in `ALLOWED_EMAILS` (Google, or any OpenID Connect provider you configure). The home page lists your decks: **新增** starts one on a master you pick, **匯入** turns a `.pptx` into one on its own master.
 2. Edit on the slide. Double-click a shape or the title to type; the dock at the bottom inserts shapes, text boxes, pictures and connectors, and a menu next to what you select styles it.
 3. Connect your agent. In Claude Code, run `claude mcp add --transport http slide https://slide.example.org/mcp`, then sign in from `/mcp`; it signs you in (if you are not already) and asks you to allow the agent.
 4. Select shapes (or words) and leave a comment from the dock's 評論 button, as many as you like; then ask your agent to answer the open comments. Or select shapes and ask your agent to change them directly. Its edits show up at once; the history button in the dock (**紀錄**) lists every change, yours and your agent's, and reverts any edit.
@@ -105,7 +105,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 
 ## Limitations
 
-- Slides are drawn on a slide master: plain, WinLab, or an imported file's own (its layouts' backgrounds, artwork and placeholders). Gradients other than linear, and background pictures, are not drawn yet
+- A deck keeps the slide master it is made on: plain, WinLab, or an imported file's own (its layouts' backgrounds, artwork and placeholders). Path gradients are drawn as circles
 - Import turns a table into a rectangle per cell (its text stays editable, but not as one table), and leaves out charts, SmartArt, freeforms drawn with guide formulas, and pictures in EMF, SVG or TIFF, and says so
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two

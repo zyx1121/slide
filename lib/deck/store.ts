@@ -6,7 +6,6 @@ import type postgres from "postgres";
 
 import { newId } from "../ids";
 import { BUILTIN_MASTERS, layoutOf } from "../master/layout";
-import { ownsMaster } from "../master/store";
 import { DeckError } from "./errors";
 import { applyOperations, type Operation } from "./patch";
 import { actOnDeck } from "./revisions";
@@ -264,19 +263,6 @@ export async function mutateDeck(
     }
 
     const result = applyOperations(row.document, ops);
-    // A deck goes onto another master file only if the member may use it:
-    // a built-in, or one they imported.
-    const file = result.document.master.file;
-    if (
-      file !== row.document.master.file &&
-      !(await ownsMaster(tx, actor.sub, file))
-    ) {
-      throw new DeckError(
-        "invalid_document",
-        `the master file ${file} is not one the member may use`
-      );
-    }
-
     const version = row.version + 1;
     await tx`
       update decks

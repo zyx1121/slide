@@ -11,20 +11,34 @@ import { sql } from "@/lib/db";
 import { DeckError } from "@/lib/deck/errors";
 import { DECK_TITLE_MAX } from "@/lib/deck/limits";
 import {
+  blankDocument,
   createDeck,
   deleteDeck,
   renameDeck,
   restoreDeck,
 } from "@/lib/deck/store";
+import { findMaster } from "@/lib/master/store";
 
 export type ActionResult = { ok: true } | { ok: false; error: string };
 
 const MALFORMED: ActionResult = { ok: false, error: "請求格式不正確。" };
 
-/** Creates a deck on the plain master and opens it. */
-export async function createDeckAction(): Promise<void> {
+/**
+ * Creates a deck on the master the member picked (a ref from listMasters:
+ * a built-in, or the master of a file they imported) and opens it. A deck
+ * keeps its master.
+ */
+export async function createDeckAction(form: FormData): Promise<void> {
   const user = await requireUser();
-  const deck = await createDeck(sql, user.sub);
+  const ref = form.get("master");
+  const master =
+    typeof ref === "string" ? await findMaster(sql, user.sub, ref) : null;
+  if (!master) redirect("/new");
+  const deck = await createDeck(
+    sql,
+    user.sub,
+    blankDocument(undefined, master)
+  );
   // The browser's back button would otherwise show the list without it.
   revalidatePath("/");
   redirect(`/decks/${deck.id}`);

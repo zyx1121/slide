@@ -26,12 +26,6 @@ import {
 } from "@/lib/deck/comments";
 import { saveSelection, SelectionInput } from "@/lib/deck/selection";
 import { deckStatus, getDeck, mutateDeck } from "@/lib/deck/store";
-import {
-  findMaster,
-  listMasters,
-  type MasterSummary,
-} from "@/lib/master/store";
-import { remaster, WriteError } from "@/lib/mcp/write";
 
 export type EditResult =
   | { ok: true; version: number }
@@ -190,39 +184,4 @@ export async function threadAction(
     kind,
     body: typeof body === "string" ? body : undefined,
   });
-}
-
-/** The masters the member may put a deck on: the built-ins, then theirs. */
-export async function mastersAction(): Promise<MasterSummary[]> {
-  const user = await requireUser();
-  return listMasters(sql, user.sub);
-}
-
-/**
- * Puts the member's deck on another master, a ref from mastersAction; each
- * slide keeps a layout of the same name when the master has one. Planned on
- * the deck as it is, as an agent's set_master is.
- */
-export async function setMasterAction(
-  deckId: unknown,
-  ref: unknown
-): Promise<EditResult> {
-  const user = await requireUser();
-  if (typeof deckId !== "string" || typeof ref !== "string") {
-    return { ok: false, code: "malformed" };
-  }
-  const master = await findMaster(sql, user.sub, ref);
-  if (!master) return { ok: false, code: "malformed" };
-  try {
-    const result = await mutateDeck(sql, {
-      deckId,
-      actor: { kind: "member", sub: user.sub },
-      plan: (document) => remaster(document, master).ops,
-    });
-    return { ok: true, version: result.version };
-  } catch (error) {
-    if (error instanceof WriteError) return { ok: false, code: "malformed" };
-    if (!(error instanceof DeckError)) throw error;
-    return { ok: false, code: error.code };
-  }
 }

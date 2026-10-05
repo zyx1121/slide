@@ -135,4 +135,20 @@ describe("applyOperations", () => {
     ).toBe("invalid_patch");
     expect(({} as Record<string, unknown>).polluted).toBeUndefined();
   });
+
+  it("refuses any operation on the deck's master", () => {
+    const doc = sampleDocument();
+    for (const ops of [
+      [{ op: "replace", path: "/master", value: doc.master }],
+      [{ op: "replace", path: "/master/name", value: "Other" }],
+      [{ op: "move", from: "/master/name", path: "/title" }],
+      [{ op: "remove", path: "/master/shapes/0" }],
+    ]) {
+      expect(() => applyOperations(doc, ops)).toThrow(/keeps the master/);
+    }
+    expect(
+      applyOperations(doc, [{ op: "add", path: "/slides/0/layout", value: 2 }])
+        .document.slides[0].layout
+    ).toBe(2);
+  });
 });

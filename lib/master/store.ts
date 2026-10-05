@@ -52,20 +52,7 @@ export async function readMasterFile(
   return row ? new Uint8Array(row.bytes) : null;
 }
 
-/** Whether the member may put a deck on the master file: built in, or theirs. */
-export async function ownsMaster(
-  db: Db,
-  sub: string,
-  sha256: string
-): Promise<boolean> {
-  if (!SHA256.test(sha256)) return false;
-  if (builtinMasterFile(sha256)) return true;
-  const [row] = await db`
-    select 1 from master_owners where sha256 = ${sha256} and sub = ${sub}`;
-  return !!row;
-}
-
-/** A master the member may put a deck on: a built-in by id, or theirs by sha256. */
+/** A master the member may make a deck on: a built-in by id, or theirs by sha256. */
 export async function findMaster(
   db: Db,
   sub: string,
@@ -84,17 +71,20 @@ export async function findMaster(
 }
 
 export type MasterSummary = {
-  /** What set_master takes: a built-in's id, or a master file's sha256. */
+  /** What create_deck takes: a built-in's id, or a master file's sha256. */
   ref: string;
   name: string;
   layouts: string[];
 };
 
-/** The masters the member may put a deck on: the built-ins, then theirs. */
-export async function listMasters(
+/**
+ * The masters the member may make a deck on, whole: the built-ins, then the
+ * masters of the files they imported, newest first.
+ */
+export async function masterChoices(
   db: Db,
   sub: string
-): Promise<MasterSummary[]> {
+): Promise<{ ref: string; master: Master }[]> {
   const rows = await db<{ sha256: string; master: Master }[]>`
     select m.sha256, m.master from masters m
     join master_owners o on o.sha256 = m.sha256
@@ -102,8 +92,18 @@ export async function listMasters(
     order by o.created_at desc`;
   return [
     ...BUILTIN_IDS.map((id) => ({ ref: id, master: BUILTIN_MASTERS[id] })),
-    ...rows.map((row) => ({ ref: row.sha256, master: row.master })),
-  ].map(({ ref, master }) => ({
+    ...rows
+      .filter((row) => Master.safeParse(row.master).success)
+      .map((row) => ({ ref: row.sha256, master: row.master })),
+  ];
+}
+
+/** The masters the member may make a deck on, by name and layout names. */
+export async function listMasters(
+  db: Db,
+  sub: string
+): Promise<MasterSummary[]> {
+  return (await masterChoices(db, sub)).map(({ ref, master }) => ({
     ref,
     name: master.name,
     layouts: master.layouts.map((layout) => layout.name),

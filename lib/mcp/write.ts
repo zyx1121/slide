@@ -3,7 +3,7 @@
 // the deck as it is, with id tests in front, so it lands on the same shapes
 // or is refused if they moved.
 import type { Operation } from "../deck/patch";
-import type { DeckDocument, Master, Shape, Slide } from "../deck/schema";
+import type { DeckDocument, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { guard } from "../editor/guard";
 import { deleteOps } from "../editor/ops";
@@ -298,37 +298,6 @@ export function retitle(document: DeckDocument, title: string): Planned {
     ops: [{ op: "replace", path: "/title", value }],
     created: [],
     changed: [],
-  };
-}
-
-/**
- * Puts the deck on another master. Each slide keeps a layout of the same
- * name when the new master has one, and takes its default layout otherwise.
- */
-export function remaster(document: DeckDocument, master: Master): Planned {
-  if (
-    document.master.file === master.file &&
-    document.master.part === master.part &&
-    document.master.name === master.name
-  ) {
-    throw new WriteError(`the deck is already on ${master.name}`);
-  }
-  const ops: Operation[] = [{ op: "replace", path: "/master", value: master }];
-  document.slides.forEach((slide, i) => {
-    const name =
-      document.master.layouts[slide.layout ?? document.master.layout]?.name;
-    const at = master.layouts.findIndex((layout) => layout.name === name);
-    const path = `/slides/${i}/layout`;
-    if (at !== -1 && at !== master.layout) {
-      ops.push({ op: "add", path, value: at });
-    } else if (slide.layout !== undefined) {
-      ops.push({ op: "remove", path });
-    }
-  });
-  return {
-    ops: guard(document, ops),
-    created: [],
-    changed: document.slides.map((slide) => slide.id),
   };
 }
 

@@ -55,6 +55,19 @@ export function applyOperations(
         `operation ${index}: op must be one of ${[...OPERATIONS].join(", ")}`
       );
     }
+    // A deck keeps the master it was made on; slides pick its layouts.
+    const { path, from } = operation as { path?: unknown; from?: unknown };
+    if (
+      [path, from].some(
+        (p) =>
+          p === "/master" || (typeof p === "string" && p.startsWith("/master/"))
+      )
+    ) {
+      throw new DeckError(
+        "invalid_patch",
+        `operation ${index}: a deck keeps the master it was made on`
+      );
+    }
   });
 
   let next: unknown;

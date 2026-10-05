@@ -1,10 +1,11 @@
 import {
-  applyPatch,
+  applyOperation,
   compare,
   JsonPatchError,
   type Operation,
 } from "fast-json-patch";
 
+import { guard } from "../editor/guard";
 import { DeckError } from "./errors";
 import { DeckDocument, describeIssues } from "./schema";
 
@@ -22,26 +23,51 @@ const MAX_DOCUMENT_BYTES = 5_000_000;
 // patch can only grow the document by the values it carries.
 const OPERATIONS = new Set(["add", "remove", "replace", "move", "test"]);
 
+export type ApplyOptions = {
+  /** At most this many operations; 5000 for a member's or an agent's patch. */
+  maxOperations?: number;
+  /**
+   * Whether an add or a move may set an object member that is there
+   * already. A revert's may not: what it puts back was gone after the edit,
+   * so a member there now was set by a later edit, which it would undo.
+   */
+  overwrite?: boolean;
+  /**
+   * An inverse kept for a revert long after: pinned to the ids of the slides
+   * and shapes it addresses (guard.ts), for retarget.ts to find them wherever
+   * they are by then, and testing that each place it changes still holds
+   * what the patch left there.
+   */
+  guardInverse?: boolean;
+};
+
 /**
  * Applies RFC 6902 operations to a copy of the document and validates the
- * result. Returns the new document and the inverse patch that turns it back.
+ * result. Returns the new document and the inverse patch that turns it back,
+ * built operation by operation, so it touches only what the patch touched.
  * Throws DeckError ("invalid_patch" or "invalid_document"), also for a patch
- * that changes nothing; the input is never modified.
+ * that changes nothing; neither the document nor the operations are modified.
  */
 export function applyOperations(
   document: DeckDocument,
-  operations: unknown
+  operations: unknown,
+  options: ApplyOptions = {}
 ): { document: DeckDocument; operations: Operation[]; inverse: Operation[] } {
+  const {
+    maxOperations = MAX_OPERATIONS,
+    overwrite = true,
+    guardInverse = false,
+  } = options;
   if (!Array.isArray(operations) || operations.length === 0) {
     throw new DeckError(
       "invalid_patch",
       "a patch is a non-empty array of RFC 6902 operations"
     );
   }
-  if (operations.length > MAX_OPERATIONS) {
+  if (operations.length > maxOperations) {
     throw new DeckError(
       "invalid_patch",
-      `a patch holds at most ${MAX_OPERATIONS} operations`
+      `a patch holds at most ${maxOperations} operations`
     );
   }
   operations.forEach((operation: unknown, index) => {
@@ -55,8 +81,15 @@ export function applyOperations(
         `operation ${index}: op must be one of ${[...OPERATIONS].join(", ")}`
       );
     }
-    // A deck keeps the master it was made on; slides pick its layouts.
     const { path, from } = operation as { path?: unknown; from?: unknown };
+    // A patch changes parts of the deck, never the whole of it at once.
+    if (path === "" || from === "") {
+      throw new DeckError(
+        "invalid_patch",
+        `operation ${index}: a patch changes parts of the deck, not the whole document`
+      );
+    }
+    // A deck keeps the master it was made on; slides pick its layouts.
     if (
       [path, from].some(
         (p) =>
@@ -70,38 +103,41 @@ export function applyOperations(
     }
   });
 
-  let next: unknown;
-  try {
-    next = applyPatch(
-      structuredClone(document),
-      operations as Operation[],
-      true, // validate every operation before applying it
-      true, // mutate the clone in place
-      true // refuse __proto__ and constructor paths
-    ).newDocument;
-  } catch (error) {
-    // The clone is plain JSON, so anything applyPatch throws is the patch's
-    // fault; a __proto__ path, for one, is a plain TypeError.
-    const reason = error instanceof Error ? error.message.split("\n")[0] : "";
-    if (error instanceof JsonPatchError) {
-      throw new DeckError(
-        "invalid_patch",
-        `operation ${error.index ?? 0} (${error.name}): ${reason}`
-      );
+  const state = structuredClone(document) as unknown;
+  const steps: Step[] = [];
+  (operations as Operation[]).forEach((op, index) => {
+    if (!overwrite && (op.op === "add" || op.op === "move")) {
+      const place = locate(state, op.path);
+      if (place && !Array.isArray(place.parent) && place.exists) {
+        throw new DeckError(
+          "invalid_patch",
+          `operation ${index}: ${op.path} is set already`
+        );
+      }
     }
-    throw new DeckError("invalid_patch", reason || "the patch was refused");
-  }
+    try {
+      steps.push(applyStep(state, op));
+    } catch (error) {
+      // The copy is plain JSON, so anything applying throws is the patch's
+      // fault; a __proto__ path, for one, is a plain TypeError.
+      const reason = error instanceof Error ? error.message.split("\n")[0] : "";
+      if (error instanceof JsonPatchError) {
+        throw new DeckError(
+          "invalid_patch",
+          `operation ${index} (${error.name}): ${reason}`
+        );
+      }
+      throw new DeckError("invalid_patch", reason || "the patch was refused");
+    }
+  });
 
-  if (typeof next !== "object" || next === null) {
-    throw new DeckError("invalid_patch", "the patch left no document");
-  }
-  if (JSON.stringify(next).length > MAX_DOCUMENT_BYTES) {
+  if (JSON.stringify(state).length > MAX_DOCUMENT_BYTES) {
     throw new DeckError(
       "invalid_document",
       `a deck document is at most ${MAX_DOCUMENT_BYTES} bytes of JSON`
     );
   }
-  const parsed = DeckDocument.safeParse(next);
+  const parsed = DeckDocument.safeParse(state);
   if (!parsed.success) {
     const issues = describeIssues(parsed.error);
     throw new DeckError(
@@ -110,15 +146,221 @@ export function applyOperations(
       { issues }
     );
   }
-
-  const inverse = compare(parsed.data, document);
-  if (inverse.length === 0) {
+  if (compare(parsed.data, document).length === 0) {
     // A write that changes nothing would only add an empty revision.
     throw new DeckError("invalid_patch", "the patch changes nothing");
   }
+
+  // Undone last operation first.
+  steps.reverse();
   return {
     document: parsed.data,
     operations: operations as Operation[],
-    inverse,
+    inverse: guardInverse
+      ? guard(
+          parsed.data,
+          steps.flatMap((step) => [...step.checks, ...step.undo])
+        )
+      : steps.flatMap((step) => step.undo),
   };
+}
+
+type Step = {
+  /** Undoes the operation, on the document as the operation left it. */
+  undo: Operation[];
+  /** Tests, on that document, of what the undo is about to change. */
+  checks: Operation[];
+};
+
+type Place = {
+  /** The list or the object the path ends in. */
+  parent: unknown[] | Record<string, unknown>;
+  /** The member: an index into the list (its length for "-"), or a key. */
+  key: number | string;
+  /** The path, with its indices as numbers. */
+  path: string;
+  /** Whether the member is there; an object's inherited names are not. */
+  exists: boolean;
+};
+
+const unescape = (token: string) =>
+  token.replace(/~1/g, "/").replace(/~0/g, "~");
+const escape = (token: string) =>
+  token.replace(/~/g, "~0").replace(/\//g, "~1");
+
+/** An index into a list as fast-json-patch reads one, or null. */
+const indexOf = (list: unknown[], token: string) =>
+  token === "-" ? list.length : /^\d*$/.test(token) ? ~~token : null;
+
+const valueAt = (place: Place) =>
+  (place.parent as Record<string | number, unknown>)[place.key];
+
+const hasId = (value: unknown) =>
+  typeof value === "object" &&
+  value !== null &&
+  typeof (value as { id?: unknown }).id === "string";
+
+/** Where a JSON pointer ends in the document, or null when nowhere. */
+function locate(root: unknown, pointer: string): Place | null {
+  const tokens = pointer.split("/").slice(1).map(unescape);
+  let node = root;
+  let path = "";
+  for (const [i, token] of tokens.entries()) {
+    if (typeof node !== "object" || node === null) return null;
+    const key = Array.isArray(node) ? indexOf(node, token) : token;
+    if (key === null) return null;
+    path += `/${escape(String(key))}`;
+    const exists = Array.isArray(node)
+      ? (key as number) < node.length
+      : Object.hasOwn(node, key);
+    if (i === tokens.length - 1) {
+      return { parent: node as Place["parent"], key, path, exists };
+    }
+    if (!exists) return null;
+    node = (node as Record<string | number, unknown>)[key];
+  }
+  return null;
+}
+
+/** Where an add or a move put its value: "-" is the end of the list. */
+function landing(state: unknown, pointer: string): Place | null {
+  const place = locate(state, pointer);
+  if (!place || !Array.isArray(place.parent) || !pointer.endsWith("/-")) {
+    return place;
+  }
+  const key = place.parent.length - 1;
+  return {
+    ...place,
+    key,
+    path: place.path.replace(/\/\d+$/, `/${key}`),
+    exists: true,
+  };
+}
+
+/**
+ * A test of the outermost list element above a path that has no id, such
+ * as a paragraph: a later edit can shift it, and only its value tells it
+ * apart. Slides and shapes are pinned by their ids instead (guard.ts).
+ */
+function anchor(state: unknown, pointer: string): Operation[] {
+  let node = state;
+  let path = "";
+  for (const token of pointer.split("/").slice(1, -1).map(unescape)) {
+    if (typeof node !== "object" || node === null) return [];
+    if (Array.isArray(node)) {
+      const at = indexOf(node, token);
+      if (at === null || at >= node.length) return [];
+      path += `/${at}`;
+      node = node[at];
+      if (!hasId(node)) {
+        return [{ op: "test", path, value: structuredClone(node) }];
+      }
+    } else {
+      if (!Object.hasOwn(node, token)) return [];
+      path += `/${escape(token)}`;
+      node = (node as Record<string, unknown>)[token];
+    }
+  }
+  return [];
+}
+
+/** Each test once, the first time its path comes. */
+const once = (tests: Operation[]) =>
+  tests.filter(
+    (test, i) => tests.findIndex((other) => other.path === test.path) === i
+  );
+
+/**
+ * Applies one operation to the document in place, and returns what undoes
+ * it: an add's removes what it added (or restores the member it wrote
+ * over), a remove's puts the value back, a replace's restores it, a move's
+ * moves it back. Its checks test, on the document the operation left, that
+ * each place the undo changes still holds what the operation left there:
+ * the value it set, or the whole of what it added. What a move moved is
+ * the slide or shape its id names, or else its value.
+ */
+function applyStep(state: unknown, op: Operation): Step {
+  if (op.op === "test") {
+    applyOperation(state, op, true, true, true);
+    return { undo: [], checks: [] };
+  }
+  const target = locate(state, op.path);
+  const source = op.op === "move" ? locate(state, op.from) : null;
+  // What the operation takes away or writes over, as it was.
+  const old = target?.exists ? structuredClone(valueAt(target)) : undefined;
+  // A copy, so a later operation writing into a value added here leaves
+  // the patch as it was.
+  applyOperation(state, structuredClone(op), true, true, true);
+  // fast-json-patch also takes a name an object inherits, such as
+  // "constructor", for a member there.
+  if (
+    !target ||
+    ((op.op === "remove" || op.op === "replace") && !target.exists) ||
+    (op.op === "move" && !source?.exists)
+  ) {
+    throw new Error(`${op.path} is not a part of the deck`);
+  }
+
+  switch (op.op) {
+    case "add": {
+      const at = landing(state, op.path)!;
+      return {
+        undo: [
+          Array.isArray(at.parent) || !target.exists
+            ? { op: "remove", path: at.path }
+            : { op: "replace", path: at.path, value: old },
+        ],
+        checks: [
+          ...anchor(state, at.path),
+          { op: "test", path: at.path, value: structuredClone(valueAt(at)) },
+        ],
+      };
+    }
+    case "remove":
+      return {
+        undo: [{ op: "add", path: target.path, value: old }],
+        checks: anchor(state, target.path),
+      };
+    case "replace":
+      return {
+        undo: [{ op: "replace", path: target.path, value: old }],
+        checks: [
+          ...anchor(state, target.path),
+          {
+            op: "test",
+            path: target.path,
+            value: structuredClone(valueAt(target)),
+          },
+        ],
+      };
+    case "move": {
+      const at = landing(state, op.path)!;
+      const undo: Operation[] = [
+        { op: "move", from: at.path, path: source!.path },
+      ];
+      // A move onto an object member wrote over what it held.
+      if (!Array.isArray(at.parent) && target.exists) {
+        undo.push({ op: "add", path: at.path, value: old });
+      }
+      const moved = valueAt(at);
+      return {
+        undo,
+        checks: once([
+          ...anchor(state, at.path),
+          ...anchor(state, source!.path),
+          ...(hasId(moved)
+            ? []
+            : [
+                {
+                  op: "test" as const,
+                  path: at.path,
+                  value: structuredClone(moved),
+                },
+              ]),
+        ]),
+      };
+    }
+    default:
+      return { undo: [], checks: [] };
+  }
 }

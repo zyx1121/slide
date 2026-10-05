@@ -266,7 +266,7 @@ export async function mutateDeck(
       ops = input.ops;
     }
 
-    const result = applyOperations(row.document, ops);
+    const result = applyOperations(row.document, ops, { guardInverse: true });
     const version = row.version + 1;
     await tx`
       update decks
@@ -279,10 +279,11 @@ export async function mutateDeck(
     const [revision] = await tx<{ id: string }[]>`
       insert into revisions
         (deck_id, base_version, version, author_kind, author_sub, status,
-         patch, inverse)
+         patch, inverse, inverse_guarded)
       values
         (${deckId}, ${row.version}, ${version}, ${actor.kind}, ${actor.sub}, 'applied',
-         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))})
+         ${tx.json(asJson(result.operations))}, ${tx.json(asJson(result.inverse))},
+         true)
       returning id
     `;
     return { status: "applied", version, revisionId: String(revision.id) };

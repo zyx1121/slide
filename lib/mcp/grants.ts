@@ -4,9 +4,9 @@
 //
 // A grant is a family of refresh tokens, one member and one client. Each
 // refresh spends its token and issues the next (rotation). A spent token
-// presented again within REUSE_GRACE_SECONDS gets a new pair too, since a
-// client may refresh twice at once; later, it means the token was copied,
-// and the whole family is revoked. An access token names its family, so
+// presented once more within REUSE_GRACE_SECONDS gets a new pair too, since a
+// client may refresh twice at once; a second retry, or one sent later, means
+// the token was copied, and the whole family is revoked. An access token names its family, so
 // revoking the family cuts the client off at once.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
@@ -180,12 +180,14 @@ export async function refresh(
         live: boolean;
         spent: boolean;
         in_grace: boolean;
+        retried: boolean;
       }[]
     >`
       select family, sub, client_id, scope,
         expires_at > now() as live,
         used_at is not null as spent,
-        coalesce(used_at > now() - make_interval(secs => ${REUSE_GRACE_SECONDS}), false) as in_grace
+        coalesce(used_at > now() - make_interval(secs => ${REUSE_GRACE_SECONDS}), false) as in_grace,
+        retried_at is not null as retried
       from mcp_refresh_tokens
       where hash = ${hash(presented.token)}
       for update
@@ -195,15 +197,15 @@ export async function refresh(
       await tx`delete from mcp_refresh_tokens where family = ${row.family}`;
       return REFUSED;
     };
-    if (row.spent && !row.in_grace) return revoke();
+    if (row.spent && (!row.in_grace || row.retried)) return revoke();
     if (row.client_id !== presented.clientId) return revoke();
     if (!(await memberAllowed(tx, env, row.sub))) return revoke();
-    if (!row.spent) {
-      await tx`
-        update mcp_refresh_tokens set used_at = now()
-        where hash = ${hash(presented.token)}
-      `;
-    }
+    await tx`
+      update mcp_refresh_tokens
+      set used_at = coalesce(used_at, now()),
+        retried_at = case when used_at is null then null else now() end
+      where hash = ${hash(presented.token)}
+    `;
     // Spent tokens are kept for a day, long enough to tell a copy from a
     // retry; then they go.
     await tx`

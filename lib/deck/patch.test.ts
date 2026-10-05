@@ -169,6 +169,11 @@ describe("applyOperations", () => {
     const withNotes = applyOperations(doc, [
       { op: "add", path: "/slides/0/notes", value: "Notes" },
     ]).document;
+    // The note's paragraphs, a second one added.
+    const P = "/slides/0/shapes/5/text/paragraphs";
+    const twoParagraphs = applyOperations(doc, [
+      { op: "add", path: `${P}/-`, value: { runs: [{ text: "Second" }] } },
+    ]).document;
     /** A guarded inverse, re-pointed and applied as a revert applies it. */
     const revert = (document: DeckDocument, inverse: Operation[]) =>
       applyOperations(document, retarget(document, inverse), {
@@ -217,6 +222,24 @@ describe("applyOperations", () => {
           },
         ],
       ],
+      // Paragraphs reordered, then edited.
+      [
+        twoParagraphs,
+        [
+          { op: "move", from: `${P}/1`, path: `${P}/0` },
+          { op: "replace", path: `${P}/0/runs/0/text`, value: "First" },
+          { op: "move", from: `${P}/1`, path: `${P}/0` },
+        ],
+      ],
+      // A run moved to another paragraph, and both edited.
+      [
+        twoParagraphs,
+        [
+          { op: "move", from: `${P}/0/runs/1`, path: `${P}/1/runs/0` },
+          { op: "replace", path: `${P}/0/runs/0/text`, value: "A" },
+          { op: "replace", path: `${P}/1/runs/1/text`, value: "B" },
+        ],
+      ],
       // Inside a paragraph, which has no id.
       [
         doc,
@@ -242,6 +265,77 @@ describe("applyOperations", () => {
         // Applying never changes the operations it was given.
         expect(ops).toEqual(sent);
       }
+    });
+
+    it("tests a paragraph once, however many operations go into it", () => {
+      const runs = Array.from({ length: 200 }, (_, i) => ({
+        text: `run ${i} `.padEnd(20, "x"),
+      }));
+      const base = applyOperations(doc, [
+        {
+          op: "replace",
+          path: "/slides/0/shapes/5/text",
+          value: { paragraphs: [{ runs }] },
+        },
+      ]).document;
+      const ops: Operation[] = Array.from({ length: 1000 }, (_, i) => ({
+        op: "replace",
+        path: `${P}/0/runs/${i % 200}/text`,
+        value: `edit ${i}`,
+      }));
+      const guarded = applyOperations(base, ops, { guardInverse: true });
+      // The paragraph once, and a test and an undo per operation.
+      const paragraph = JSON.stringify({ runs }).length;
+      expect(JSON.stringify(guarded.inverse).length).toBeLessThan(
+        3 * JSON.stringify(ops).length + paragraph
+      );
+      expect(revert(guarded.document, guarded.inverse)).toEqual(base);
+    });
+
+    it("refuses a revert into a paragraph a later edit changed", () => {
+      const edited = applyOperations(
+        twoParagraphs,
+        [
+          { op: "replace", path: `${P}/0/runs/0/text`, value: "One" },
+          { op: "replace", path: `${P}/0/runs/1/text`, value: "Two" },
+        ],
+        { guardInverse: true }
+      );
+      const later = applyOperations(edited.document, [
+        { op: "add", path: `${P}/0/runs/1/bold`, value: true },
+      ]).document;
+      expect(refusal(() => revert(later, edited.inverse)).code).toBe(
+        "invalid_patch"
+      );
+      // A later edit to the other paragraph leaves it to revert.
+      const other = applyOperations(edited.document, [
+        { op: "replace", path: `${P}/1/runs/0/text`, value: "Else" },
+      ]).document;
+      const reverted = revert(other, edited.inverse);
+      const paragraphs = (
+        reverted.slides[0].shapes[5] as {
+          text: { paragraphs: { runs: { text: string }[] }[] };
+        }
+      ).text.paragraphs;
+      expect(paragraphs[1].runs[0].text).toBe("Else");
+      expect(paragraphs[0]).toEqual(
+        (
+          twoParagraphs.slides[0].shapes[5] as {
+            text: { paragraphs: unknown[] };
+          }
+        ).text.paragraphs[0]
+      );
+    });
+
+    it("refuses a move that shifts what it takes something out of", () => {
+      expect(
+        refusal(() =>
+          applyOperations(twoParagraphs, [
+            { op: "move", from: `${P}/1/runs/0`, path: `${P}/0` },
+            { op: "move", from: `${P}/0`, path: `${P}/1/runs/0` },
+          ])
+        ).message
+      ).toMatch(/shifts what it takes it out of/);
     });
 
     it("leaves later edits to shapes that moved alone", () => {

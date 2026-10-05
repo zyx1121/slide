@@ -151,17 +151,12 @@ export function applyOperations(
     throw new DeckError("invalid_patch", "the patch changes nothing");
   }
 
-  // Undone last operation first.
-  steps.reverse();
   return {
     document: parsed.data,
     operations: operations as Operation[],
     inverse: guardInverse
-      ? guard(
-          parsed.data,
-          steps.flatMap((step) => [...step.checks, ...step.undo])
-        )
-      : steps.flatMap((step) => step.undo),
+      ? guard(parsed.data, checkedInverse(steps))
+      : [...steps].reverse().flatMap((step) => step.undo),
   };
 }
 
@@ -170,7 +165,36 @@ type Step = {
   undo: Operation[];
   /** Tests, on that document, of what the undo is about to change. */
   checks: Operation[];
+  /** Elements without an id the undo goes into or moves (see `mark`). */
+  marks: Mark[];
 };
+
+/**
+ * The inverse with its checks, last operation first. An element without an
+ * id is tested once, where a revert first meets it: at the last operation
+ * that went into it, with what it holds after the whole patch, since no
+ * operation changed it after that one. From that test on, the revert's own
+ * operations are all that change it or move it, so it needs no other test,
+ * and the stored inverse grows with the patch, not with the operations
+ * times the element.
+ */
+function checkedInverse(steps: Step[]): Operation[] {
+  const last = new Map<object, number>();
+  steps.forEach((step, k) => {
+    for (const { element } of step.marks) last.set(element, k);
+  });
+  const checked: Operation[] = [];
+  for (let k = steps.length - 1; k >= 0; k--) {
+    const { undo, checks, marks } = steps[k];
+    for (const { element, path } of marks) {
+      if (last.get(element) !== k) continue;
+      last.delete(element);
+      checked.push({ op: "test", path, value: structuredClone(element) });
+    }
+    checked.push(...checks, ...undo);
+  }
+  return checked;
+}
 
 type Place = {
   /** The list or the object the path ends in. */
@@ -237,12 +261,27 @@ function landing(state: unknown, pointer: string): Place | null {
   };
 }
 
+/** What a path names in the document, if anything. */
+function elementAt(state: unknown, pointer: string): unknown {
+  const place = locate(state, pointer);
+  return place?.exists ? valueAt(place) : undefined;
+}
+
+type Mark = {
+  /** The element, as the document holds it: its identity and its value. */
+  element: object;
+  /** Where it is, on the document the operation left. */
+  path: string;
+};
+
 /**
- * A test of the outermost list element above a path that has no id, such
- * as a paragraph: a later edit can shift it, and only its value tells it
- * apart. Slides and shapes are pinned by their ids instead (guard.ts).
+ * The outermost list element above a path that has no id, such as a
+ * paragraph: a later edit can shift it, and only its value tells it apart,
+ * so a revert tests it. Slides and shapes are pinned by their ids instead
+ * (guard.ts). Every operation that changes such an element goes through
+ * it, so each one marks it.
  */
-function anchor(state: unknown, pointer: string): Operation[] {
+function mark(state: unknown, pointer: string): Mark[] {
   let node = state;
   let path = "";
   for (const token of pointer.split("/").slice(1, -1).map(unescape)) {
@@ -253,7 +292,9 @@ function anchor(state: unknown, pointer: string): Operation[] {
       path += `/${at}`;
       node = node[at];
       if (!hasId(node)) {
-        return [{ op: "test", path, value: structuredClone(node) }];
+        return typeof node === "object" && node !== null
+          ? [{ element: node, path }]
+          : [];
       }
     } else {
       if (!Object.hasOwn(node, token)) return [];
@@ -264,12 +305,6 @@ function anchor(state: unknown, pointer: string): Operation[] {
   return [];
 }
 
-/** Each test once, the first time its path comes. */
-const once = (tests: Operation[]) =>
-  tests.filter(
-    (test, i) => tests.findIndex((other) => other.path === test.path) === i
-  );
-
 /**
  * Applies one operation to the document in place, and returns what undoes
  * it: an add's removes what it added (or restores the member it wrote
@@ -277,15 +312,17 @@ const once = (tests: Operation[]) =>
  * moves it back. Its checks test, on the document the operation left, that
  * each place the undo changes still holds what the operation left there:
  * the value it set, or the whole of what it added. What a move moved is
- * the slide or shape its id names, or else its value.
+ * the slide or shape its id names, or else the element it is (or is in).
  */
 function applyStep(state: unknown, op: Operation): Step {
   if (op.op === "test") {
     applyOperation(state, op, true, true, true);
-    return { undo: [], checks: [] };
+    return { undo: [], checks: [], marks: [] };
   }
   const target = locate(state, op.path);
   const source = op.op === "move" ? locate(state, op.from) : null;
+  // The element without an id a move takes something out of, if any.
+  const left = op.op === "move" ? mark(state, op.from) : [];
   // What the operation takes away or writes over, as it was.
   const old = target?.exists ? structuredClone(valueAt(target)) : undefined;
   // A copy, so a later operation writing into a value added here leaves
@@ -311,27 +348,28 @@ function applyStep(state: unknown, op: Operation): Step {
             : { op: "replace", path: at.path, value: old },
         ],
         checks: [
-          ...anchor(state, at.path),
           { op: "test", path: at.path, value: structuredClone(valueAt(at)) },
         ],
+        marks: mark(state, at.path),
       };
     }
     case "remove":
       return {
         undo: [{ op: "add", path: target.path, value: old }],
-        checks: anchor(state, target.path),
+        checks: [],
+        marks: mark(state, target.path),
       };
     case "replace":
       return {
         undo: [{ op: "replace", path: target.path, value: old }],
         checks: [
-          ...anchor(state, target.path),
           {
             op: "test",
             path: target.path,
             value: structuredClone(valueAt(target)),
           },
         ],
+        marks: mark(state, target.path),
       };
     case "move": {
       const at = landing(state, op.path)!;
@@ -342,25 +380,27 @@ function applyStep(state: unknown, op: Operation): Step {
       if (!Array.isArray(at.parent) && target.exists) {
         undo.push({ op: "add", path: at.path, value: old });
       }
+      // It stays where it was, so a revert can test it there; only a patch
+      // with a list in an odd shape midway could shift it.
+      if (
+        left.some(({ element, path }) => elementAt(state, path) !== element)
+      ) {
+        throw new Error(`${op.from}: the move shifts what it takes it out of`);
+      }
       const moved = valueAt(at);
+      const marks = [...mark(state, at.path), ...left];
+      // Inside an element without an id, what moved is tested with it.
+      if (marks.length > 0 || hasId(moved)) return { undo, checks: [], marks };
+      if (typeof moved === "object" && moved !== null) {
+        return { undo, checks: [], marks: [{ element: moved, path: at.path }] };
+      }
       return {
         undo,
-        checks: once([
-          ...anchor(state, at.path),
-          ...anchor(state, source!.path),
-          ...(hasId(moved)
-            ? []
-            : [
-                {
-                  op: "test" as const,
-                  path: at.path,
-                  value: structuredClone(moved),
-                },
-              ]),
-        ]),
+        checks: [{ op: "test", path: at.path, value: moved as never }],
+        marks: [],
       };
     }
     default:
-      return { undo: [], checks: [] };
+      return { undo: [], checks: [], marks: [] };
   }
 }

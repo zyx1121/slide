@@ -708,7 +708,7 @@ export function createServer(context: ToolContext): McpServer {
     {
       title: "Set a slide's layout",
       description:
-        "Puts a slide on another layout of the deck's master (get_deck lists them under master.layouts), by index or name. The layout draws the slide's background, artwork, title and number. Its text placeholders follow as in PowerPoint: one the new layout also has stays (and moves with it if it was in place), one it lacks becomes a plain text box that looks the same, and the new layout's others arrive empty.",
+        "Puts a slide on another layout of the deck's master (get_deck lists them under master.layouts), by index or name. The layout draws the slide's background, artwork, title and number. Its text placeholders follow as in PowerPoint: one the new layout also has stays (and moves with it if it was in place), one it lacks becomes a plain text box that looks the same, and the new layout's others arrive empty. Its own layout again brings back the placeholders it lacks.",
       inputSchema: {
         deck_id: DeckId,
         slide: SlideRef,

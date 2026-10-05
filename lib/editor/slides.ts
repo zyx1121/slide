@@ -20,7 +20,8 @@ export const blankSlide = (layout?: Layout): Slide => ({
  * placeholder box the new layout also has stays one, and moves with it if
  * it was where the old layout put it; one it lacks becomes a plain text box
  * that looks as before, or goes if it is empty; the new layout's other
- * placeholders arrive empty, behind the slide's shapes.
+ * placeholders arrive empty, behind the slide's shapes. On its own layout,
+ * only the placeholders the slide lacks arrive (nothing when it has them).
  */
 export function relayoutOps(
   document: DeckDocument,
@@ -68,9 +69,10 @@ export function relayoutOps(
   // Every operation names its shape where it ends up, so the change can be
   // reverted on its own later: removals last to first, then the arriving
   // boxes at the back in order, then the changed boxes at their new places.
-  const ops: Operation[] = [
-    { op: "add", path: `/slides/${index}/layout`, value: to },
-  ];
+  const same = (slide.layout ?? document.master.layout) === to;
+  const ops: Operation[] = same
+    ? []
+    : [{ op: "add", path: `/slides/${index}/layout`, value: to }];
   for (const i of [...gone].sort((a, b) => b - a)) {
     ops.push({ op: "remove", path: at(i) });
   }

@@ -333,10 +333,10 @@ export function setSlideLayout(
       `no layout ${layout}; the master has ${layouts.map((item, i) => `${i} ${item.name}`).join(", ")}`
     );
   }
-  if ((found.layout ?? document.master.layout) === at) {
-    throw new WriteError("the slide is on that layout");
-  }
   const ops = relayoutOps(document, index, at);
+  if (ops.length === 0) {
+    throw new WriteError("the slide is on that layout, placeholders and all");
+  }
   const arriving = ops
     .filter((op) => op.op === "add" && /\/shapes\/\d+$/.test(op.path))
     .map((op) => (op as { value: Shape }).value.id);

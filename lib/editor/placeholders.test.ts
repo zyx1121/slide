@@ -262,3 +262,19 @@ describe("reverting a layout change", () => {
     expect(stillThere(applyOperations(old, ops).document, ops)).toBe(true);
   });
 });
+
+describe("putting a slide on its own layout again", () => {
+  it("brings back the placeholders it lacks, and nothing else", () => {
+    // A slide made before placeholders, on Title & Bullets.
+    const old = sampleDocument();
+    const ops = relayoutOps(old, 0, old.master.layout);
+    expect(
+      ops.every((op) => op.op === "add" && op.path.includes("/shapes/"))
+    ).toBe(true);
+    const after = applyOperations(old, ops).document;
+    expect(after.slides[0].layout).toBeUndefined();
+    expect(after.slides[0].shapes[0]).toMatchObject({ placeholder: "1" });
+    // Once it has them, there is nothing to do.
+    expect(relayoutOps(after, 0, old.master.layout)).toEqual([]);
+  });
+});

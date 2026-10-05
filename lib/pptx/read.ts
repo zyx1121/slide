@@ -31,6 +31,30 @@ export class PptxError extends Error {
 
 /** The parts of a .pptx the importer reads. */
 export function unzipPptx(bytes: Uint8Array): Map<string, Uint8Array> {
+  return unzipParts(
+    bytes,
+    (name) =>
+      name === "docProps/core.xml" ||
+      // Notes pages for their text; their relationships are not needed.
+      (name.startsWith("ppt/") && !name.startsWith("ppt/notesSlides/_rels/"))
+  );
+}
+
+/**
+ * Every part of a .pptx but its slides and their notes: what its master
+ * file (master-file.ts) is made of.
+ */
+export function unzipMasterParts(bytes: Uint8Array): Map<string, Uint8Array> {
+  return unzipParts(
+    bytes,
+    (name) => !/^(ppt\/(slides|notesSlides)\/|docProps\/thumbnail\.)/.test(name)
+  );
+}
+
+function unzipParts(
+  bytes: Uint8Array,
+  keep: (name: string) => boolean
+): Map<string, Uint8Array> {
   let parts: Map<string, Uint8Array>;
   try {
     parts = unzip(
@@ -40,10 +64,7 @@ export function unzipPptx(bytes: Uint8Array): Map<string, Uint8Array> {
         entryBytes: MAX_PART_BYTES,
         totalBytes: MAX_TOTAL_BYTES,
       },
-      (name) =>
-        name === "docProps/core.xml" ||
-        // Notes pages for their text; their relationships are not needed.
-        (name.startsWith("ppt/") && !name.startsWith("ppt/notesSlides/_rels/"))
+      keep
     );
   } catch (error) {
     if (!(error instanceof ZipError)) throw error;

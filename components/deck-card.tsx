@@ -13,7 +13,7 @@ export function DeckCard({ deck }: { deck: DeckSummary }) {
       <SlideView
         slide={deck.firstSlide}
         number={1}
-        template={deck.template}
+        layout={deck.firstLayout}
         decorative
       />
       <DeckRow

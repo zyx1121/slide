@@ -5,7 +5,7 @@ import type { DeckDocument, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { pasteShapes } from "./clipboard";
 
-/** A slide with only the template's title and number. */
+/** A slide with only its layout's title and number. */
 export const blankSlide = (): Slide => ({
   id: newId("sl"),
   title: "",

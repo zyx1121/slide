@@ -33,7 +33,7 @@ Many people draw their slides by hand in PowerPoint: rounded rectangles, connect
 - **Imports and exports** `.pptx`, keeping shapes native, connectors glued and text editable
 - **Presents** full screen, or split across screens: the projector shows only the slides while your screen shows the slide, the next one, your speaker notes (written in the editor or by your agent) and a timer
 - **Publishes** a deck to a read-only link anyone can open and download
-- **Checks** a deck for your agent (`check_deck`): text sizes, overflow, overlaps, contrast, and the template's palette
+- **Checks** a deck for your agent (`check_deck`): text sizes, overflow, overlaps, contrast, and the master's palette
 
 ## Deploy
 
@@ -105,7 +105,7 @@ CI runs `bun run typecheck`, `bun run lint`, `bun run format:check`, and `bun ru
 
 ## Limitations
 
-- Slides use one of two templates, plain or WinLab; an imported deck keeps its shapes, not its own master
+- Slides are drawn on a slide master: plain, WinLab, or an imported file's own (its layouts' backgrounds, artwork and placeholders). Gradients other than linear, and background pictures, are not drawn yet
 - Import turns a table into a rectangle per cell (its text stays editable, but not as one table), and leaves out charts, SmartArt, freeforms drawn with guide formulas, and pictures in EMF, SVG or TIFF, and says so
 - Pictures are PNG, JPEG or GIF, up to 10 MB and 50 million pixels
 - Text is capped at 5,000 characters a shape and 20,000 a slide, so any slide renders in a second or two

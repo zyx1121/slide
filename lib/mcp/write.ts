@@ -3,12 +3,11 @@
 // the deck as it is, with id tests in front, so it lands on the same shapes
 // or is refused if they moved.
 import type { Operation } from "../deck/patch";
-import type { DeckDocument, Shape, Slide } from "../deck/schema";
+import type { DeckDocument, Master, Shape, Slide } from "../deck/schema";
 import { newId } from "../ids";
 import { guard } from "../editor/guard";
 import { deleteOps } from "../editor/ops";
 import { duplicateSlide, insertSlideOps, notesOps } from "../editor/slides";
-import type { TemplateId } from "../render/template";
 
 export class WriteError extends Error {}
 
@@ -218,7 +217,7 @@ export function deleteSlide(
 }
 
 /**
- * Sets a slide's title, which the deck's template draws; an empty one leaves
+ * Sets a slide's title, which the slide's layout draws; an empty one leaves
  * the slide without a title.
  */
 export function setSlideTitle(
@@ -302,17 +301,62 @@ export function retitle(document: DeckDocument, title: string): Planned {
   };
 }
 
-/** Puts the deck on another template. */
-export function retemplate(
+/**
+ * Puts the deck on another master. Each slide keeps a layout of the same
+ * name when the new master has one, and takes its default layout otherwise.
+ */
+export function remaster(document: DeckDocument, master: Master): Planned {
+  if (
+    document.master.file === master.file &&
+    document.master.part === master.part &&
+    document.master.name === master.name
+  ) {
+    throw new WriteError(`the deck is already on ${master.name}`);
+  }
+  const ops: Operation[] = [{ op: "replace", path: "/master", value: master }];
+  document.slides.forEach((slide, i) => {
+    const name =
+      document.master.layouts[slide.layout ?? document.master.layout]?.name;
+    const at = master.layouts.findIndex((layout) => layout.name === name);
+    const path = `/slides/${i}/layout`;
+    if (at !== -1 && at !== master.layout) {
+      ops.push({ op: "add", path, value: at });
+    } else if (slide.layout !== undefined) {
+      ops.push({ op: "remove", path });
+    }
+  });
+  return {
+    ops: guard(document, ops),
+    created: [],
+    changed: document.slides.map((slide) => slide.id),
+  };
+}
+
+/** Puts a slide on another layout of the deck's master, by index or name. */
+export function setSlideLayout(
   document: DeckDocument,
-  template: TemplateId
+  slide: number | string,
+  layout: number | string
 ): Planned {
-  if ((document.template ?? "plain") === template) {
-    throw new WriteError(`the deck is already on the ${template} template`);
+  const { slide: found, index } = findSlide(document, slide);
+  const { layouts } = document.master;
+  const at =
+    typeof layout === "number"
+      ? layout
+      : layouts.findIndex((item) => item.name === layout);
+  if (!layouts[at]) {
+    throw new WriteError(
+      `no layout ${layout}; the master has ${layouts.map((item, i) => `${i} ${item.name}`).join(", ")}`
+    );
+  }
+  if ((found.layout ?? document.master.layout) === at) {
+    throw new WriteError("the slide is on that layout");
   }
   return {
-    ops: [{ op: "add", path: "/template", value: template }],
+    ops: guard(document, [
+      { op: "add", path: `/slides/${index}/layout`, value: at },
+    ]),
     created: [],
-    changed: [],
+    changed: [found.id],
   };
 }

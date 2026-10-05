@@ -51,10 +51,6 @@ location=$(curl -sS -o /dev/null -w '%{redirect_url}' "$web/decks/x?y=1")
 [ "$location" = "$app/auth/login?next=%2Fdecks%2Fx%3Fy%3D1" ] ||
 	fail "a signed-out visit was not sent to sign-in: $location"
 
-# The template background is served as a PNG, without signing in.
-type=$(curl -fsS -o /dev/null -w '%{content_type}' "$web/template/winlab-background.png")
-[ "$type" = image/png ] || fail "the template background is not served: $type"
-
 # A page renders in the shell, dark first.
 page=$(curl -fsS "$web/auth/error?reason=expired")
 echo "$page" | grep -q '登入逾時' || fail "the sign-in error page did not render"

@@ -1,14 +1,15 @@
+import { BUILTIN_MASTERS } from "../master/layout";
 import type { DeckDocument } from "./schema";
 
 /**
- * A small deck on the WinLab template: boxes with text, connectors
+ * A small deck on the WinLab master: boxes with text, connectors
  * glued to them, a text box and a picture. Tests and renderer snapshots use it.
  */
 export function sampleDocument(): DeckDocument {
   return {
     schema: 1,
     title: "Agent Sense",
-    template: "winlab",
+    master: BUILTIN_MASTERS.winlab,
     slides: [
       {
         id: "sl_overview",

@@ -2,12 +2,13 @@ import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import type { Slide } from "../deck/schema";
-import { renderSlideSvg } from "./svg";
+import { BUILTIN_MASTERS } from "../master/layout";
+import { renderBackdropSvg, renderSlideSvg } from "./svg";
 
+const winlab = BUILTIN_MASTERS.winlab;
 const options = {
   slideNumber: 1,
-  template: "winlab" as const,
-  background: "/template/winlab-background.png",
+  layout: winlab.layouts[winlab.layout],
 };
 
 describe("renderSlideSvg", () => {
@@ -19,12 +20,17 @@ describe("renderSlideSvg", () => {
     await expect(svg).toMatchFileSnapshot("__snapshots__/sample-slide.svg");
   });
 
-  it("is a standalone 1920 x 1080 SVG with the template, title and number", () => {
-    const svg = renderSlideSvg(sampleDocument().slides[0], options);
+  it("is a standalone 1920 x 1080 SVG with the layout, title and number", () => {
+    const svg = renderSlideSvg(sampleDocument().slides[0], {
+      ...options,
+      assetHref: (sha) => `/assets/${sha}`,
+    });
     expect(svg).toMatch(
       /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg" viewBox="0 0 1920 1080"/
     );
-    expect(svg).toContain('href="/template/winlab-background.png"');
+    // The layout's gradient background and its artwork's pictures.
+    expect(svg).toMatch(/<linearGradient id="gr-[0-9a-z]+"/);
+    expect(svg).toMatch(/href="\/assets\/[0-9a-f]{64}"/);
     expect(svg).toContain(">System overview</text>");
     expect(svg).toMatch(
       /font-size="28" fill="#ffffff" font-weight="700"[^>]*>1<\/text>/
@@ -37,7 +43,7 @@ describe("renderSlideSvg", () => {
       title: '<script>alert(1)</script> & "quotes"',
       shapes: [],
     };
-    const svg = renderSlideSvg(slide, { ...options, background: null });
+    const svg = renderSlideSvg(slide, { ...options, bare: true });
     expect(svg).not.toContain("<script>");
     expect(svg).toContain(
       "&lt;script&gt;alert(1)&lt;/script&gt; &amp; &quot;quotes&quot;"
@@ -61,7 +67,7 @@ describe("renderSlideSvg", () => {
         },
       ],
     };
-    const svg = renderSlideSvg(slide, { ...options, background: null });
+    const svg = renderSlideSvg(slide, { ...options, bare: true });
     expect(svg).toContain('<g transform="rotate(30 200 150)">');
     expect(svg).toContain('fill="#ff0000" fill-opacity="0.5"');
   });
@@ -95,7 +101,7 @@ describe("renderSlideSvg", () => {
         },
       ],
     };
-    const svg = renderSlideSvg(slide, { ...options, background: null });
+    const svg = renderSlideSvg(slide, { ...options, bare: true });
     // eslint-disable-next-line no-control-regex
     expect(svg).not.toMatch(
       /[\u0000-\u0008\u000b\u000c\u000e-\u001f\ufffe\uffff]/
@@ -139,7 +145,7 @@ describe("renderSlideSvg", () => {
         },
       ],
     };
-    const svg = renderSlideSvg(slide, { ...options, background: null });
+    const svg = renderSlideSvg(slide, { ...options, bare: true });
     expect(svg).toMatch(
       /<text[^>]*class="cjk"(?![^>]*font-style)[^>]*>語音 <\/text>/
     );
@@ -147,12 +153,12 @@ describe("renderSlideSvg", () => {
   });
 });
 
-describe("renderSlideSvg on the plain template", () => {
+describe("renderSlideSvg on the plain master", () => {
   it("draws a black title and a gray number on white, with no background", () => {
+    const plain = BUILTIN_MASTERS.plain;
     const svg = renderSlideSvg(sampleDocument().slides[0], {
       slideNumber: 4,
-      template: "plain",
-      background: null,
+      layout: plain.layouts[plain.layout],
     });
     expect(svg).not.toContain("<image");
     expect(svg).toMatch(
@@ -161,5 +167,25 @@ describe("renderSlideSvg on the plain template", () => {
     expect(svg).toMatch(
       /font-size="28" fill="#7f7f7f"(?![^>]*font-weight)[^>]*>4<\/text>/
     );
+  });
+});
+
+describe("renderBackdropSvg", () => {
+  it("draws a layout's background and artwork, and no title or number", () => {
+    const svg = renderBackdropSvg(winlab.layouts[winlab.layout], {
+      assetHref: (sha) => `/assets/${sha}`,
+    });
+    expect(svg).toMatch(/<linearGradient id="gr-[0-9a-z]+"/);
+    expect(svg).toContain(">NYCU CS</text>");
+    expect(svg).not.toContain("System overview");
+  });
+
+  it("names gradients by what they hold, so pages of several masters agree", () => {
+    const a = renderBackdropSvg(winlab.layouts[0], { assetHref: () => null });
+    const b = renderBackdropSvg(winlab.layouts[0], { assetHref: () => null });
+    expect(a).toBe(b);
+    const ids = (svg: string) =>
+      [...svg.matchAll(/id="(gr-[0-9a-z]+)"/g)].map((m) => m[1]);
+    expect(new Set(ids(a)).size).toBe(ids(a).length);
   });
 });

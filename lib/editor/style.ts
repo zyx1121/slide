@@ -4,7 +4,7 @@
 // to show.
 import type { Operation } from "../deck/patch";
 import type { Shape, Slide } from "../deck/schema";
-import { DEFAULT_TEXT } from "../render/template";
+import { DEFAULT_TEXT } from "../render/text";
 
 export type Dash = "solid" | "dash" | "dot" | "dashDot";
 export type Align = "left" | "center" | "right";
@@ -227,9 +227,13 @@ export function selectionStyle(
   const style: SelectionStyle = {};
 
   if (picked.every(hasFill)) {
-    style.fill = shared(
-      picked.map((shape) => ("fill" in shape ? (shape.fill ?? null) : null))
+    const fills = picked.map((shape) =>
+      "fill" in shape ? (shape.fill ?? null) : null
     );
+    // A gradient is no one swatch: the dock shows it as mixed.
+    style.fill = fills.some((fill) => typeof fill === "object" && fill)
+      ? "mixed"
+      : shared(fills as (string | null)[]);
   }
   style.stroke = {
     color: shared(picked.map((shape) => shape.stroke?.color ?? null))!,

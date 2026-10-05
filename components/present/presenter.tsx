@@ -37,7 +37,7 @@ import {
   type Show,
 } from "@/lib/present/control";
 import { followSlide } from "@/lib/editor/slides";
-import { templateOf } from "@/lib/render/template";
+import { layoutOf } from "@/lib/master/layout";
 import { cn } from "@/lib/utils";
 
 const POLL_MS = 3000;
@@ -260,7 +260,6 @@ export function Presenter({
   const index = Math.min(show.index, slides.length - 1);
   const current = slides[index];
   const next = slides[index + 1];
-  const template = templateOf(document).id;
   const notes = current?.notes?.trim() ? current.notes : "";
   const running = timer.paused === null;
   const time = (timer.paused ?? now) - timer.from;
@@ -365,7 +364,7 @@ export function Presenter({
               <SlideFrame
                 slide={current}
                 number={index + 1}
-                template={template}
+                layout={layoutOf(document, current)}
                 className="size-full rounded-lg"
               />
             )}
@@ -383,7 +382,7 @@ export function Presenter({
               <SlideFrame
                 slide={next}
                 number={index + 2}
-                template={template}
+                layout={layoutOf(document, next)}
                 className={cn(FIT, "rounded-md")}
               />
             ) : (

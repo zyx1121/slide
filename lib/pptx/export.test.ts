@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import { sampleDocument } from "../deck/sample";
 import type { DeckDocument } from "../deck/schema";
+import { BUILTIN_MASTERS } from "../master/layout";
 import { exportPptx } from "./export";
 
 const doc = sampleDocument();
@@ -207,8 +208,8 @@ describe("exportPptx", () => {
   });
 });
 
-describe("exportPptx on the plain template", () => {
-  const plain: DeckDocument = { ...doc, template: "plain" };
+describe("exportPptx on the plain master", () => {
+  const plain: DeckDocument = { ...doc, master: BUILTIN_MASTERS.plain };
   const parts = unzipSync(exportPptx(plain, new Map()));
   const text = (name: string) => strFromU8(parts[name]);
   const master = text("ppt/slideMasters/slideMaster1.xml");
@@ -241,7 +242,7 @@ describe("exportPptx on the plain template", () => {
     );
   });
 
-  it("leaves the WinLab template to WinLab decks", () => {
+  it("leaves the WinLab master to WinLab decks", () => {
     const winlab = unzipSync(exportPptx(doc, new Map()));
     expect(winlab["ppt/media/image1.png"]).toBeDefined();
   });

@@ -1,6 +1,6 @@
 // The deck's colors, shared by the dock's swatches and the rule check.
 
-/** The colors on offer: the WinLab template's blues and Office's set. */
+/** The colors on offer: the WinLab master's blues and Office's set. */
 export const PALETTE = [
   { name: "黑", value: "#000000" },
   { name: "深灰", value: "#595959" },

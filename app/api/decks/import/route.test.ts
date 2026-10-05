@@ -7,6 +7,10 @@ vi.mock("@/lib/db", () => ({ sql: {} }));
 vi.mock("@/lib/deck/store", () => ({
   createDeck: vi.fn(async () => ({ id: "dk_new" })),
 }));
+vi.mock("@/lib/master/store", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/master/store")>()),
+  saveMaster: vi.fn(),
+}));
 vi.mock("@/lib/assets/store", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/assets/store")>()),
   saveAsset: vi.fn(),

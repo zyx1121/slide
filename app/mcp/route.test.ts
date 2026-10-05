@@ -1,3 +1,7 @@
+import {
+  Client,
+  StreamableHTTPClientTransport,
+} from "@modelcontextprotocol/client";
 import type postgres from "postgres";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
@@ -160,6 +164,37 @@ describe.skipIf(!TEST_DATABASE_URL)("MCP tools (Postgres)", () => {
       "update_shapes",
       "upload_image",
     ]);
+  });
+
+  it("speaks 2026-07-28 to a client that asks for it", async () => {
+    const client = new Client(
+      { name: "test", version: "1" },
+      { versionNegotiation: { mode: { pin: "2026-07-28" } } }
+    );
+    await client.connect(
+      new StreamableHTTPClientTransport(
+        new URL("https://slide.example.org/mcp"),
+        {
+          fetch: (url, init) => POST(new Request(url, init)),
+          requestInit: { headers: { authorization: "Bearer good" } },
+        }
+      )
+    );
+    try {
+      expect(client.getNegotiatedProtocolVersion()).toBe("2026-07-28");
+      const { tools } = await client.listTools();
+      expect(tools.map((tool) => tool.name)).toContain("list_decks");
+      const result = await client.callTool({
+        name: "list_decks",
+        arguments: {},
+      });
+      const decks = JSON.parse(
+        (result.content as { type: string; text: string }[])[0].text
+      );
+      expect(decks.map((deck: { id: string }) => deck.id)).toEqual([deckId]);
+    } finally {
+      await client.close();
+    }
   });
 
   it("lists and reads only the member's decks", async () => {

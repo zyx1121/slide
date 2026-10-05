@@ -799,3 +799,62 @@ describe("importPptx bounds a master", () => {
     expect(JSON.stringify(document.master).length).toBeLessThan(100_000);
   });
 });
+
+describe("importPptx reads backgrounds", () => {
+  const realImage = async (bytes: Uint8Array) => ({
+    sha256: createHash("sha256").update(bytes).digest("hex"),
+  });
+
+  it("reads a picture background, a path gradient and a theme style", async () => {
+    const parts = unzipSync(exportPptx(sampleDocument(), new Map()));
+    const masterName = "ppt/slideMasters/slideMaster1.xml";
+    const relsName = "ppt/slideMasters/_rels/slideMaster1.xml.rels";
+    const picture = Object.keys(parts).find((name) =>
+      /^ppt\/media\/.*\.png$/.test(name)
+    )!;
+    parts[relsName] = strToU8(
+      strFromU8(parts[relsName]).replace(
+        "</Relationships>",
+        `<Relationship Id="rId900" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${picture.slice("ppt/media/".length)}"/></Relationships>`
+      )
+    );
+    // The master's background becomes a picture.
+    parts[masterName] = strToU8(
+      strFromU8(parts[masterName]).replace(
+        /<p:bg>[\s\S]*?<\/p:bg>/,
+        '<p:bg><p:bgPr><a:blipFill><a:blip r:embed="rId900"/><a:stretch><a:fillRect/></a:stretch></a:blipFill><a:effectLst/></p:bgPr></p:bg>'
+      )
+    );
+    // Layout 3 gets a radial gradient of its own; layout 4 a theme style.
+    const layout = (n: number, bg: string) => {
+      const name = `ppt/slideLayouts/slideLayout${n}.xml`;
+      parts[name] = strToU8(
+        strFromU8(parts[name])
+          .replace(/<p:bg>[\s\S]*?<\/p:bg>/, "")
+          .replace(/<p:cSld([^>]*)>/, `<p:cSld$1>${bg}`)
+      );
+    };
+    layout(
+      3,
+      '<p:bg><p:bgPr><a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="FFFFFF"/></a:gs><a:gs pos="100000"><a:srgbClr val="3297FC"/></a:gs></a:gsLst><a:path path="circle"><a:fillToRect l="50000" t="30000" r="50000" b="70000"/></a:path></a:gradFill><a:effectLst/></p:bgPr></p:bg>'
+    );
+    layout(
+      4,
+      '<p:bg><p:bgRef idx="1001"><a:srgbClr val="FF0000"/></p:bgRef></p:bg>'
+    );
+    const { document } = await importPptx(zipSync(parts), realImage);
+    const { layouts } = document.master;
+    const sha = createHash("sha256").update(parts[picture]).digest("hex");
+    expect(layouts[1].background).toEqual({ image: sha });
+    expect(layouts[2].background).toEqual({
+      path: "circle",
+      focus: { x: 0.5, y: 0.3 },
+      stops: [
+        { at: 0, color: "#ffffff" },
+        { at: 1, color: "#3297fc" },
+      ],
+    });
+    // The WinLab theme's first background style is a solid phClr.
+    expect(layouts[3].background).toBe("#ff0000");
+  });
+});

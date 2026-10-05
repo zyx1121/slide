@@ -193,3 +193,43 @@ describe("renderBackdropSvg", () => {
     expect(new Set(ids(a)).size).toBe(ids(a).length);
   });
 });
+
+describe("backgrounds and path gradients", () => {
+  const plain = layoutOf({ master: BUILTIN_MASTERS.plain }, undefined);
+
+  it("stretches a picture background, through the asset href", () => {
+    const svg = renderBackdropSvg(
+      { ...plain, background: { image: "a".repeat(64) } },
+      { assetHref: (sha) => `/assets/${sha}` }
+    );
+    expect(svg).toContain(
+      `<image href="/assets/${"a".repeat(64)}" width="1920" height="1080" preserveAspectRatio="none"/>`
+    );
+    expect(
+      renderBackdropSvg(
+        { ...plain, background: { image: "a".repeat(64) } },
+        { assetHref: () => null }
+      )
+    ).not.toContain("<image");
+  });
+
+  it("draws a path gradient as a circle from its focus", () => {
+    const svg = renderBackdropSvg(
+      {
+        ...plain,
+        background: {
+          path: "circle",
+          focus: { x: 0.5, y: 0.5 },
+          stops: [
+            { at: 0, color: "#ffffff" },
+            { at: 1, color: "#000000" },
+          ],
+        },
+      },
+      { assetHref: () => null }
+    );
+    expect(svg).toMatch(
+      /<radialGradient id="gr-[0-9a-z]+" gradientUnits="userSpaceOnUse" cx="960" cy="540" r="1101.45">/
+    );
+  });
+});

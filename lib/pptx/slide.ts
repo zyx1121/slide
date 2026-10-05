@@ -49,18 +49,21 @@ function color(value: string): string {
 
 const solid = (value: string) => `<a:solidFill>${color(value)}</a:solidFill>`;
 
-/** A shape's fill: one color, or a linear gradient. */
-const fillXml = (fill: Fill) =>
-  typeof fill === "string"
-    ? solid(fill)
-    : `<a:gradFill rotWithShape="1"><a:gsLst>${fill.stops
-        .map(
-          (stop) =>
-            `<a:gs pos="${Math.round(stop.at * 100000)}">${color(stop.color)}</a:gs>`
-        )
-        .join("")}</a:gsLst><a:lin ang="${Math.round(
-        (((fill.angle % 360) + 360) % 360) * 60000
-      )}" scaled="0"/></a:gradFill>`;
+/** A shape's fill: one color, a linear gradient, or a path gradient. */
+function fillXml(fill: Fill): string {
+  if (typeof fill === "string") return solid(fill);
+  const stops = fill.stops
+    .map(
+      (stop) =>
+        `<a:gs pos="${Math.round(stop.at * 100000)}">${color(stop.color)}</a:gs>`
+    )
+    .join("");
+  const shade =
+    "path" in fill
+      ? `<a:path path="${fill.path}"><a:fillToRect l="${Math.round(fill.focus.x * 100000)}" t="${Math.round(fill.focus.y * 100000)}" r="${Math.round((1 - fill.focus.x) * 100000)}" b="${Math.round((1 - fill.focus.y) * 100000)}"/></a:path>`
+      : `<a:lin ang="${Math.round((((fill.angle % 360) + 360) % 360) * 60000)}" scaled="0"/>`;
+  return `<a:gradFill rotWithShape="1"><a:gsLst>${stops}</a:gsLst>${shade}</a:gradFill>`;
+}
 
 const DASHES: Record<string, string> = {
   solid: "solid",

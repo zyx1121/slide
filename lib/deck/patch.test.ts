@@ -327,6 +327,22 @@ describe("applyOperations", () => {
       );
     });
 
+    it("refuses a patch whose revert could not be checked", () => {
+      // A paragraph edited, nested in another, edited there, taken out.
+      const ops: Operation[] = [
+        { op: "replace", path: `${P}/0/runs/0/text`, value: "Edited" },
+        { op: "move", from: `${P}/0`, path: `${P}/0/runs/0` },
+        { op: "replace", path: `${P}/0/runs/0/runs/0/text`, value: "Inside" },
+        { op: "move", from: `${P}/0/runs/0`, path: `${P}/-` },
+      ];
+      expect(applyOperations(twoParagraphs, ops).document).toBeTruthy();
+      expect(
+        refusal(() =>
+          applyOperations(twoParagraphs, ops, { guardInverse: true })
+        ).message
+      ).toMatch(/revert could not check/);
+    });
+
     it("refuses a move that shifts what it takes something out of", () => {
       expect(
         refusal(() =>

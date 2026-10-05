@@ -155,7 +155,7 @@ export function applyOperations(
     document: parsed.data,
     operations: operations as Operation[],
     inverse: guardInverse
-      ? guard(parsed.data, checkedInverse(steps))
+      ? guardedInverse(parsed.data, steps)
       : [...steps].reverse().flatMap((step) => step.undo),
   };
 }
@@ -168,6 +168,24 @@ type Step = {
   /** Elements without an id the undo goes into or moves (see `mark`). */
   marks: Mark[];
 };
+
+/**
+ * The inverse with its checks, pinned by guard.ts, whose walk through it
+ * also proves each test holds where a revert meets it. Only a patch that
+ * nests a list element in another and takes it out again can fail that (an
+ * element changed after its last mark); it is refused, as no revert of it
+ * could be checked.
+ */
+function guardedInverse(document: DeckDocument, steps: Step[]): Operation[] {
+  try {
+    return guard(document, checkedInverse(steps));
+  } catch {
+    throw new DeckError(
+      "invalid_patch",
+      "the patch moves list elements in a way its revert could not check"
+    );
+  }
+}
 
 /**
  * The inverse with its checks, last operation first. An element without an

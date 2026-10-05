@@ -6,8 +6,8 @@
 // refresh spends its token and issues the next (rotation). A spent token
 // presented once more within REUSE_GRACE_SECONDS gets a new pair too, since a
 // client may refresh twice at once; a second retry, or one sent later, means
-// the token was copied, and the whole family is revoked. An access token names its family, so
-// revoking the family cuts the client off at once.
+// the token was copied, and the whole family is revoked. An access token
+// names its family, so revoking the family cuts the client off at once.
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 
 import type postgres from "postgres";

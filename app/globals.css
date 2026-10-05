@@ -274,20 +274,26 @@
 }
 
 /*
- * Inline slides (components/slide-view.tsx) fill their frame. The renderer
- * names Carlito and "Noto Sans TC" for the server; in the page, text uses the
- * same Carlito files (lib/fonts.ts) and the Noto Sans TC the layout loads.
+ * Inline slides (components/slide-view.tsx) and the layouts drawn under them
+ * (components/backdrop.tsx) fill their frame. The renderer names Carlito and
+ * "Noto Sans TC" for the server; in the page, text uses the same Carlito
+ * files (lib/fonts.ts). Chinese is drawn in Microsoft JhengHei where the
+ * viewer has it installed, as PowerPoint draws it (exports name it as the
+ * East Asian font), and in the Noto Sans TC the layout loads elsewhere. The
+ * lines and widths come from the layout engine either way: every CJK
+ * character is one em in both fonts, and each run is fitted to its width.
  */
 [data-slot="slide-view"] svg {
   display: block;
   width: 100%;
   height: auto;
 }
-[data-slot="slide-view"] text {
+:is([data-slot="slide-view"], [data-slot="slide-backdrop"]) text {
   font-family: var(--font-carlito), sans-serif;
 }
-[data-slot="slide-view"] text.cjk {
-  font-family: var(--font-noto-sans-tc), sans-serif;
+:is([data-slot="slide-view"], [data-slot="slide-backdrop"]) text.cjk {
+  font-family:
+    "Microsoft JhengHei", "微軟正黑體", var(--font-noto-sans-tc), sans-serif;
 }
 
 /*

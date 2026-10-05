@@ -28,6 +28,7 @@ export const Backdrop = memo(function Backdrop({
   );
   return (
     <div
+      data-slot="slide-backdrop"
       aria-hidden
       className={cn("absolute inset-0 [&>svg]:size-full", className)}
       dangerouslySetInnerHTML={{ __html: svg }}

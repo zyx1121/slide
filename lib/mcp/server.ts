@@ -1,7 +1,7 @@
 // The MCP server: tools a member's agent uses on the member's own decks.
 // Every tool runs as the member the access token names; decks of other
 // members are not there, as in the web app.
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { McpServer } from "@modelcontextprotocol/server";
 import type postgres from "postgres";
 import * as z from "zod";
 

@@ -81,35 +81,20 @@ jobs:
       - run: bun run format:check
       - run: bun run test
 
-  compose:
-    name: Image and compose smoke test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v5
-      - uses: docker/setup-buildx-action@v3
-      # From the layers the image builds left in the GitHub Actions cache, so
-      # only what the change touched is built again.
-      - name: Build the image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          load: true
-          tags: ghcr.io/zyx1121/slide:ci
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-      - name: Start the stack from .env.example
-        run: |
-          sed -e 's/^SLIDE_VERSION=.*/SLIDE_VERSION=ci/' \
-              -e 's/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=ci-postgres/' \
-              -e 's|^OIDC_ISSUER=.*|OIDC_ISSUER=http://127.0.0.1:9/realms/ci|' \
-              -e 's/^OIDC_CLIENT_ID=.*/OIDC_CLIENT_ID=slide/' \
-              -e 's/^OIDC_CLIENT_SECRET=.*/OIDC_CLIENT_SECRET=ci-secret/' \
-              -e 's/^ALLOWED_EMAILS=.*/ALLOWED_EMAILS=ci@example.org/' \
-              -e "s/^SESSION_SECRET=.*/SESSION_SECRET=$(openssl rand -hex 32)/" \
-              .env.example > .env
-          docker compose up -d
-      - name: Smoke test
-        run: sh scripts/smoke.sh
-      - name: Logs
-        if: failure()
-        run: docker compose logs
+  image:
+    uses: zyx1121/.github/.github/workflows/image.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      images: '[{"name": "ghcr.io/zyx1121/slide"}]'
+      smoke: bash deploy/smoke.sh
+
+  promote:
+    needs: [check, image]
+    uses: zyx1121/.github/.github/workflows/promote.yml@main
+    permissions:
+      contents: read
+      packages: write
+    with:
+      images: '["ghcr.io/zyx1121/slide"]'

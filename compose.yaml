@@ -72,6 +72,10 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 60s
+      start_interval: 1s
+    # Next waits for open streams on SIGTERM; a deploy should not.
+    stop_grace_period: 3s
     depends_on:
       migrate:
         condition: service_completed_successfully

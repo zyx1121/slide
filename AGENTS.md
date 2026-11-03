@@ -21,3 +21,7 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 - Verify: drive the real app with [the verify skill](.claude/skills/verify/SKILL.md) before reporting a change done, and cite its evidence folder.
 - UI follows the ui.zyx.tw design contract (https://github.com/zyx1121/www.zyx.tw/blob/main/apps/ui/DESIGN.md) through the task-web shell: pages render inside `TaskShell` (`components/task-shell.tsx`, `corners.tsx`, `corner-tip.tsx`, `zyx-mark.tsx`, copied from the task-web starter), with page actions in the top-right corner. The theme's dialogs and menus are frosted glass, unreadable over white slides, so pages over slide content act in place instead (see the home page's deck cards). Only 24/16/14 px text (`text-2xl`, `text-sm`, `text-xs`), weights 400 and 500, theme tokens instead of colors. `components/ui/` is owned by the shadcn CLI; add primitives with `bunx shadcn@latest add`, never edit them.
 - GitHub text (issues, PRs, comments, docs) is English. UI copy is Traditional Chinese (zh-Hant).
+
+## Deploy
+
+A merge to main deploys itself: `release.yml` calls the shared `ship.yml` with `target: land`, and carrel-deployd on VM 117 (`compose`) runs `deploy/carrel-start.sh` against `/opt/slide`. Wait for it with `golem-watch zyx1121/slide <sha>`. The image is built once, in the pull request (`image.yml`); `deploy/smoke.sh` is its smoke test.

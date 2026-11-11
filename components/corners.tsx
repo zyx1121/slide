@@ -163,7 +163,7 @@ export function TopCorners({
  */
 export function BottomCorners({
   links,
-  copyrightTip = "Loki",
+  copyrightTip = "zyx",
   fade = false,
   className,
   style,

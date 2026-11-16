@@ -80,7 +80,7 @@ describe("guard", () => {
     expect(refused(moved, front).code).toBe("invalid_patch");
   });
 
-  it("pins the slide before an inserted slide, and the one it pushes on", () => {
+  it("pins only the slide before an inserted slide, or the one after at the front", () => {
     const two = applyOperations(doc, [
       {
         op: "add",
@@ -91,7 +91,6 @@ describe("guard", () => {
     const added = { id: "sl_added", title: "", shapes: [] };
     expect(guard(two, insertSlideOps(1, added))).toEqual([
       { op: "test", path: "/slides/0/id", value: "sl_overview" },
-      { op: "test", path: "/slides/1/id", value: "sl_next" },
       { op: "add", path: "/slides/1", value: added },
     ]);
     // At the end there is only the slide before it; first, only the one after.

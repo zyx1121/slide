@@ -41,10 +41,14 @@ export function guard(document: DeckDocument, ops: Operation[]): Operation[] {
       const match = POSITION.exec(path);
       if (!match) continue;
       const at = Number(match[1]);
-      // A slide inserted at a position goes after the slide before it.
+      // A slide inserted at a position goes after the slide before it, or
+      // first when there is none; only that neighbour is pinned.
       if (op.op === "add" && match[2] === undefined && SLOT.test(path)) {
         const before = state.slides[at - 1];
-        if (before) pin(`/slides/${at - 1}/id`, before.id);
+        if (before) {
+          pin(`/slides/${at - 1}/id`, before.id);
+          continue;
+        }
       }
       const slide = state.slides[at];
       if (!slide) continue;

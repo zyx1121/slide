@@ -28,6 +28,6 @@ export const config = {
   // check the session themselves, and whose bodies a proxy would buffer and
   // cut at its own limit), public decks (/s/) and static files.
   matcher: [
-    "/((?!auth/|api/health$|api/assets$|api/decks/import$|mcp$|oauth/|\\.well-known/|s/|_next/static|_next/image|favicon\\.ico).*)",
+    "/((?!auth/|api/health$|api/assets$|api/decks/import$|mcp$|oauth/|\\.well-known/|s/|_next/static|_next/image|favicon\\.ico$|icon\\.svg$|apple-icon\\.png$).*)",
   ],
 };

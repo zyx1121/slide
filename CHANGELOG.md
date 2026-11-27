@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.6.0](https://github.com/zyx1121/slide/compare/v0.5.0...v0.6.0) (2026-11-27)
+
+
+### Features
+
+* use the shared zyx.tw icon ([#185](https://github.com/zyx1121/slide/issues/185)) ([40ec071](https://github.com/zyx1121/slide/commit/40ec0711af706335d837eda995390a5b898f8158))
+
+
+### Bug fixes
+
+* **proxy:** serve the app icons without sign-in ([#187](https://github.com/zyx1121/slide/issues/187)) ([9d4fcfe](https://github.com/zyx1121/slide/commit/9d4fcfe6d4dcbc6561c059205bd635771cdb366b))
+
 ## [0.5.0](https://github.com/zyx1121/slide/compare/v0.4.0...v0.5.0) (2026-11-16)
 
 

@@ -122,6 +122,8 @@ describe("proxy", () => {
       "/s/abc",
       "/_next/static/chunk.js",
       "/favicon.ico",
+      "/icon.svg",
+      "/apple-icon.png",
     ]) {
       expect(pattern.test(path)).toBe(false);
     }
